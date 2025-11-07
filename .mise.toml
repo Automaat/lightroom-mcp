@@ -1,0 +1,18 @@
+[tools]
+node = "22"
+
+[tasks.install]
+description = "Install dependencies"
+run = "cd server && npm install"
+
+[tasks.build]
+description = "Build TypeScript MCP server"
+run = "cd server && npm run build"
+
+[tasks.test]
+description = "Run tests"
+run = "cd server && npm test"
+
+[tasks.dev]
+description = "Build in watch mode"
+run = "cd server && npm run watch"

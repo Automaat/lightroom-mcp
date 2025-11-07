@@ -1,0 +1,37 @@
+{
+  "name": "lightroom-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server for Adobe Lightroom Classic",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "lightroom-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "lightroom",
+    "lightroom-classic",
+    "photography"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.7.2"
+  }
+}
