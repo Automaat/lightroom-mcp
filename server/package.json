@@ -25,6 +25,10 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {

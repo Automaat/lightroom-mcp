@@ -5,18 +5,31 @@ local JSON = require 'JSON'
 
 local logger = LrLogger('LightroomMCP')
 
-local SearchHandler = require 'handlers/search'
-local MetadataHandler = require 'handlers/metadata'
-local CollectionsHandler = require 'handlers/collections'
-local OrganizationHandler = require 'handlers/organization'
-local ImportHandler = require 'handlers/import'
-local ExportHandler = require 'handlers/export'
+local SearchHandler = require 'HandlerSearch'
+local MetadataHandler = require 'HandlerMetadata'
+local CollectionsHandler = require 'HandlerCollections'
+local OrganizationHandler = require 'HandlerOrganization'
+local ImportHandler = require 'HandlerImport'
+local ExportHandler = require 'HandlerExport'
 
 local HttpServer = {}
 local serverSocket = nil
 local isRunning = false
+local externalLogger = nil
 
 local PORT = 8765
+
+-- Set external logger
+function HttpServer.setLogger(logFunc)
+    externalLogger = logFunc
+end
+
+local function log(msg)
+    logger:info(msg)
+    if externalLogger then
+        externalLogger(msg)
+    end
+end
 
 -- Route handlers
 local routes = {
@@ -142,34 +155,77 @@ local function handleClient(socket)
 end
 
 -- Start HTTP server
-function HttpServer.start()
+function HttpServer.start(functionContext)
+    log("=== HttpServer.start() called ===")
+    log("PORT: " .. tostring(PORT))
+    log("isRunning: " .. tostring(isRunning))
+    log("Function context: " .. tostring(functionContext))
+    log("Plugin: " .. tostring(_PLUGIN))
+
     if isRunning then
-        logger:warn("HTTP server already running")
+        log("HTTP server already running")
         return
     end
 
+    if not functionContext then
+        local err = "No function context provided"
+        log("ERROR: " .. err)
+        error(err)
+    end
+
+    log("Calling LrSocket.bind...")
+
+    log("Attempting bind with mode='receive', port=" .. tostring(PORT))
+
     serverSocket = LrSocket.bind {
-        functionContext = LrTasks.getFunctionContext(),
+        functionContext = functionContext,
         plugin = _PLUGIN,
         port = PORT,
         mode = 'receive',
         onConnecting = function(socket, port)
-            logger:info(string.format("HTTP server listening on port %d", port))
+            log(string.format("=== onConnecting callback: port %d ===", port))
+            log("Socket type: " .. type(socket))
+            log("Socket: " .. tostring(socket))
+
+            -- Try to inspect socket methods
+            if type(socket) == "table" then
+                for k, v in pairs(socket) do
+                    log("  socket." .. tostring(k) .. " = " .. tostring(v))
+                end
+            end
+
             isRunning = true
         end,
         onConnected = function(socket, port)
-            handleClient(socket)
+            log(string.format("=== onConnected callback: port %d (CLIENT CONNECTED) ===", port))
+
+            -- Spawn new task to handle this connection
+            LrTasks.startAsyncTask(function()
+                log("Handling client in async task")
+                handleClient(socket)
+            end)
         end,
         onError = function(socket, err)
+            log("=== onError callback ===")
+            log("Socket error: " .. tostring(err))
             if err ~= 'timeout' then
-                logger:error("Socket error: " .. tostring(err))
+                log("Non-timeout error: " .. tostring(err))
             end
         end,
         onClosed = function(socket)
-            logger:info("HTTP server stopped")
+            log("=== onClosed callback ===")
+            log("HTTP server stopped")
             isRunning = false
         end,
     }
+
+    if not serverSocket then
+        log("ERROR: LrSocket.bind returned nil!")
+        error("Failed to create server socket")
+    end
+
+    log("LrSocket.bind returned: " .. tostring(serverSocket))
+    log("=== HttpServer.start() completed ===")
 end
 
 -- Stop HTTP server

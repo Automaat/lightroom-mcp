@@ -6,9 +6,99 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import express from "express";
+import cors from "cors";
 
-const LIGHTROOM_PLUGIN_URL = "http://localhost:8765";
+const HTTP_PORT = 8765;
 
+// Request/Response queue management
+interface PendingRequest {
+  id: string;
+  action: string;
+  params: any;
+  timestamp: number;
+}
+
+interface PendingResponse {
+  id: string;
+  result: any;
+  error?: string;
+}
+
+const pendingRequests: PendingRequest[] = [];
+const pendingResponses: Map<string, PendingResponse> = new Map();
+let requestIdCounter = 0;
+
+// Create Express HTTP server for plugin polling
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// Plugin polls this endpoint for pending requests
+app.get("/poll-request", (req, res) => {
+  if (pendingRequests.length > 0) {
+    const request = pendingRequests.shift()!;
+    res.json(request);
+  } else {
+    res.json({ action: "none" });
+  }
+});
+
+// Plugin submits responses here
+app.post("/submit-response", (req, res) => {
+  const { id, result, error } = req.body;
+
+  if (!id) {
+    res.status(400).json({ error: "Missing request id" });
+    return;
+  }
+
+  pendingResponses.set(id, { id, result, error });
+  res.json({ success: true });
+});
+
+// Health check
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    pendingRequests: pendingRequests.length,
+    pendingResponses: pendingResponses.size,
+  });
+});
+
+// Debug endpoint to manually queue a request (for testing)
+app.post("/debug/queue-request", (req, res) => {
+  const { action, params } = req.body;
+
+  if (!action) {
+    res.status(400).json({ error: "Missing action" });
+    return;
+  }
+
+  const requestId = `req_${Date.now()}_${requestIdCounter++}`;
+
+  const pendingRequest: PendingRequest = {
+    id: requestId,
+    action,
+    params: params || {},
+    timestamp: Date.now(),
+  };
+
+  pendingRequests.push(pendingRequest);
+
+  res.json({
+    success: true,
+    requestId,
+    message: "Request queued. Plugin will pick it up on next poll."
+  });
+});
+
+// Start HTTP server
+app.listen(HTTP_PORT, () => {
+  console.error(`HTTP server listening on port ${HTTP_PORT}`);
+});
+
+// MCP Server setup
 const server = new Server(
   {
     name: "lightroom-mcp-server",
@@ -226,32 +316,68 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Handle tool calls
+// Handle tool calls - queue request and wait for response
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
-    const response = await fetch(`${LIGHTROOM_PLUGIN_URL}/${name}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(args || {}),
-    });
+    // Generate unique request ID
+    const requestId = `req_${Date.now()}_${requestIdCounter++}`;
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    // Queue the request for plugin to pick up
+    const pendingRequest: PendingRequest = {
+      id: requestId,
+      action: name,
+      params: args || {},
+      timestamp: Date.now(),
+    };
+
+    pendingRequests.push(pendingRequest);
+
+    // Wait for response with timeout (30 seconds)
+    const timeoutMs = 30000;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeoutMs) {
+      if (pendingResponses.has(requestId)) {
+        const response = pendingResponses.get(requestId)!;
+        pendingResponses.delete(requestId);
+
+        if (response.error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error: ${response.error}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(response.result, null, 2),
+            },
+          ],
+        };
+      }
+
+      // Wait 100ms before checking again
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
-    const result = await response.json();
-
+    // Timeout
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(result, null, 2),
+          text: `Timeout: Lightroom plugin did not respond within ${timeoutMs / 1000}s. Make sure Lightroom is running with the plugin active.`,
         },
       ],
+      isError: true,
     };
   } catch (error) {
     return {
@@ -270,6 +396,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Lightroom MCP server running on stdio");
+  console.error(`Plugin should poll: http://localhost:${HTTP_PORT}/poll-request`);
 }
 
 main().catch((error) => {

@@ -17,11 +17,11 @@ function JSON:encode(obj)
                 end
                 return "[" .. table.concat(values, ",") .. "]"
             else
-                local pairs = {}
+                local key_value_pairs = {}
                 for k, val in pairs(v) do
-                    table.insert(pairs, encode_value(tostring(k)) .. ":" .. encode_value(val))
+                    table.insert(key_value_pairs, encode_value(tostring(k)) .. ":" .. encode_value(val))
                 end
-                return "{" .. table.concat(pairs, ",") .. "}"
+                return "{" .. table.concat(key_value_pairs, ",") .. "}"
             end
         elseif t == "nil" then
             return "null"

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(node dist/index.js:*)",
+      "Bash(chmod:*)",
+      "Bash(node test-tool-call.mjs:*)",
+      "Bash(node /Users/marcin.skalski@konghq.com/sideprojects/lightroom-mcp/test-full-flow.mjs:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
