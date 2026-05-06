@@ -25,7 +25,7 @@ export function createMcpServer(deps: ServerDeps): Server {
   const callTool = createCallToolHandler(deps);
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    return callTool(name, args);
+    return callTool(name, args ?? {});
   });
 
   return server;

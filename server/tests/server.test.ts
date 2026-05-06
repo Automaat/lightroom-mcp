@@ -117,7 +117,7 @@ describe('createMcpServer', () => {
           return { id: '1', result: null };
         },
       });
-      await pair.client.callTool({ name: 'list_develop_presets', arguments: {} });
+      await pair.client.callTool({ name: 'list_develop_presets' });
       expect(capturedParams).toEqual({});
     });
   });

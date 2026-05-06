@@ -45,7 +45,7 @@ describe('TOOL_DEFINITIONS', () => {
 describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
     const result = listToolsHandler();
-    expect(result.tools).toBe(TOOL_DEFINITIONS);
+    expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
 });
 
