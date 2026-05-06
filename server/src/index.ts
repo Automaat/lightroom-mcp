@@ -68,6 +68,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "get_selected_photos",
+        description: "Get currently selected photos in Lightroom (or filmstrip if no selection). Paginated, default limit 100.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
+            offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
+          },
+        },
+      },
+      {
         name: "get_photo_metadata",
         description: "Get detailed metadata for a specific photo",
         inputSchema: {
