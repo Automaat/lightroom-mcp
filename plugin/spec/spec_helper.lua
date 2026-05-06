@@ -90,8 +90,53 @@ function M.fakeCatalog(opts)
     local createdCollections = {}
     local createdKeywords = {}
 
+    local function photoMatches(photo, criterion)
+        local crit = criterion.criteria
+        local op = criterion.operation
+        if crit == "filename" and op == "any" then
+            local name = photo:getFormattedMetadata('fileName')
+            if not name then return false end
+            return name:lower():find(criterion.value:lower(), 1, true) ~= nil
+        elseif crit == "rating" and op == "==" then
+            return photo:getRawMetadata('rating') == criterion.value
+        elseif crit == "keywords" and op == "all" then
+            local kws = photo:getRawMetadata('keywords') or {}
+            local target = criterion.value:lower()
+            for _, kw in ipairs(kws) do
+                if kw:getName():lower() == target then return true end
+            end
+            return false
+        elseif crit == "captureTime" then
+            local t = photo:getRawMetadata('dateTimeOriginal')
+            if not t then return false end
+            if op == "inRange" then
+                return t >= criterion.value and t <= criterion.value2
+            elseif op == ">=" then
+                return t >= criterion.value
+            elseif op == "<=" then
+                return t <= criterion.value
+            end
+        end
+        error("fakeCatalog.findPhotos: unsupported criterion " .. tostring(crit) .. "/" .. tostring(op))
+    end
+
     return {
         getAllPhotos = function() return photos end,
+        findPhotos = function(_, opts)
+            local desc = opts and opts.searchDesc or {}
+            local out = {}
+            for _, photo in ipairs(photos) do
+                local ok = true
+                for _, criterion in ipairs(desc) do
+                    if not photoMatches(photo, criterion) then
+                        ok = false
+                        break
+                    end
+                end
+                if ok then table.insert(out, photo) end
+            end
+            return out
+        end,
         getChildCollections = function() return collections end,
         getChildCollectionSets = function() return collectionSets end,
         withReadAccessDo = function(_, fn) fn() end,
