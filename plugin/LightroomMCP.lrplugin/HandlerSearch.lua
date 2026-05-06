@@ -61,15 +61,12 @@ function SearchHandler.searchPhotos(args)
 
     local total = 0
 
-    -- When no user filters: use rating>=0 as a universal criterion so findPhotos()
-    -- can be used consistently. findPhotos() routes through LR's internal SQL search
-    -- engine which is significantly faster than getAllPhotos() on large catalogs.
-    if not hasFilters then
-        table.insert(searchDesc, { criteria = "rating", operation = ">=", value = 0 })
-    end
-
     catalog:withReadAccessDo(function()
-        local matches = catalog:findPhotos{ searchDesc = searchDesc }
+        -- Unrated photos have nil rating; rating>=0 excludes them, so getAllPhotos()
+        -- must be used when no filters are specified.
+        local matches = hasFilters
+            and catalog:findPhotos{ searchDesc = searchDesc }
+            or catalog:getAllPhotos()
 
         total = #matches
         local last = math.min(offset + limit, total)

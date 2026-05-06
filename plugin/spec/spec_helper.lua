@@ -105,6 +105,9 @@ function M.fakeCatalog(opts)
             return name:lower():find(criterion.value:lower(), 1, true) ~= nil
         elseif crit == "rating" and op == "==" then
             return photo:getRawMetadata('rating') == criterion.value
+        elseif crit == "rating" and op == ">=" then
+            local r = photo:getRawMetadata('rating')
+            return r ~= nil and r >= criterion.value
         elseif crit == "keywords" and op == "all" then
             local kws = photo:getRawMetadata('keywords') or {}
             local target = criterion.value:lower()
