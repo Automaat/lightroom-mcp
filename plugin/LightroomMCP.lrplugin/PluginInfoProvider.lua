@@ -182,11 +182,25 @@ local function dispatchAction(request)
         return
     end
 
-    local execOk, resultOrErr = LrTasks.pcall(function() return handler(params) end)
+    local capturedTraceback
+    local execOk, resultOrErr = LrTasks.pcall(function()
+        local ok, result = xpcall(function() return handler(params) end, function(err)
+            capturedTraceback = debug.traceback(nil, 2)
+            return err
+        end)
+        if not ok then
+            error(result, 0)
+        end
+        return result
+    end)
     if execOk then
         sendResponse({ id = id, result = resultOrErr })
     else
-        addLog("Handler error: " .. tostring(resultOrErr))
+        local errMsg = "Handler " .. action .. " error: " .. tostring(resultOrErr)
+        if os.getenv("LIGHTROOM_MCP_DEBUG") then
+            errMsg = errMsg .. "\n" .. (capturedTraceback or "")
+        end
+        addLog(errMsg)
         sendResponse({ id = id, error = tostring(resultOrErr) })
     end
 end
