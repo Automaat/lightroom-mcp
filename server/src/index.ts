@@ -6,112 +6,66 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import express from "express";
-import cors from "cors";
+import { PluginSocket } from "./plugin-socket.js";
 
-const HTTP_PORT = 8765;
+const REQUEST_PORT = 58763; // plugin listens here, server writes commands
+const RESPONSE_PORT = 58764; // plugin listens here, server reads responses
+const REQUEST_TIMEOUT_MS = 30_000;
 
-// Request/Response queue management
-interface PendingRequest {
+interface PluginResponse {
   id: string;
-  action: string;
-  params: any;
-  timestamp: number;
-}
-
-interface PendingResponse {
-  id: string;
-  result: any;
+  result?: unknown;
   error?: string;
 }
 
-const pendingRequests: PendingRequest[] = [];
-const pendingResponses: Map<string, PendingResponse> = new Map();
+interface PendingResponse {
+  resolve: (resp: PluginResponse) => void;
+  reject: (err: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
+const pending = new Map<string, PendingResponse>();
 let requestIdCounter = 0;
 
-// Create Express HTTP server for plugin polling
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Plugin polls this endpoint for pending requests
-app.get("/poll-request", (req, res) => {
-  if (pendingRequests.length > 0) {
-    const request = pendingRequests.shift()!;
-    res.json(request);
-  } else {
-    res.json({ action: "none" });
-  }
-});
-
-// Plugin submits responses here
-app.post("/submit-response", (req, res) => {
-  const { id, result, error } = req.body;
-
-  if (!id) {
-    res.status(400).json({ error: "Missing request id" });
+function handleResponseLine(line: string): void {
+  let resp: PluginResponse;
+  try {
+    resp = JSON.parse(line) as PluginResponse;
+  } catch (e) {
+    console.error(`Bad JSON from plugin: ${line}`);
     return;
   }
-
-  pendingResponses.set(id, { id, result, error });
-  res.json({ success: true });
-});
-
-// Health check
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    pendingRequests: pendingRequests.length,
-    pendingResponses: pendingResponses.size,
-  });
-});
-
-// Debug endpoint to manually queue a request (for testing)
-app.post("/debug/queue-request", (req, res) => {
-  const { action, params } = req.body;
-
-  if (!action) {
-    res.status(400).json({ error: "Missing action" });
+  const p = pending.get(resp.id);
+  if (!p) {
+    console.error(`Response for unknown id: ${resp.id}`);
     return;
   }
+  clearTimeout(p.timer);
+  pending.delete(resp.id);
+  p.resolve(resp);
+}
 
-  const requestId = `req_${Date.now()}_${requestIdCounter++}`;
-
-  const pendingRequest: PendingRequest = {
-    id: requestId,
-    action,
-    params: params || {},
-    timestamp: Date.now(),
-  };
-
-  pendingRequests.push(pendingRequest);
-
-  res.json({
-    success: true,
-    requestId,
-    message: "Request queued. Plugin will pick it up on next poll."
-  });
+const requestSocket = new PluginSocket({ port: REQUEST_PORT, label: "request" });
+const responseSocket = new PluginSocket({
+  port: RESPONSE_PORT,
+  label: "response",
+  onLine: handleResponseLine,
 });
+requestSocket.connect();
+responseSocket.connect();
 
-// Start HTTP server
-app.listen(HTTP_PORT, () => {
-  console.error(`HTTP server listening on port ${HTTP_PORT}`);
-});
-
-// MCP Server setup
 const server = new Server(
   {
     name: "lightroom-mcp-server",
-    version: "0.1.0",
+    version: "0.2.0",
   },
   {
     capabilities: {
       tools: {},
     },
-  }
+  },
 );
 
-// List available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
@@ -121,10 +75,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            filename: {
-              type: "string",
-              description: "Search by filename (partial match)",
-            },
+            filename: { type: "string", description: "Search by filename (partial match)" },
             keywords: {
               type: "array",
               items: { type: "string" },
@@ -136,14 +87,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               minimum: 0,
               maximum: 5,
             },
-            start_date: {
-              type: "string",
-              description: "Start date (YYYY-MM-DD)",
-            },
-            end_date: {
-              type: "string",
-              description: "End date (YYYY-MM-DD)",
-            },
+            start_date: { type: "string", description: "Start date (YYYY-MM-DD)" },
+            end_date: { type: "string", description: "End date (YYYY-MM-DD)" },
           },
         },
       },
@@ -153,10 +98,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            photo_id: {
-              type: "string",
-              description: "Photo ID or file path",
-            },
+            photo_id: { type: "string", description: "Photo ID or file path" },
           },
           required: ["photo_id"],
         },
@@ -164,10 +106,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "list_collections",
         description: "List all collections in Lightroom catalog",
-        inputSchema: {
-          type: "object",
-          properties: {},
-        },
+        inputSchema: { type: "object", properties: {} },
       },
       {
         name: "create_collection",
@@ -175,14 +114,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            name: {
-              type: "string",
-              description: "Collection name",
-            },
-            parent: {
-              type: "string",
-              description: "Parent collection set (optional)",
-            },
+            name: { type: "string", description: "Collection name" },
+            parent: { type: "string", description: "Parent collection set (optional)" },
           },
           required: ["name"],
         },
@@ -193,10 +126,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            collection_name: {
-              type: "string",
-              description: "Collection name",
-            },
+            collection_name: { type: "string", description: "Collection name" },
             photo_ids: {
               type: "array",
               items: { type: "string" },
@@ -258,10 +188,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            source_path: {
-              type: "string",
-              description: "Path to photo or folder to import",
-            },
+            source_path: { type: "string", description: "Path to photo or folder to import" },
             collection_name: {
               type: "string",
               description: "Collection to add imported photos to (optional)",
@@ -285,10 +212,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               items: { type: "string" },
               description: "Array of photo IDs or file paths to export",
             },
-            destination: {
-              type: "string",
-              description: "Export destination folder",
-            },
+            destination: { type: "string", description: "Export destination folder" },
             format: {
               type: "string",
               description: "Export format (jpeg, png, tiff, original)",
@@ -300,14 +224,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
               minimum: 0,
               maximum: 100,
             },
-            width: {
-              type: "number",
-              description: "Max width in pixels (optional)",
-            },
-            height: {
-              type: "number",
-              description: "Max height in pixels (optional)",
-            },
+            width: { type: "number", description: "Max width in pixels (optional)" },
+            height: { type: "number", description: "Max height in pixels (optional)" },
           },
           required: ["photo_ids", "destination"],
         },
@@ -316,77 +234,56 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Handle tool calls - queue request and wait for response
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
-  try {
-    // Generate unique request ID
-    const requestId = `req_${Date.now()}_${requestIdCounter++}`;
-
-    // Queue the request for plugin to pick up
-    const pendingRequest: PendingRequest = {
-      id: requestId,
-      action: name,
-      params: args || {},
-      timestamp: Date.now(),
-    };
-
-    pendingRequests.push(pendingRequest);
-
-    // Wait for response with timeout (30 seconds)
-    const timeoutMs = 30000;
-    const startTime = Date.now();
-
-    while (Date.now() - startTime < timeoutMs) {
-      if (pendingResponses.has(requestId)) {
-        const response = pendingResponses.get(requestId)!;
-        pendingResponses.delete(requestId);
-
-        if (response.error) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Error: ${response.error}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(response.result, null, 2),
-            },
-          ],
-        };
-      }
-
-      // Wait 100ms before checking again
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-
-    // Timeout
+  if (!requestSocket.isConnected() || !responseSocket.isConnected()) {
     return {
       content: [
         {
           type: "text",
-          text: `Timeout: Lightroom plugin did not respond within ${timeoutMs / 1000}s. Make sure Lightroom is running with the plugin active.`,
+          text: "Lightroom plugin not connected. Open Lightroom and click 'Start Server' in Plug-in Manager.",
         },
       ],
       isError: true,
     };
-  } catch (error) {
+  }
+
+  const id = `req_${Date.now()}_${requestIdCounter++}`;
+
+  const responsePromise = new Promise<PluginResponse>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`Plugin response timeout (${REQUEST_TIMEOUT_MS / 1000}s)`));
+    }, REQUEST_TIMEOUT_MS);
+    pending.set(id, { resolve, reject, timer });
+  });
+
+  const sent = requestSocket.send(JSON.stringify({ id, action: name, params: args ?? {} }));
+  if (!sent) {
+    const p = pending.get(id);
+    if (p) clearTimeout(p.timer);
+    pending.delete(id);
     return {
-      content: [
-        {
-          type: "text",
-          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
+      content: [{ type: "text", text: "Failed to send request to plugin (socket dropped)" }],
+      isError: true,
+    };
+  }
+
+  try {
+    const resp = await responsePromise;
+    if (resp.error) {
+      return {
+        content: [{ type: "text", text: `Error: ${resp.error}` }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: "text", text: JSON.stringify(resp.result, null, 2) }],
+    };
+  } catch (e) {
+    return {
+      content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
       isError: true,
     };
   }
@@ -396,7 +293,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Lightroom MCP server running on stdio");
-  console.error(`Plugin should poll: http://localhost:${HTTP_PORT}/poll-request`);
+  console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
 }
 
 main().catch((error) => {

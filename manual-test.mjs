@@ -1,20 +1,66 @@
-// Manually inject a request into the running MCP server
-// This simulates what happens when a tool is called via stdio
+#!/usr/bin/env node
+// Direct TCP probe that mimics what the MCP server does. Use to verify the plugin
+// is wired correctly without spinning up a full MCP client.
+//
+// Usage: node manual-test.mjs [action] [json-params]
+//   node manual-test.mjs list_collections
+//   node manual-test.mjs search_photos '{"rating":5}'
 
-import fetch from 'node-fetch';
+import net from "node:net";
 
-const SERVER = 'http://localhost:8765';
+const REQUEST_PORT = 58763;
+const RESPONSE_PORT = 58764;
+const TIMEOUT_MS = 30_000;
 
-// Simulate MCP server queuing a request (we'll do this by directly calling the internal queue)
-// Since we can't access the internal queue from outside, we need to modify the server
-// OR we can test the full flow via stdio
+const action = process.argv[2] ?? "list_collections";
+const params = process.argv[3] ? JSON.parse(process.argv[3]) : {};
+const id = `manual_${Date.now()}`;
 
-console.log('Testing by calling MCP server via fetch...');
-console.log('This won\'t work because the queue is internal.');
-console.log('\nThe issue: test-tool-call.mjs spawns a NEW server with its own queue.');
-console.log('The plugin is polling the BACKGROUND server (different queue).\n');
+function connect(port, label) {
+  return new Promise((resolve, reject) => {
+    const sock = new net.Socket();
+    sock.setEncoding("utf8");
+    sock.once("error", reject);
+    sock.once("connect", () => {
+      sock.removeAllListeners("error");
+      console.log(`[${label}] connected :${port}`);
+      resolve(sock);
+    });
+    sock.connect(port, "127.0.0.1");
+  });
+}
 
-console.log('Solution: Need to call tools on the BACKGROUND server via stdio.');
-console.log('But that server is already connected to stdio (unavailable).\n');
+const [reqSock, respSock] = await Promise.all([
+  connect(REQUEST_PORT, "request"),
+  connect(RESPONSE_PORT, "response"),
+]);
 
-console.log('Workaround: Add a debug endpoint to manually queue requests...');
+let buf = "";
+const responsePromise = new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error("timeout waiting for response")), TIMEOUT_MS);
+  respSock.on("data", (chunk) => {
+    buf += chunk;
+    let idx;
+    while ((idx = buf.indexOf("\n")) !== -1) {
+      const line = buf.slice(0, idx).trim();
+      buf = buf.slice(idx + 1);
+      if (!line) continue;
+      const resp = JSON.parse(line);
+      if (resp.id === id) {
+        clearTimeout(timer);
+        resolve(resp);
+      }
+    }
+  });
+  respSock.on("close", () => reject(new Error("response socket closed")));
+});
+
+const payload = JSON.stringify({ id, action, params });
+console.log(`>>> ${payload}`);
+reqSock.write(payload + "\n");
+
+const resp = await responsePromise;
+console.log("<<<", JSON.stringify(resp, null, 2));
+
+reqSock.destroy();
+respSock.destroy();

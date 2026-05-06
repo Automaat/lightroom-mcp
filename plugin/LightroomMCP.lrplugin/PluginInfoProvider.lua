@@ -1,234 +1,223 @@
-local LrView = import 'LrView'
 local LrTasks = import 'LrTasks'
-local LrHttp = import 'LrHttp'
 local LrLogger = import 'LrLogger'
 local LrDialogs = import 'LrDialogs'
-local LrApplication = import 'LrApplication'
 local LrFunctionContext = import 'LrFunctionContext'
+local LrSocket = import 'LrSocket'
 
 local JSON = require 'JSON'
+local HandlerSearch = require 'HandlerSearch'
+local HandlerCollections = require 'HandlerCollections'
+local HandlerMetadata = require 'HandlerMetadata'
+local HandlerOrganization = require 'HandlerOrganization'
+local HandlerImport = require 'HandlerImport'
+local HandlerExport = require 'HandlerExport'
 
 local logger = LrLogger('LightroomMCP')
 logger:enable("logfile")
 
--- Plugin state
+local REQUEST_PORT = 58763  -- plugin RECEIVES requests here (server in 'receive' mode)
+local RESPONSE_PORT = 58764 -- plugin SENDS responses here (server in 'send' mode)
+
 local pluginState = {
-    initialized = false,
-    serverRunning = false,
-    polling = false,
-    error = nil,
-    lastPoll = nil,
+    running = false,
+    requestSocket = nil,
+    responseSocket = nil,
+    sendConnected = false,
+    receiveConnected = false,
     requestsProcessed = 0,
-    startupLog = {}
+    lastEvent = nil,
+    log = {},
 }
 
-local MCP_SERVER_URL = "http://localhost:8765"
-local POLL_INTERVAL = 3 -- seconds
-
 local function addLog(msg)
-    table.insert(pluginState.startupLog, os.date("%H:%M:%S") .. " - " .. msg)
+    table.insert(pluginState.log, os.date("%H:%M:%S") .. " - " .. msg)
+    if #pluginState.log > 100 then
+        table.remove(pluginState.log, 1)
+    end
     logger:info(msg)
 end
 
-addLog("PluginInfoProvider loaded")
+local DISPATCH = {
+    search_photos = HandlerSearch.searchPhotos,
+    list_collections = HandlerCollections.listCollections,
+    create_collection = HandlerCollections.createCollection,
+    add_to_collection = HandlerCollections.addToCollection,
+    get_photo_metadata = HandlerMetadata.getPhotoMetadata,
+    set_keywords = HandlerOrganization.setKeywords,
+    set_rating = HandlerOrganization.setRating,
+    import_photos = HandlerImport.importPhotos,
+    export_photos = HandlerExport.exportPhotos,
+}
 
--- Execute Lightroom action based on request
-local function executeAction(action, params, catalog)
-    addLog("Executing action: " .. action)
+local SEND_WAIT_SECONDS = 5
 
-    if action == "list_collections" then
-        addLog("Getting child collections...")
-        local collections = catalog:getChildCollections()
-        addLog("Found " .. tostring(#collections) .. " collections")
+local function sendResponse(response)
+    local waited = 0
+    while not pluginState.sendConnected and waited < SEND_WAIT_SECONDS do
+        LrTasks.sleep(0.1)
+        waited = waited + 0.1
+    end
+    if not pluginState.responseSocket or not pluginState.sendConnected then
+        addLog("Drop response (send socket disconnected after " .. SEND_WAIT_SECONDS .. "s) id=" .. tostring(response.id))
+        return
+    end
+    local ok, payload = pcall(function() return JSON:encode(response) end)
+    if not ok then
+        addLog("JSON encode failed: " .. tostring(payload))
+        return
+    end
+    pluginState.responseSocket:send(payload .. "\n")
+    pluginState.requestsProcessed = pluginState.requestsProcessed + 1
+end
 
-        local result = {}
-        for _, collection in ipairs(collections) do
-            table.insert(result, {
-                name = collection:getName(),
-                type = "collection",
-                photoCount = #collection:getPhotos()
-            })
-        end
-        addLog("Returning result with " .. #result .. " collections")
-        return { collections = result }
+local function handleRequest(message)
+    pluginState.lastEvent = os.date("%H:%M:%S")
 
-    elseif action == "search_photos" then
-        local allPhotos = catalog:getAllPhotos()
-        local results = {}
+    local parsedOk, request = pcall(function() return JSON:decode(message) end)
+    if not parsedOk or type(request) ~= "table" then
+        addLog("JSON decode failed: " .. tostring(message))
+        return
+    end
 
-        for _, photo in ipairs(allPhotos) do
-            local match = true
+    local id = request.id
+    local action = request.action
+    local params = request.params or {}
 
-            -- Filter by filename
-            if params.filename and not string.find(photo:getFormattedMetadata("fileName"), params.filename, 1, true) then
-                match = false
-            end
+    addLog("Request id=" .. tostring(id) .. " action=" .. tostring(action))
 
-            -- Filter by rating
-            if params.rating and photo:getRawMetadata("rating") ~= params.rating then
-                match = false
-            end
+    local handler = DISPATCH[action]
+    if not handler then
+        sendResponse({ id = id, error = "Unknown action: " .. tostring(action) })
+        return
+    end
 
-            if match then
-                table.insert(results, {
-                    id = photo:getRawMetadata("uuid"),
-                    path = photo:getRawMetadata("path"),
-                    filename = photo:getFormattedMetadata("fileName"),
-                    rating = photo:getRawMetadata("rating"),
-                    date = photo:getFormattedMetadata("captureDate")
-                })
+    local execOk, resultOrErr = LrTasks.pcall(function() return handler(params) end)
+    if execOk then
+        sendResponse({ id = id, result = resultOrErr })
+    else
+        addLog("Handler error: " .. tostring(resultOrErr))
+        sendResponse({ id = id, error = tostring(resultOrErr) })
+    end
+end
 
-                -- Limit results
-                if #results >= 100 then
-                    break
+local function startServer()
+    if pluginState.running then
+        addLog("Already running")
+        return
+    end
+
+    pluginState.running = true
+    addLog("Starting LrSocket servers")
+
+    LrFunctionContext.postAsyncTaskWithContext("LightroomMCPServer", function(context)
+        pluginState.requestSocket = LrSocket.bind {
+            functionContext = context,
+            plugin = _PLUGIN,
+            port = REQUEST_PORT,
+            mode = "receive",
+            onConnected = function()
+                pluginState.receiveConnected = true
+                addLog("REQUEST socket connected")
+            end,
+            onMessage = function(_, message)
+                LrTasks.startAsyncTask(function()
+                    handleRequest(message)
+                end)
+            end,
+            onClosed = function()
+                pluginState.receiveConnected = false
+                pluginState.requestNeedsReconnect = true
+            end,
+            onError = function(_, err)
+                local errStr = tostring(err)
+                if errStr == "timeout" then
+                    -- listen socket timeout. Only reconnect if no active client.
+                    if not pluginState.receiveConnected then
+                        pluginState.requestNeedsReconnect = true
+                    end
+                else
+                    pluginState.receiveConnected = false
+                    pluginState.requestNeedsReconnect = true
+                    addLog("REQUEST socket error: " .. errStr)
                 end
-            end
-        end
-
-        return { photos = results, count = #results }
-
-    else
-        return { error = "Unknown action: " .. action }
-    end
-end
-
--- Poll MCP server for requests
-local function pollServer()
-    local response, headers = LrHttp.get(MCP_SERVER_URL .. "/poll-request", {
-        { field = "Accept", value = "application/json" }
-    })
-
-    pluginState.lastPoll = os.date("%H:%M:%S")
-
-    if not response or response == "" then
-        addLog("Poll returned empty response")
-        return
-    end
-
-    addLog("Poll response: " .. response)
-
-    -- Parse JSON response
-    local parseSuccess, data = pcall(function()
-        return JSON:decode(response)
-    end)
-
-    if not parseSuccess then
-        addLog("JSON parse error: " .. tostring(data))
-        return
-    end
-
-    if data.action == "none" then
-        -- No pending requests (normal)
-        return
-    end
-
-    addLog("Received request: " .. data.action .. " (id: " .. data.id .. ")")
-
-    -- Execute the action
-    local result, error
-
-    addLog("Executing action without catalog lock...")
-
-    -- For now, return mock data to test the flow
-    -- TODO: Implement proper catalog access
-    if data.action == "list_collections" then
-        result = {
-            collections = {
-                { name = "Test Collection 1", type = "collection", photoCount = 10 },
-                { name = "Test Collection 2", type = "collection", photoCount = 25 }
-            }
+            end,
         }
-        addLog("Returning mock data")
-    else
-        result = { message = "Action " .. data.action .. " not yet implemented" }
-    end
+        addLog("REQUEST bound on " .. REQUEST_PORT)
 
-    addLog("Execution complete")
+        pluginState.responseSocket = LrSocket.bind {
+            functionContext = context,
+            plugin = _PLUGIN,
+            port = RESPONSE_PORT,
+            mode = "send",
+            onConnected = function()
+                pluginState.sendConnected = true
+                addLog("RESPONSE socket connected")
+            end,
+            onClosed = function()
+                pluginState.sendConnected = false
+                pluginState.responseNeedsReconnect = true
+            end,
+            onError = function(_, err)
+                local errStr = tostring(err)
+                if errStr == "timeout" then
+                    if not pluginState.sendConnected then
+                        pluginState.responseNeedsReconnect = true
+                    end
+                else
+                    pluginState.sendConnected = false
+                    pluginState.responseNeedsReconnect = true
+                    addLog("RESPONSE socket error: " .. errStr)
+                end
+            end,
+        }
+        addLog("RESPONSE bound on " .. RESPONSE_PORT)
 
-    -- Send response back to MCP server
-    addLog("About to encode JSON response...")
-    local encodeSuccess, responseData = pcall(function()
-        return JSON:encode({
-            id = data.id,
-            result = result,
-            error = error
-        })
-    end)
-
-    if not encodeSuccess then
-        addLog("JSON encode failed: " .. tostring(responseData))
-        return
-    end
-
-    addLog("JSON encoded successfully")
-    addLog("Sending response to server...")
-    addLog("URL: " .. MCP_SERVER_URL .. "/submit-response")
-    addLog("Payload: " .. responseData)
-
-    local submitResponse, submitHeaders = LrHttp.post(MCP_SERVER_URL .. "/submit-response", responseData, {
-        { field = "Content-Type", value = "application/json" }
-    })
-
-    addLog("HTTP POST returned: " .. tostring(submitResponse))
-
-    if submitResponse then
-        addLog("Response submitted successfully")
-        pluginState.requestsProcessed = pluginState.requestsProcessed + 1
-    else
-        addLog("Failed to submit response - empty response")
-    end
-end
-
--- Start polling loop
-local function startPolling()
-    if pluginState.polling then
-        addLog("Already polling")
-        return
-    end
-
-    addLog("Starting polling loop")
-    pluginState.polling = true
-    pluginState.serverRunning = true
-    pluginState.initialized = true
-
-    LrFunctionContext.postAsyncTaskWithContext("PollingLoop", function(context)
-        while pluginState.polling do
-            pollServer()
-            LrTasks.sleep(POLL_INTERVAL)
+        while pluginState.running do
+            if pluginState.requestNeedsReconnect and pluginState.requestSocket then
+                pluginState.requestNeedsReconnect = false
+                pluginState.requestSocket:reconnect()
+            end
+            if pluginState.responseNeedsReconnect and pluginState.responseSocket then
+                pluginState.responseNeedsReconnect = false
+                pluginState.responseSocket:reconnect()
+            end
+            LrTasks.sleep(0.2)
         end
 
-        addLog("Polling stopped")
+        addLog("Server loop exiting")
+        pluginState.requestSocket = nil
+        pluginState.responseSocket = nil
+        pluginState.sendConnected = false
+        pluginState.receiveConnected = false
     end)
 end
 
-local function stopPolling()
-    if not pluginState.polling then
-        addLog("Not currently polling")
+local function stopServer()
+    if not pluginState.running then
+        addLog("Not running")
         return
     end
-
-    addLog("Stopping polling")
-    pluginState.polling = false
-    pluginState.serverRunning = false
+    addLog("Stopping LrSocket servers")
+    pluginState.running = false
 end
+
+addLog("PluginInfoProvider loaded")
 
 local PluginInfoProvider = {}
 
 function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
     local statusText = "=== Lightroom MCP Status ===\n\n"
-    statusText = statusText .. "Polling: " .. tostring(pluginState.polling) .. "\n"
-    statusText = statusText .. "Last Poll: " .. (pluginState.lastPoll or "Never") .. "\n"
-    statusText = statusText .. "Requests Processed: " .. pluginState.requestsProcessed .. "\n"
-    statusText = statusText .. "MCP Server: " .. MCP_SERVER_URL .. "\n"
-
-    if pluginState.error then
-        statusText = statusText .. "\nError: " .. pluginState.error .. "\n"
-    end
-
-    statusText = statusText .. "\nRecent Logs:\n"
-    local startIdx = math.max(1, #pluginState.startupLog - 10)
-    for i = startIdx, #pluginState.startupLog do
-        statusText = statusText .. "  " .. pluginState.startupLog[i] .. "\n"
+    statusText = statusText .. "Running: " .. tostring(pluginState.running) .. "\n"
+    statusText = statusText .. "Request socket connected: " .. tostring(pluginState.receiveConnected) .. "\n"
+    statusText = statusText .. "Response socket connected: " .. tostring(pluginState.sendConnected) .. "\n"
+    statusText = statusText .. "Last event: " .. (pluginState.lastEvent or "Never") .. "\n"
+    statusText = statusText .. "Requests processed: " .. pluginState.requestsProcessed .. "\n"
+    statusText = statusText .. "Request port: " .. REQUEST_PORT .. " (mode=receive)\n"
+    statusText = statusText .. "Response port: " .. RESPONSE_PORT .. " (mode=send)\n"
+    statusText = statusText .. "\nRecent logs:\n"
+    local startIdx = math.max(1, #pluginState.log - 15)
+    for i = startIdx, #pluginState.log do
+        statusText = statusText .. "  " .. pluginState.log[i] .. "\n"
     end
 
     return {
@@ -237,51 +226,37 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
             f:static_text {
                 title = statusText,
                 fill_horizontal = 1,
-                width_in_chars = 60,
-                height_in_lines = 20,
+                width_in_chars = 70,
+                height_in_lines = 25,
             },
             f:row {
                 f:push_button {
-                    title = pluginState.polling and "Stop Polling" or "Start Polling",
+                    title = pluginState.running and "Stop Server" or "Start Server",
                     action = function()
-                        if pluginState.polling then
-                            stopPolling()
+                        if pluginState.running then
+                            stopServer()
                         else
-                            startPolling()
+                            startServer()
                         end
                     end,
                 },
                 f:push_button {
-                    title = "Test Connection",
+                    title = "Show Status",
                     action = function()
-                        LrTasks.startAsyncTask(function()
-                            local response, headers = LrHttp.get(MCP_SERVER_URL .. "/health")
-
-                            if response then
-                                LrDialogs.message("Connection Test", "Successfully connected to MCP server!\n\n" .. response, "info")
-                            else
-                                LrDialogs.message("Connection Test", "Failed to connect to MCP server at " .. MCP_SERVER_URL, "critical")
-                            end
-                        end)
-                    end,
-                },
-                f:push_button {
-                    title = "Refresh Status",
-                    action = function()
-                        addLog("Refresh button clicked")
-
-                        -- Show full status
-                        local allLogs = ""
-                        for _, log in ipairs(pluginState.startupLog) do
-                            allLogs = allLogs .. log .. "\n"
+                        local lines = {
+                            "Running: " .. tostring(pluginState.running),
+                            "Request socket connected: " .. tostring(pluginState.receiveConnected),
+                            "Response socket connected: " .. tostring(pluginState.sendConnected),
+                            "Last event: " .. (pluginState.lastEvent or "Never"),
+                            "Requests processed: " .. pluginState.requestsProcessed,
+                            "",
+                            "Recent logs:",
+                        }
+                        local startIdx = math.max(1, #pluginState.log - 30)
+                        for i = startIdx, #pluginState.log do
+                            table.insert(lines, "  " .. pluginState.log[i])
                         end
-
-                        LrDialogs.message("Full Status",
-                            "Polling: " .. tostring(pluginState.polling) .. "\n" ..
-                            "Last Poll: " .. (pluginState.lastPoll or "Never") .. "\n" ..
-                            "Requests Processed: " .. pluginState.requestsProcessed .. "\n\n" ..
-                            "All logs:\n" .. allLogs,
-                            "info")
+                        LrDialogs.message("Lightroom MCP Status", table.concat(lines, "\n"), "info")
                     end,
                 },
             },
