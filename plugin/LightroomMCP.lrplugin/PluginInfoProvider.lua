@@ -11,6 +11,7 @@ local HandlerMetadata = require 'HandlerMetadata'
 local HandlerOrganization = require 'HandlerOrganization'
 local HandlerImport = require 'HandlerImport'
 local HandlerExport = require 'HandlerExport'
+local HandlerSelection = require 'HandlerSelection'
 
 local logger = LrLogger('LightroomMCP')
 logger:enable("logfile")
@@ -47,6 +48,7 @@ local DISPATCH = {
     set_rating = HandlerOrganization.setRating,
     import_photos = HandlerImport.importPhotos,
     export_photos = HandlerExport.exportPhotos,
+    get_selected_photos = HandlerSelection.getSelectedPhotos,
 }
 
 local SEND_WAIT_SECONDS = 5

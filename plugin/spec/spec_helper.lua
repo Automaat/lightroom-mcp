@@ -122,6 +122,7 @@ function M.fakeCatalog(opts)
 
     return {
         getAllPhotos = function() return photos end,
+        getTargetPhotos = function() return opts.targetPhotos or photos end,
         findPhotos = function(_, opts)
             local desc = opts and opts.searchDesc or {}
             local out = {}
