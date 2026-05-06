@@ -14,7 +14,7 @@ export interface ServerDeps {
 
 export function createMcpServer(deps: ServerDeps): Server {
   const server = new Server(
-    { name: "lightroom-mcp-server", version: "0.2.0" },
+    { name: "lightroom-mcp-server", version: "0.1.0" },
     { capabilities: { tools: {} } },
   );
 
