@@ -133,7 +133,8 @@ writes it to:
 - Windows: `%USERPROFILE%\.config\lightroom-mcp\token`
 
 The token authenticates every message from the MCP server to the plugin over
-the localhost socket. It is regenerated each time the plugin starts.
+the localhost socket. It is regenerated each time the server starts (i.e. each
+time **Start Server** is clicked, even while Lightroom remains open).
 
 **Lightroom's Lua sandbox has no `os.execute`**, so the plugin cannot call
 `chmod` itself. The file is created with whatever permissions your OS umask
