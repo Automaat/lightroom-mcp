@@ -1,0 +1,35 @@
+name: Lua Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugin/**'
+      - '.github/workflows/lua-lint.yml'
+      - '.luacheckrc'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'plugin/**'
+      - '.github/workflows/lua-lint.yml'
+      - '.luacheckrc'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  luacheck:
+    name: Lint Lightroom plugin (Lua)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install luacheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luarocks
+          sudo luarocks install luacheck
+
+      - name: Run luacheck
+        run: luacheck plugin --no-color --codes

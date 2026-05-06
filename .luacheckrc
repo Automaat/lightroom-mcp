@@ -1,0 +1,62 @@
+std = "lua54"
+
+-- Lightroom Classic SDK globals
+read_globals = {
+  "import",
+  "LrApplication",
+  "LrApplicationView",
+  "LrBinding",
+  "LrCatalog",
+  "LrColor",
+  "LrControlBar",
+  "LrDate",
+  "LrDevelopController",
+  "LrDevelopAdjustment",
+  "LrDialogs",
+  "LrErrors",
+  "LrExportSession",
+  "LrExportSettings",
+  "LrFileUtils",
+  "LrFtp",
+  "LrFunctionContext",
+  "LrFunctionInfo",
+  "LrHttp",
+  "LrLogger",
+  "LrMath",
+  "LrMD5",
+  "LrPasswords",
+  "LrPathUtils",
+  "LrPhoto",
+  "LrPluginInfo",
+  "LrPrefs",
+  "LrProgressScope",
+  "LrPublishService",
+  "LrRecursionGuard",
+  "LrRequire",
+  "LrSelection",
+  "LrShell",
+  "LrSocket",
+  "LrStringUtils",
+  "LrSystemInfo",
+  "LrTasks",
+  "LrUUID",
+  "LrView",
+  "LrXml",
+  "MAC_ENV",
+  "WIN_ENV",
+  "_PLUGIN",
+}
+
+-- Tune defaults: Lightroom plugin code typically uses long lines and
+-- keeps unused arguments for callback signature parity.
+max_line_length = 200
+unused_args = false
+self = false
+
+exclude_files = {
+  "plugin/LightroomMCP.lrplugin/JSON.lua",
+}
+
+files["plugin/LightroomMCP.lrplugin/Init.lua"] = {
+  globals = { "logger", "Lightroom" },
+}
