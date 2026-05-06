@@ -11,21 +11,20 @@ function PhotoLookup.resolveMany(catalog, photoIds)
         results[i] = { id = id, photo = nil }
     end
 
-    -- LrCatalog has no findPhotoByLocalIdentifier; build both indexes from
-    -- a single getAllPhotos pass. Skip the scan only if every id resolves
-    -- as a numeric local id AND we already have an index — but in practice
-    -- one scan is the cheapest correct path.
+    -- LrCatalog has no findPhotoByLocalIdentifier; one getAllPhotos pass
+    -- builds both id and path indexes. localIdentifier is numeric in
+    -- production but tests pass strings — normalize via tostring.
     local byLocalId = {}
     local byPath = {}
     for _, p in ipairs(catalog:getAllPhotos()) do
-        byLocalId[p.localIdentifier] = p
-        byPath[p:getRawMetadata('path')] = p
+        local lid = p.localIdentifier
+        if lid ~= nil then byLocalId[tostring(lid)] = p end
+        local path = p:getRawMetadata('path')
+        if path ~= nil then byPath[path] = p end
     end
 
     for i, id in ipairs(photoIds) do
-        local numId = tonumber(id)
-        local photo = nil
-        if numId then photo = byLocalId[numId] end
+        local photo = byLocalId[tostring(id)]
         if not photo then photo = byPath[id] end
         results[i].photo = photo
     end

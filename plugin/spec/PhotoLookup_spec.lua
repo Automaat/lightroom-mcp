@@ -9,18 +9,11 @@ local function fakePhoto(id, path)
 end
 
 local function fakeCatalog(photos)
-    local state = { getAllPhotosCalls = 0, findByIdCalls = 0 }
+    local state = { getAllPhotosCalls = 0 }
     local catalog = {
         getAllPhotos = function()
             state.getAllPhotosCalls = state.getAllPhotosCalls + 1
             return photos
-        end,
-        findPhotoByLocalIdentifier = function(_, id)
-            state.findByIdCalls = state.findByIdCalls + 1
-            for _, p in ipairs(photos) do
-                if p.localIdentifier == id then return p end
-            end
-            return nil
         end,
     }
     return catalog, state
@@ -35,7 +28,7 @@ end
 describe("PhotoLookup.resolveMany", function()
     before_each(loadModule)
 
-    it("resolves all-numeric ids without scanning the catalog", function()
+    it("resolves numeric localIdentifier ids in one catalog scan", function()
         local p1 = fakePhoto(1, "/a.jpg")
         local p2 = fakePhoto(2, "/b.jpg")
         local catalog, state = fakeCatalog({ p1, p2 })
@@ -44,11 +37,10 @@ describe("PhotoLookup.resolveMany", function()
 
         assert.are.equal(p1, r[1].photo)
         assert.are.equal(p2, r[2].photo)
-        assert.are.equal(0, state.getAllPhotosCalls)
-        assert.are.equal(2, state.findByIdCalls)
+        assert.are.equal(1, state.getAllPhotosCalls)
     end)
 
-    it("falls back to path lookup with exactly one scan", function()
+    it("resolves by path", function()
         local p1 = fakePhoto(1, "/a.jpg")
         local p2 = fakePhoto(2, "/b.jpg")
         local catalog, state = fakeCatalog({ p1, p2 })
@@ -60,7 +52,7 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(1, state.getAllPhotosCalls)
     end)
 
-    it("does one scan for a mixed batch (some by id, some by path)", function()
+    it("resolves a mixed batch (some by id, some by path)", function()
         local p1 = fakePhoto(1, "/a.jpg")
         local p2 = fakePhoto(2, "/b.jpg")
         local p3 = fakePhoto(3, "/c.jpg")
@@ -76,15 +68,13 @@ describe("PhotoLookup.resolveMany", function()
 
     it("returns nil for unknown ids without erroring", function()
         local p1 = fakePhoto(1, "/a.jpg")
-        local catalog, state = fakeCatalog({ p1 })
+        local catalog, _ = fakeCatalog({ p1 })
 
         local r = PhotoLookup.resolveMany(catalog, { "1", "999", "/missing.jpg" })
 
         assert.are.equal(p1, r[1].photo)
         assert.is_nil(r[2].photo)
         assert.is_nil(r[3].photo)
-        -- One scan triggered by the misses; not three.
-        assert.are.equal(1, state.getAllPhotosCalls)
     end)
 
     it("preserves input order in results", function()
@@ -101,10 +91,9 @@ describe("PhotoLookup.resolveMany", function()
     end)
 
     it("handles empty input", function()
-        local catalog, state = fakeCatalog({})
+        local catalog, _ = fakeCatalog({})
         local r = PhotoLookup.resolveMany(catalog, {})
         assert.are.equal(0, #r)
-        assert.are.equal(0, state.getAllPhotosCalls)
     end)
 end)
 
