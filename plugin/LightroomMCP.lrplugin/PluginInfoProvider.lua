@@ -12,6 +12,7 @@ local HandlerOrganization = require 'HandlerOrganization'
 local HandlerImport = require 'HandlerImport'
 local HandlerExport = require 'HandlerExport'
 local HandlerSelection = require 'HandlerSelection'
+local HandlerDevelop = require 'HandlerDevelop'
 
 local logger = LrLogger('LightroomMCP')
 logger:enable("logfile")
@@ -49,6 +50,10 @@ local DISPATCH = {
     import_photos = HandlerImport.importPhotos,
     export_photos = HandlerExport.exportPhotos,
     get_selected_photos = HandlerSelection.getSelectedPhotos,
+    list_develop_presets = HandlerDevelop.listDevelopPresets,
+    apply_develop_preset = HandlerDevelop.applyDevelopPreset,
+    copy_develop_settings = HandlerDevelop.copyDevelopSettings,
+    set_develop_settings = HandlerDevelop.setDevelopSettings,
 }
 
 local SEND_WAIT_SECONDS = 5
