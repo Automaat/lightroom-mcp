@@ -3,7 +3,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "search_photos",
-    description: "Search for photos in Lightroom catalog by criteria (paginated, default limit 100)",
+    description: "Search for photos in Lightroom catalog by criteria (paginated, default limit 100). Providing at least one filter (filename, keywords, rating, or date) significantly improves performance on large catalogs.",
     inputSchema: {
       type: "object",
       properties: {

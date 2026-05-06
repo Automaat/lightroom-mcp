@@ -52,7 +52,6 @@ Frame: line-delimited JSON, `\n` terminator on every message.
 - Auto-reconnect on disconnect (server side) and `:reconnect()` on socket timeout (plugin side)
 
 🚧 **Known issues**:
-- `search_photos` iterates `getAllPhotos()` — slow on large catalogs (~30s for several thousand photos). Needs catalog filter optimization.
 - "Reload Plug-in" doesn't kill the prior async task; sockets stay bound. Workaround: Quit Lightroom (Cmd+Q) and reopen.
 
 ## Prerequisites
@@ -254,7 +253,7 @@ Check Claude Desktop logs:
 Common issues:
 - **`failed to open localhost:58763` (or your configured port) after Reload Plug-in** — old async task still owns the port; Quit Lightroom (Cmd+Q) and reopen.
 - **MCP server reports "plugin not connected"** — click **Start Server** in Plug-in Manager; server reconnects automatically within 1s.
-- **Timeout errors** — handler may be stuck on a slow `getAllPhotos()` scan; check Show Status for `Last event` timestamp.
+- **Timeout errors** — handler may be scanning a large catalog without filters; add `rating`, `filename`, `keywords`, or date filters to narrow the search. Check Show Status for `Last event` timestamp.
 
 ## Troubleshooting
 
@@ -311,7 +310,7 @@ lightroom-mcp/
 ### Available Tools
 
 #### `search_photos`
-Search catalog by criteria.
+Search catalog by criteria (paginated, default limit 100).
 
 **Parameters:**
 - `filename` (string, optional): Partial filename match
@@ -319,8 +318,12 @@ Search catalog by criteria.
 - `rating` (number, optional): Star rating 0-5
 - `start_date` (string, optional): Date range start (YYYY-MM-DD)
 - `end_date` (string, optional): Date range end (YYYY-MM-DD)
+- `limit` (number, optional): Max photos to return (default 100)
+- `offset` (number, optional): Photos to skip for pagination (default 0)
 
-**Returns:** Array of photos with id, path, filename, rating, date
+**Returns:** `{ count, photos[], has_more, warning? }` — `warning` is set when no filters are applied (full-catalog scan).
+
+> **Performance note:** Always provide at least one filter (`rating`, `filename`, `keywords`, or date range). Without filters the plugin scans the full catalog via LR's internal SQL search engine; response includes a `warning` field in that case.
 
 #### `get_photo_metadata`
 Get detailed metadata for a photo.
