@@ -123,6 +123,42 @@ describe('PluginSocket', () => {
     expect(connectionCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('fires onConnect after connecting; first send goes out before later sends', async () => {
+    const received: string[] = [];
+    server = net.createServer((conn) => {
+      serverConn = conn;
+      let buf = '';
+      conn.setEncoding('utf8');
+      conn.on('data', (chunk: string) => {
+        buf += chunk;
+        let idx;
+        while ((idx = buf.indexOf('\n')) !== -1) {
+          received.push(buf.slice(0, idx));
+          buf = buf.slice(idx + 1);
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(port, '127.0.0.1', () => resolve()));
+
+    socket = new PluginSocket({
+      port,
+      label: 'test',
+      reconnectDelayMs: 50,
+      log: () => {},
+      onConnect: () => {
+        socket!.send('{"hello":"tok"}');
+      },
+    });
+    socket.connect();
+
+    await waitFor(() => socket!.isConnected());
+    expect(socket.send('{"id":"a","action":"ping"}')).toBe(true);
+
+    await waitFor(() => received.length >= 2);
+    expect(received[0]).toBe('{"hello":"tok"}');
+    expect(received[1]).toBe('{"id":"a","action":"ping"}');
+  });
+
   it('stop() prevents further reconnects', async () => {
     let connectionCount = 0;
     server = net.createServer((conn) => {

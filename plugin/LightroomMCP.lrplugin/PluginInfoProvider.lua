@@ -46,9 +46,19 @@ _G.LightroomMCP_State = {
     requestsProcessed = 0,
     lastEvent = nil,
     log = {},
+    token = nil,
+    authenticated = false,
 }
 
 local pluginState = _G.LightroomMCP_State
+
+local function tokenDir()
+    return LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), ".config")
+end
+
+local function tokenFilePath()
+    return LrPathUtils.child(LrPathUtils.child(tokenDir(), "lightroom-mcp"), "token")
+end
 
 local function addLog(msg)
     table.insert(pluginState.log, os.date("%H:%M:%S") .. " - " .. msg)
@@ -56,6 +66,30 @@ local function addLog(msg)
         table.remove(pluginState.log, 1)
     end
     logger:info(msg)
+end
+
+local function generateToken()
+    -- Two UUIDs (32 hex chars each after stripping dashes) → 256 bits of entropy.
+    local u1 = LrUUID.generateUUID():gsub("-", "")
+    local u2 = LrUUID.generateUUID():gsub("-", "")
+    return (u1 .. u2):lower()
+end
+
+local function writeTokenFile(token)
+    local dir = LrPathUtils.child(tokenDir(), "lightroom-mcp")
+    LrFileUtils.createAllDirectories(dir)
+    local path = tokenFilePath()
+    local fh, openErr = io.open(path, "w")
+    if not fh then
+        addLog("Token write failed: " .. tostring(openErr))
+        return false
+    end
+    fh:write(token)
+    fh:close()
+    if not WIN_ENV then
+        os.execute('chmod 600 "' .. path .. '"')
+    end
+    return true
 end
 
 local DISPATCH = {
@@ -105,6 +139,21 @@ local function handleRequest(message)
         return
     end
 
+    if not pluginState.authenticated then
+        if request.hello and request.hello == pluginState.token then
+            pluginState.authenticated = true
+            addLog("Client authenticated")
+        else
+            addLog("Auth failed - dropping client")
+            if pluginState.requestSocket then
+                pcall(function() pluginState.requestSocket:close() end)
+            end
+            pluginState.receiveConnected = false
+            pluginState.requestNeedsReconnect = true
+        end
+        return
+    end
+
     local id = request.id
     local action = request.action
     local params = request.params or {}
@@ -132,6 +181,12 @@ local function startServer()
         return
     end
 
+    pluginState.token = generateToken()
+    pluginState.authenticated = false
+    if writeTokenFile(pluginState.token) then
+        addLog("Token written to " .. tokenFilePath())
+    end
+
     pluginState.running = true
     addLog("Starting LrSocket servers")
 
@@ -143,6 +198,7 @@ local function startServer()
             mode = "receive",
             onConnected = function()
                 pluginState.receiveConnected = true
+                pluginState.authenticated = false
                 addLog("REQUEST socket connected")
             end,
             onMessage = function(_, message)
@@ -152,6 +208,7 @@ local function startServer()
             end,
             onClosed = function()
                 pluginState.receiveConnected = false
+                pluginState.authenticated = false
                 pluginState.requestNeedsReconnect = true
             end,
             onError = function(_, err)
@@ -163,6 +220,7 @@ local function startServer()
                     end
                 else
                     pluginState.receiveConnected = false
+                    pluginState.authenticated = false
                     pluginState.requestNeedsReconnect = true
                     addLog("REQUEST socket error: " .. errStr)
                 end
@@ -221,6 +279,8 @@ local function startServer()
         pluginState.responseSocket = nil
         pluginState.sendConnected = false
         pluginState.receiveConnected = false
+        pluginState.authenticated = false
+        pluginState.token = nil
     end)
 end
 
