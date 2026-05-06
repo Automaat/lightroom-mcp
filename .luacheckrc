@@ -61,5 +61,6 @@ ignore = { "211", "212", "213", "221" }
 
 exclude_files = {
   "plugin/LightroomMCP.lrplugin/JSON.lua",
+  "plugin/spec/",
 }
 

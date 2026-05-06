@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { PluginSocket } from "./plugin-socket.js";
 import { Dispatcher } from "./dispatcher.js";
+import { createCallToolHandler } from "./tool-handler.js";
 
 const REQUEST_PORT = 58763; // plugin listens here, server writes commands
 const RESPONSE_PORT = 58764; // plugin listens here, server reads responses
@@ -206,38 +207,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+const callTool = createCallToolHandler({
+  dispatcher,
+  isReady: () => requestSocket.isConnected() && responseSocket.isConnected(),
+});
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-
-  if (!requestSocket.isConnected() || !responseSocket.isConnected()) {
-    return {
-      content: [
-        {
-          type: "text",
-          text: "Lightroom plugin not connected. Open Lightroom and click 'Start Server' in Plug-in Manager.",
-        },
-      ],
-      isError: true,
-    };
-  }
-
-  try {
-    const resp = await dispatcher.call(name, args);
-    if (resp.error) {
-      return {
-        content: [{ type: "text", text: `Error: ${resp.error}` }],
-        isError: true,
-      };
-    }
-    return {
-      content: [{ type: "text", text: JSON.stringify(resp.result, null, 2) }],
-    };
-  } catch (e) {
-    return {
-      content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],
-      isError: true,
-    };
-  }
+  return callTool(name, args);
 });
 
 async function main() {

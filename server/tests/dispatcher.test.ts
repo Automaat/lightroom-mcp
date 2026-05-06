@@ -98,8 +98,9 @@ describe('Dispatcher', () => {
   });
 
   it('defaults params to empty object when undefined', async () => {
-    dispatcher.call('x', undefined).catch(() => {});
+    const p = dispatcher.call('x', undefined);
     const sentObj = JSON.parse(sent[0]);
     expect(sentObj.params).toEqual({});
+    await p.catch(() => {});
   });
 });
