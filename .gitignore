@@ -25,6 +25,7 @@ build/
 *.swp
 *.swo
 *~
+.claude/
 
 # Testing
 coverage/
