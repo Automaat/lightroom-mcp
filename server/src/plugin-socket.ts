@@ -6,6 +6,7 @@ export interface PluginSocketOptions {
   host?: string;
   reconnectDelayMs?: number;
   onLine?: (line: string) => void;
+  onConnect?: () => void;
   log?: (msg: string) => void;
 }
 
@@ -21,6 +22,7 @@ export class PluginSocket {
   private readonly label: string;
   private readonly reconnectDelayMs: number;
   private readonly onLine?: (line: string) => void;
+  private readonly onConnect?: () => void;
   private readonly log: (msg: string) => void;
 
   constructor(opts: PluginSocketOptions) {
@@ -29,6 +31,7 @@ export class PluginSocket {
     this.host = opts.host ?? "127.0.0.1";
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 1000;
     this.onLine = opts.onLine;
+    this.onConnect = opts.onConnect;
     this.log = opts.log ?? ((msg: string) => console.error(msg));
   }
 
@@ -41,6 +44,7 @@ export class PluginSocket {
     sock.on("connect", () => {
       this.connected = true;
       this.log(`[${this.label}] connected to ${this.host}:${this.port}`);
+      this.onConnect?.();
     });
 
     sock.on("data", (chunk: string) => {

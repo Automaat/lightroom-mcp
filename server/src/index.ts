@@ -9,12 +9,31 @@ import {
 import { PluginSocket } from "./plugin-socket.js";
 import { Dispatcher } from "./dispatcher.js";
 import { createCallToolHandler } from "./tool-handler.js";
+import { readToken, tokenFilePath } from "./token.js";
 
 const REQUEST_PORT = 58763; // plugin listens here, server writes commands
 const RESPONSE_PORT = 58764; // plugin listens here, server reads responses
 const REQUEST_TIMEOUT_MS = 30_000;
 
-const requestSocket = new PluginSocket({ port: REQUEST_PORT, label: "request" });
+try {
+  readToken();
+} catch (err) {
+  console.error((err as Error).message);
+  process.exit(1);
+}
+
+const requestSocket = new PluginSocket({
+  port: REQUEST_PORT,
+  label: "request",
+  onConnect: () => {
+    try {
+      const token = readToken();
+      requestSocket.send(JSON.stringify({ hello: token }));
+    } catch (err) {
+      console.error(`[request] token read failed: ${(err as Error).message}`);
+    }
+  },
+});
 const dispatcher = new Dispatcher({
   send: (line) => requestSocket.send(line),
   timeoutMs: REQUEST_TIMEOUT_MS,
@@ -310,6 +329,7 @@ async function main() {
   await server.connect(transport);
   console.error("Lightroom MCP server running on stdio");
   console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
+  console.error(`Token file: ${tokenFilePath()}`);
 }
 
 main().catch((error) => {
