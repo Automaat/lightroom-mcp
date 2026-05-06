@@ -36,8 +36,9 @@ export class Dispatcher {
     let resp: PluginResponse;
     try {
       resp = JSON.parse(line) as PluginResponse;
-    } catch {
-      this.log(`Bad JSON from plugin: ${line}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log(`Bad JSON from plugin (${msg}): ${line}`);
       return;
     }
     const p = this.pending.get(resp.id);
