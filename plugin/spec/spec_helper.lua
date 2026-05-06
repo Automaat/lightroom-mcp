@@ -142,8 +142,9 @@ function M.fakeCatalog(opts)
         withReadAccessDo = function(_, fn) fn() end,
         withWriteAccessDo = function(_, _, fn) fn() end,
         findPhotoByLocalIdentifier = function(_, id)
+            local target = tostring(id)
             for _, p in ipairs(photos) do
-                if p.localIdentifier == id then return p end
+                if tostring(p.localIdentifier) == target then return p end
             end
             return nil
         end,

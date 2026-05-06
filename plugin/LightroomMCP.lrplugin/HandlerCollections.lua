@@ -1,6 +1,8 @@
 local LrApplication = import 'LrApplication'
 local LrLogger = import 'LrLogger'
 
+local PhotoLookup = require 'PhotoLookup'
+
 local logger = LrLogger('LightroomMCP')
 
 local CollectionsHandler = {}
@@ -139,22 +141,10 @@ function CollectionsHandler.addToCollection(args)
 
         -- Find and add photos
         local photosToAdd = {}
-        for _, photoId in ipairs(args.photo_ids) do
-            local photo = catalog:findPhotoByLocalIdentifier(photoId)
-
-            if not photo then
-                -- Try finding by path
-                local allPhotos = catalog:getAllPhotos()
-                for _, p in ipairs(allPhotos) do
-                    if p:getRawMetadata('path') == photoId then
-                        photo = p
-                        break
-                    end
-                end
-            end
-
-            if photo then
-                table.insert(photosToAdd, photo)
+        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                table.insert(photosToAdd, entry.photo)
             end
         end
 

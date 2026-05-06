@@ -1,6 +1,8 @@
 local LrApplication = import 'LrApplication'
 local LrLogger = import 'LrLogger'
 
+local PhotoLookup = require 'PhotoLookup'
+
 local logger = LrLogger('LightroomMCP')
 
 local MetadataHandler = {}
@@ -14,18 +16,7 @@ function MetadataHandler.getPhotoMetadata(args)
     local photoData = nil
 
     catalog:withReadAccessDo(function()
-        local photo = catalog:findPhotoByLocalIdentifier(args.photo_id)
-
-        if not photo then
-            -- Try finding by path
-            local allPhotos = catalog:getAllPhotos()
-            for _, p in ipairs(allPhotos) do
-                if p:getRawMetadata('path') == args.photo_id then
-                    photo = p
-                    break
-                end
-            end
-        end
+        local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
 
         if not photo then
             error("Photo not found: " .. args.photo_id)
