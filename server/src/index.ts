@@ -222,6 +222,75 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["photo_ids", "destination"],
         },
       },
+      {
+        name: "list_develop_presets",
+        description: "List available Develop presets across all preset folders",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "apply_develop_preset",
+        description: "Apply a named Develop preset to one or more photos",
+        inputSchema: {
+          type: "object",
+          properties: {
+            photo_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of photo IDs or file paths",
+            },
+            preset_name: {
+              type: "string",
+              description: "Preset name (first match across folders)",
+            },
+          },
+          required: ["photo_ids", "preset_name"],
+        },
+      },
+      {
+        name: "copy_develop_settings",
+        description: "Copy Develop settings from one photo to others",
+        inputSchema: {
+          type: "object",
+          properties: {
+            source_id: {
+              type: "string",
+              description: "Source photo ID or file path",
+            },
+            target_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Target photo IDs or file paths",
+            },
+            settings: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional whitelist of SDK setting keys (e.g., Exposure2012, Contrast2012). Omit to copy all.",
+            },
+          },
+          required: ["source_id", "target_ids"],
+        },
+      },
+      {
+        name: "set_develop_settings",
+        description: "Set Develop settings directly on a photo. Keys use Lightroom SDK names (Exposure2012, WhiteBalance, Contrast2012, Highlights2012, Shadows2012, Whites2012, Blacks2012, Clarity2012, Vibrance, Saturation, etc.)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            photo_id: {
+              type: "string",
+              description: "Photo ID or file path",
+            },
+            settings: {
+              type: "object",
+              description: "SDK setting key/value pairs (e.g., {\"Exposure2012\": 0.5})",
+            },
+          },
+          required: ["photo_id", "settings"],
+        },
+      },
     ],
   };
 });
