@@ -9,11 +9,13 @@
 //
 // Prerequisites:
 //   - Lightroom Classic running with LightroomMCP plugin loaded
-//   - Plugin token written to TOKEN_PATH (created when plugin starts)
+//   - Plugin token written to TOKEN_PATH (created when Start Server is clicked)
 //
 // Env overrides (must match plugin Plug-in Manager settings):
 //   LIGHTROOM_MCP_REQUEST_PORT   default 58763
 //   LIGHTROOM_MCP_RESPONSE_PORT  default 58764
+//
+// Env overrides (probe/server reader only — no matching Plug-in Manager setting):
 //   LIGHTROOM_MCP_TOKEN_PATH     default ~/.config/lightroom-mcp/token
 //
 // Usage: node manual-test.mjs [action] [json-params]
