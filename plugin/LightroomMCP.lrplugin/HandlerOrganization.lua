@@ -1,6 +1,8 @@
 local LrApplication = import 'LrApplication'
 local LrLogger = import 'LrLogger'
 
+local PhotoLookup = require 'PhotoLookup'
+
 local logger = LrLogger('LightroomMCP')
 
 local OrganizationHandler = {}
@@ -14,20 +16,9 @@ function OrganizationHandler.setKeywords(args)
     local updatedCount = 0
 
     catalog:withWriteAccessDo("Set Keywords", function()
-        for _, photoId in ipairs(args.photo_ids) do
-            local photo = catalog:findPhotoByLocalIdentifier(photoId)
-
-            if not photo then
-                -- Try finding by path
-                local allPhotos = catalog:getAllPhotos()
-                for _, p in ipairs(allPhotos) do
-                    if p:getRawMetadata('path') == photoId then
-                        photo = p
-                        break
-                    end
-                end
-            end
-
+        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+        for _, entry in ipairs(resolved) do
+            local photo = entry.photo
             if photo then
                 -- Add keywords
                 if args.add_keywords and #args.add_keywords > 0 then
@@ -81,22 +72,10 @@ function OrganizationHandler.setRating(args)
     local updatedCount = 0
 
     catalog:withWriteAccessDo("Set Rating", function()
-        for _, photoId in ipairs(args.photo_ids) do
-            local photo = catalog:findPhotoByLocalIdentifier(photoId)
-
-            if not photo then
-                -- Try finding by path
-                local allPhotos = catalog:getAllPhotos()
-                for _, p in ipairs(allPhotos) do
-                    if p:getRawMetadata('path') == photoId then
-                        photo = p
-                        break
-                    end
-                end
-            end
-
-            if photo then
-                photo:setRawMetadata('rating', args.rating)
+        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                entry.photo:setRawMetadata('rating', args.rating)
                 updatedCount = updatedCount + 1
             end
         end
