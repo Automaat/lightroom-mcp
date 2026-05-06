@@ -61,8 +61,6 @@ ignore = { "211", "212", "213", "221" }
 
 exclude_files = {
   "plugin/LightroomMCP.lrplugin/JSON.lua",
+  "plugin/spec/",
 }
 
-files["plugin/LightroomMCP.lrplugin/Init.lua"] = {
-  globals = { "logger", "Lightroom" },
-}

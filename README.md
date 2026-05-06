@@ -21,55 +21,39 @@ MCP (Model Context Protocol) server for Adobe Lightroom Classic. Interact with y
 
 ## Architecture
 
-**⚠️ Architecture Limitation**: Lightroom's LrSocket API does **not support server sockets**. The socket only supports outbound connections.
-
-**Implemented Solution**: Reverse HTTP polling architecture where the MCP server runs an HTTP server on port 8765, and the Lightroom plugin polls it every 3 seconds for pending requests.
+The plugin opens **two `LrSocket.bind` servers** on localhost; the MCP server connects as a TCP client. Same dual-port pattern that MIDI2LR has used in production for years.
 
 ```
-┌─────────────┐    stdio    ┌──────────────────┐    HTTP Poll    ┌──────────────────┐
-│   Claude    │ ◄──────────► │   MCP Server     │ ◄──────────────► │ Lightroom Plugin │
-│   Desktop   │              │ (HTTP on :8765)  │    (Every 3s)    │  (HTTP Client)   │
-└─────────────┘              └──────────────────┘                  └──────────────────┘
-                                     │                                       │
-                                     │  Queue Request                        │
-                                     │──────────────────────────────────────►│
-                                     │                                       │
-                                     │                                       ▼
-                                     │                               Execute in Catalog
-                                     │                                       │
-                                     │◄──────────────────────────────────────│
-                                     │    Submit Response
-                                     │
-                                     └──► Return to Claude
+┌─────────────┐   stdio    ┌──────────────────┐   TCP :58763 →    ┌──────────────────┐
+│   Claude    │ ◄────────► │   MCP Server     │ ─────────────────► │ Lightroom Plugin │
+│   Desktop   │            │  (Node TCP)      │ ←───────────────── │   (LrSocket)     │
+└─────────────┘            └──────────────────┘   ← TCP :58764     └──────────────────┘
+                                                                            │
+                                                                            ▼
+                                                                  catalog:withReadAccessDo
 ```
 
 **How it works**:
-1. Claude calls an MCP tool via stdio
-2. MCP server queues the request with a unique ID
-3. Plugin polls `/poll-request` endpoint (every 3s)
-4. Plugin receives request and executes Lightroom catalog operation
-5. Plugin POSTs response to `/submit-response` endpoint
-6. MCP server waits for response (up to 30s) and returns to Claude
+1. Plugin binds two LrSockets: `:58763` in `mode='receive'` (request channel), `:58764` in `mode='send'` (response channel).
+2. MCP server opens persistent TCP connections to both, with auto-reconnect.
+3. Claude calls an MCP tool over stdio.
+4. Server writes `{"id","action","params"}\n` on the request socket.
+5. Plugin's `onMessage` decodes, dispatches to a `Handler*.lua` module under `LrTasks.startAsyncTask` (so `withReadAccessDo` can yield), encodes the result, writes `\n`-terminated to its send socket.
+6. Server matches response by `id` and returns to Claude.
+
+Frame: line-delimited JSON, `\n` terminator on every message.
 
 ## Current Status
 
-✅ **Working**:
-- MCP server with HTTP server on port 8765
-- Request/response queue system
-- Plugin polling loop (3-second intervals)
-- JSON request/response encoding
-- End-to-end communication flow
-- Mock data responses for testing
+✅ **Working** (verified end-to-end against real catalog):
+- LrSocket dual-port transport (no HTTP, no polling)
+- Real catalog ops via `LrApplication.activeCatalog()` + `withReadAccessDo`/`withWriteAccessDo`
+- All handler modules wired through a dispatch table
+- Auto-reconnect on disconnect (server side) and `:reconnect()` on socket timeout (plugin side)
 
-🚧 **In Progress**:
-- Real Lightroom catalog access (currently returns mock data)
-- Implementing all tool actions (search, metadata, collections, etc.)
-
-📋 **Next Steps**:
-- Implement actual catalog operations using LrApplication.activeCatalog()
-- Handle catalog access context properly (withReadAccessDo/withWriteAccessDo)
-- Add error handling and retry logic
-- Test with real photo catalog
+🚧 **Known issues**:
+- `search_photos` iterates `getAllPhotos()` — slow on large catalogs (~30s for several thousand photos). Needs catalog filter optimization.
+- "Reload Plug-in" doesn't kill the prior async task; sockets stay bound. Workaround: Quit Lightroom (Cmd+Q) and reopen.
 
 ## Prerequisites
 
@@ -102,10 +86,8 @@ mise run install
 2. Open Lightroom Classic
 3. Go to **File > Plug-in Manager**
 4. Click **Add** and select `LightroomMCP.lrplugin`
-5. Click **"Start Polling"** button in the plugin manager
-6. Verify plugin shows status as "Polling: true"
-
-The plugin will poll the MCP server's HTTP endpoint at `http://localhost:8765/poll-request` every 3 seconds.
+5. Click **"Start Server"** button in the plugin manager
+6. Click **"Show Status"** — both `Request socket` and `Response socket` should show `connected: true` once the MCP server connects
 
 ### 3. Build MCP Server
 
@@ -189,45 +171,20 @@ Export all photos with keyword "portfolio" to ~/Desktop/Portfolio as JPEGs at 20
 
 ## Testing
 
-### Test Integration Flow
+### Direct TCP probe (bypass MCP)
 
-With the MCP server running and Lightroom plugin polling:
-
-```bash
-# Test full request/response flow
-node test-full-flow.mjs
-```
-
-This will:
-1. Queue a test request via the debug endpoint
-2. Wait for the plugin to process it
-3. Verify the response was submitted
-4. Show timing and status
-
-### Manual Testing via Debug Endpoint
+`manual-test.mjs` opens raw TCP connections to plugin ports — useful for validating plugin dispatch without spinning up MCP.
 
 ```bash
-# Queue a test request
-curl -X POST http://localhost:8765/debug/queue-request \
-  -H "Content-Type: application/json" \
-  -d '{"action":"list_collections","params":{}}'
-
-# Check server status
-curl http://localhost:8765/health
-
-# Should show:
-# {
-#   "status": "ok",
-#   "pendingRequests": 0,    # Request was processed
-#   "pendingResponses": 1    # Response received
-# }
+# Stop the MCP server first (only one client per plugin port)
+node manual-test.mjs list_collections
+node manual-test.mjs search_photos '{"rating":5}'
 ```
 
 ### Check Plugin Status in Lightroom
 
-1. Go to **File > Plug-in Manager > Lightroom MCP**
-2. Click **"Refresh Status"** button
-3. View logs showing polling activity and processed requests
+1. **File > Plug-in Manager > Lightroom MCP**
+2. Click **"Show Status"** — pop-up shows socket state, requests processed, recent log lines
 
 ## Development
 
@@ -266,37 +223,18 @@ mise run dev
 
 1. Open Lightroom > **File > Plug-in Manager**
 2. Select "Lightroom MCP"
-3. Verify "Polling: true" in status
-4. Check "Last Poll" timestamp is recent (within 3s)
-5. Click "Refresh Status" to see detailed logs
+3. Click **"Show Status"** — popup shows socket state and recent logs
 
 ### View Logs
 
-Plugin logs viewable in Plugin Manager status panel or:
+Plugin logs viewable in the Show Status popup or:
 - macOS: `~/Documents/LrClassicLogs/LightroomMCP.log`
 
-### Test MCP Server
+### Verify Plugin is Listening
 
 ```bash
-# Check server health
-curl http://localhost:8765/health
-
-# Test connection from plugin perspective
-# (in Lightroom Plugin Manager, click "Test Connection")
-
-# Queue a manual test request
-curl -X POST http://localhost:8765/debug/queue-request \
-  -H "Content-Type: application/json" \
-  -d '{"action":"list_collections","params":{}}'
-```
-
-### Verify HTTP Server is Running
-
-```bash
-# Check port 8765 is listening
-lsof -i :8765
-
-# Should show node process for MCP server
+# Check ports 58763 and 58764 are bound by Adobe Lightroom
+lsof -nP -iTCP:58763 -iTCP:58764
 ```
 
 ### MCP Server Issues
@@ -305,10 +243,9 @@ Check Claude Desktop logs:
 - macOS: `~/Library/Logs/Claude/mcp*.log`
 
 Common issues:
-- **Server not starting**: Check Node.js version (22+ required)
-- **Port already in use**: Kill existing process on port 8765
-- **Plugin not polling**: Click "Start Polling" in Plugin Manager
-- **Timeout errors**: Ensure Lightroom is running and plugin is polling
+- **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port; Quit Lightroom (Cmd+Q) and reopen.
+- **MCP server reports "plugin not connected"** — click **Start Server** in Plug-in Manager; server reconnects automatically within 1s.
+- **Timeout errors** — handler may be stuck on a slow `getAllPhotos()` scan; check Show Status for `Last event` timestamp.
 
 ## Troubleshooting
 
@@ -320,9 +257,9 @@ Common issues:
 
 ### Connection Refused
 
-- Ensure Lightroom plugin is running
-- Check port 8765 is not in use: `lsof -i :8765`
-- Restart Lightroom
+- Ensure Lightroom is running and plugin shows **Start Server** clicked
+- Check ports 58763/58764 are bound: `lsof -nP -iTCP:58763 -iTCP:58764`
+- Quit + reopen Lightroom (NOT just Reload Plug-in) to release stale sockets
 
 ### Photos Not Found
 
@@ -335,38 +272,30 @@ Common issues:
 ```
 lightroom-mcp/
 ├── .mise.toml                # Tool version management
-├── PLAN.md                   # Implementation plan
 ├── README.md                 # This file
-├── test-full-flow.mjs        # Integration test script
-├── server/                   # TypeScript MCP server
+├── manual-test.mjs           # Direct TCP probe (bypass MCP)
+├── server/
 │   ├── package.json
 │   ├── tsconfig.json
 │   ├── src/
-│   │   └── index.ts          # Main MCP server with HTTP endpoints
-│   └── dist/
-│       └── index.js          # Compiled server (for Claude Desktop)
+│   │   ├── index.ts          # MCP stdio server + dispatch
+│   │   └── plugin-socket.ts  # Persistent TCP client w/ reconnect + line framing
+│   └── tests/
+│       ├── plugin-socket.test.ts
+│       └── tools.test.ts
 └── plugin/
     └── LightroomMCP.lrplugin/
-        ├── Info.lua              # Plugin metadata
-        ├── PluginInfoProvider.lua # Plugin UI and polling loop
-        └── JSON.lua              # JSON encoder/decoder
+        ├── Info.lua                # Plugin metadata
+        ├── PluginInfoProvider.lua  # LrSocket binds + dispatch + status UI
+        ├── JSON.lua                # JSON encoder/decoder
+        └── Handler*.lua            # One module per action group
 ```
 
 ### Key Files
 
-- **server/src/index.ts**: MCP server with:
-  - MCP stdio transport for Claude Desktop
-  - HTTP server on port 8765 with endpoints:
-    - `GET /poll-request` - Plugin polls for pending requests
-    - `POST /submit-response` - Plugin submits results
-    - `GET /health` - Server status
-    - `POST /debug/queue-request` - Manual testing endpoint
-
-- **plugin/.../PluginInfoProvider.lua**: Lightroom plugin with:
-  - Polling loop (every 3 seconds)
-  - Request execution (currently mock data)
-  - Response submission via HTTP POST
-  - Status UI with Start/Stop Polling buttons
+- **server/src/index.ts**: MCP stdio server. Maintains TCP clients to plugin sockets, routes tool calls by request id.
+- **server/src/plugin-socket.ts**: `PluginSocket` class — persistent TCP client with auto-reconnect and `\n`-delimited line framing.
+- **plugin/.../PluginInfoProvider.lua**: Binds two `LrSocket` servers, runs a monitor loop that calls `:reconnect()` when callbacks set the rebind flag. Dispatches `onMessage` JSON to `Handler*.lua` modules under `LrTasks.startAsyncTask`.
 
 ## API Reference
 
