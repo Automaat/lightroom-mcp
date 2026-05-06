@@ -252,8 +252,8 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                             "",
                             "Recent logs:",
                         }
-                        local startIdx = math.max(1, #pluginState.log - 30)
-                        for i = startIdx, #pluginState.log do
+                        local logStart = math.max(1, #pluginState.log - 30)
+                        for i = logStart, #pluginState.log do
                             table.insert(lines, "  " .. pluginState.log[i])
                         end
                         LrDialogs.message("Lightroom MCP Status", table.concat(lines, "\n"), "info")
