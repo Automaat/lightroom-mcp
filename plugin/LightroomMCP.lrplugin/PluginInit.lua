@@ -12,6 +12,9 @@ end
 
 if autoStart then
     LrTasks.startAsyncTask(function()
+        -- Brief yield so any prior-instance context cancel (from Reload
+        -- Plug-in) can flush and release ports before we try to bind them.
+        LrTasks.sleep(0.5)
         PluginInfoProvider.startServer()
     end)
 end

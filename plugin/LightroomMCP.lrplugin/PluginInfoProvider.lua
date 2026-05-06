@@ -58,6 +58,14 @@ if _G.LightroomMCP_State and _G.LightroomMCP_State.running then
     local old = _G.LightroomMCP_State
     logger:info("Reload detected - stopping previous server instance")
     old.running = false
+    -- Cancel the function context so LrSocket resources bound to it are
+    -- released before the new task tries to bind the same ports. Without
+    -- this the old task holds the ports until its next 0.2 s sleep tick,
+    -- causing the new LrSocket.bind to race and fail with "failed to open".
+    if old.taskContext then
+        pcall(function() old.taskContext:cancel() end)
+        old.taskContext = nil
+    end
     if old.requestSocket then
         pcall(function() old.requestSocket:close() end)
     end
@@ -78,6 +86,7 @@ if not _G.LightroomMCP_State then
         lastEvent = nil,
         log = {},
         token = nil,
+        taskContext = nil,
     }
 end
 
@@ -231,6 +240,27 @@ local function startServer()
     addLog("Starting LrSocket servers")
 
     LrFunctionContext.postAsyncTaskWithContext("LightroomMCPServer", function(context)
+        -- Expose context so reload detection can cancel it, which forces
+        -- LrSocket resources tied to this context to be released before
+        -- the new task attempts to bind the same ports.
+        pluginState.taskContext = context
+
+        context:addCleanupHandler(function()
+            addLog("Server task context cleanup")
+            if pluginState.requestSocket then
+                pcall(function() pluginState.requestSocket:close() end)
+            end
+            if pluginState.responseSocket then
+                pcall(function() pluginState.responseSocket:close() end)
+            end
+            pluginState.requestSocket = nil
+            pluginState.responseSocket = nil
+            pluginState.sendConnected = false
+            pluginState.receiveConnected = false
+            pluginState.token = nil
+            pluginState.taskContext = nil
+        end)
+
         local function bindRequest()
             return LrSocket.bind {
                 functionContext = context,
@@ -323,7 +353,7 @@ local function startServer()
         pluginState.responseSocket = bindResponse()
         addLog("RESPONSE bound on " .. responsePort)
 
-        while pluginState.running do
+        while pluginState.running and not context:isCancelled() do
             if pluginState.requestNeedsReconnect and pluginState.requestSocket then
                 pluginState.requestNeedsReconnect = false
                 pluginState.requestSocket:reconnect()
@@ -347,17 +377,7 @@ local function startServer()
         end
 
         addLog("Server loop exiting")
-        if pluginState.requestSocket then
-            pcall(function() pluginState.requestSocket:close() end)
-        end
-        if pluginState.responseSocket then
-            pcall(function() pluginState.responseSocket:close() end)
-        end
-        pluginState.requestSocket = nil
-        pluginState.responseSocket = nil
-        pluginState.sendConnected = false
-        pluginState.receiveConnected = false
-        pluginState.token = nil
+        -- Socket cleanup runs in context:addCleanupHandler above.
     end)
 end
 

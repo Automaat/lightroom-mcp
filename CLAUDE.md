@@ -55,7 +55,7 @@ Copy `plugin/LightroomMCP.lrplugin/` to:
 
 Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/LightroomMCP.log`.
 
-**Reload behaviour**: "Reload Plug-in" tears down old sockets via `_G.LightroomMCP_State` and rebinds within ~2s. If you still see "failed to open localhost:58763", the previous async task is wedged — quit Lightroom (Cmd+Q) and reopen.
+**Reload behaviour**: "Reload Plug-in" cancels the old task's `LrFunctionContext` (freeing its LrSocket ports) and starts fresh. PluginInit sleeps 0.5 s before binding so the context cancel can flush. Server is ready in ~1 s.
 
 ## Conventions
 
