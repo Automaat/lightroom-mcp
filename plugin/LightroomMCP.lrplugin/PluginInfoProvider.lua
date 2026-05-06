@@ -186,7 +186,11 @@ local function dispatchAction(request)
     if execOk then
         sendResponse({ id = id, result = resultOrErr })
     else
-        addLog("Handler error: " .. tostring(resultOrErr))
+        local errMsg = "Handler " .. action .. " error: " .. tostring(resultOrErr)
+        if os.getenv("LIGHTROOM_MCP_DEBUG") then
+            errMsg = errMsg .. "\n" .. debug.traceback()
+        end
+        addLog(errMsg)
         sendResponse({ id = id, error = tostring(resultOrErr) })
     end
 end
