@@ -10,12 +10,15 @@ import { PluginSocket } from "./plugin-socket.js";
 import { Dispatcher } from "./dispatcher.js";
 import { createCallToolHandler } from "./tool-handler.js";
 import { readToken, tokenFilePath } from "./token.js";
+import { requestPort, responsePort } from "./ports.js";
 
-const REQUEST_PORT = 58763; // plugin listens here, server writes commands
-const RESPONSE_PORT = 58764; // plugin listens here, server reads responses
 const REQUEST_TIMEOUT_MS = 30_000;
 
+let REQUEST_PORT: number;
+let RESPONSE_PORT: number;
 try {
+  REQUEST_PORT = requestPort();
+  RESPONSE_PORT = responsePort();
   readToken();
 } catch (err) {
   console.error((err as Error).message);

@@ -123,6 +123,15 @@ Replace `/Users/YOUR_USERNAME/` with your actual path.
 
 Restart Claude Desktop to load the MCP server.
 
+## Configuration
+
+Default ports: `58763` (request) / `58764` (response). To override (e.g. port conflict, multiple Lightroom instances), set both sides to matching values:
+
+- **Server**: env vars `LIGHTROOM_MCP_REQUEST_PORT` / `LIGHTROOM_MCP_RESPONSE_PORT` (set them in your Claude Desktop config under `env`, or in the shell that launches the server).
+- **Plugin**: open **File > Plug-in Manager > Lightroom MCP** and edit the **Request port** / **Response port** fields. Stop and Start the server for the change to take effect.
+
+Both sides must agree, otherwise the server cannot connect.
+
 ## Usage Examples
 
 ### Search Photos
@@ -243,7 +252,7 @@ Check Claude Desktop logs:
 - macOS: `~/Library/Logs/Claude/mcp*.log`
 
 Common issues:
-- **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port; Quit Lightroom (Cmd+Q) and reopen.
+- **`failed to open localhost:58763` (or your configured port) after Reload Plug-in** — old async task still owns the port; Quit Lightroom (Cmd+Q) and reopen.
 - **MCP server reports "plugin not connected"** — click **Start Server** in Plug-in Manager; server reconnects automatically within 1s.
 - **Timeout errors** — handler may be stuck on a slow `getAllPhotos()` scan; check Show Status for `Last event` timestamp.
 
