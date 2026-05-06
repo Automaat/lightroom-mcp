@@ -19,8 +19,21 @@ local HandlerDevelop = require 'HandlerDevelop'
 local logger = LrLogger('LightroomMCP')
 logger:enable("logfile")
 
-local REQUEST_PORT = 58763  -- plugin RECEIVES requests here (server in 'receive' mode)
-local RESPONSE_PORT = 58764 -- plugin SENDS responses here (server in 'send' mode)
+local DEFAULT_REQUEST_PORT = 58763
+local DEFAULT_RESPONSE_PORT = 58764
+
+local function validPort(n)
+    return type(n) == "number" and n == math.floor(n) and n >= 1 and n <= 65535
+end
+
+local function readPortPrefs()
+    local prefs = LrPrefs.prefsForPlugin()
+    local req = tonumber(prefs.requestPort)
+    local res = tonumber(prefs.responsePort)
+    if not validPort(req) then req = DEFAULT_REQUEST_PORT end
+    if not validPort(res) then res = DEFAULT_RESPONSE_PORT end
+    return req, res
+end
 
 -- State on _G so it survives "Reload Plug-in" within the same Lua state.
 -- The previous async task closes over this same table, so flipping its
@@ -187,6 +200,10 @@ local function startServer()
         addLog("Token written to " .. tokenFilePath())
     end
 
+    local requestPort, responsePort = readPortPrefs()
+    pluginState.requestPort = requestPort
+    pluginState.responsePort = responsePort
+
     pluginState.running = true
     addLog("Starting LrSocket servers")
 
@@ -194,7 +211,7 @@ local function startServer()
         pluginState.requestSocket = LrSocket.bind {
             functionContext = context,
             plugin = _PLUGIN,
-            port = REQUEST_PORT,
+            port = requestPort,
             mode = "receive",
             onConnected = function()
                 pluginState.receiveConnected = true
@@ -226,12 +243,12 @@ local function startServer()
                 end
             end,
         }
-        addLog("REQUEST bound on " .. REQUEST_PORT)
+        addLog("REQUEST bound on " .. requestPort)
 
         pluginState.responseSocket = LrSocket.bind {
             functionContext = context,
             plugin = _PLUGIN,
-            port = RESPONSE_PORT,
+            port = responsePort,
             mode = "send",
             onConnected = function()
                 pluginState.sendConnected = true
@@ -254,7 +271,7 @@ local function startServer()
                 end
             end,
         }
-        addLog("RESPONSE bound on " .. RESPONSE_PORT)
+        addLog("RESPONSE bound on " .. responsePort)
 
         while pluginState.running do
             if pluginState.requestNeedsReconnect and pluginState.requestSocket then
@@ -310,14 +327,29 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
         prefs.autoStartServer = value
     end)
 
+    local cfgRequestPort, cfgResponsePort = readPortPrefs()
+    propertyTable.requestPort = cfgRequestPort
+    propertyTable.responsePort = cfgResponsePort
+    propertyTable:addObserver('requestPort', function(_, _, value)
+        local n = tonumber(value)
+        if validPort(n) then prefs.requestPort = n end
+    end)
+    propertyTable:addObserver('responsePort', function(_, _, value)
+        local n = tonumber(value)
+        if validPort(n) then prefs.responsePort = n end
+    end)
+
+    local activeRequest = pluginState.requestPort or cfgRequestPort
+    local activeResponse = pluginState.responsePort or cfgResponsePort
+
     local statusText = "=== Lightroom MCP Status ===\n\n"
     statusText = statusText .. "Running: " .. tostring(pluginState.running) .. "\n"
     statusText = statusText .. "Request socket connected: " .. tostring(pluginState.receiveConnected) .. "\n"
     statusText = statusText .. "Response socket connected: " .. tostring(pluginState.sendConnected) .. "\n"
     statusText = statusText .. "Last event: " .. (pluginState.lastEvent or "Never") .. "\n"
     statusText = statusText .. "Requests processed: " .. pluginState.requestsProcessed .. "\n"
-    statusText = statusText .. "Request port: " .. REQUEST_PORT .. " (mode=receive)\n"
-    statusText = statusText .. "Response port: " .. RESPONSE_PORT .. " (mode=send)\n"
+    statusText = statusText .. "Request port: " .. activeRequest .. " (mode=receive)\n"
+    statusText = statusText .. "Response port: " .. activeResponse .. " (mode=send)\n"
     statusText = statusText .. "\nRecent logs:\n"
     local startIdx = math.max(1, #pluginState.log - 15)
     for i = startIdx, #pluginState.log do
@@ -336,6 +368,34 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
             f:checkbox {
                 title = "Auto-start server on Lightroom launch",
                 value = LrView.bind('autoStartServer'),
+            },
+            f:row {
+                f:static_text { title = "Request port:", width = 110 },
+                f:edit_text {
+                    value = LrView.bind('requestPort'),
+                    width_in_chars = 7,
+                    precision = 0,
+                    min = 1,
+                    max = 65535,
+                },
+                f:static_text { title = "(default 58763)" },
+            },
+            f:row {
+                f:static_text { title = "Response port:", width = 110 },
+                f:edit_text {
+                    value = LrView.bind('responsePort'),
+                    width_in_chars = 7,
+                    precision = 0,
+                    min = 1,
+                    max = 65535,
+                },
+                f:static_text { title = "(default 58764)" },
+            },
+            f:static_text {
+                title = "Port changes apply on next Start. Server env vars must match: LIGHTROOM_MCP_REQUEST_PORT / LIGHTROOM_MCP_RESPONSE_PORT.",
+                fill_horizontal = 1,
+                width_in_chars = 70,
+                height_in_lines = 2,
             },
             f:row {
                 f:push_button {

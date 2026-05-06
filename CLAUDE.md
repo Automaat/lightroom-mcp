@@ -13,8 +13,8 @@ MCP server bridging Claude to Adobe Lightroom Classic.
 
 Plugin opens **two LrSocket binds** as servers; MCP server connects to both.
 
-- Plugin :58763 in `mode='receive'` — server writes line-delimited JSON requests
-- Plugin :58764 in `mode='send'` — server reads line-delimited JSON responses
+- Plugin :58763 (default) in `mode='receive'` — server writes line-delimited JSON requests
+- Plugin :58764 (default) in `mode='send'` — server reads line-delimited JSON responses
 - Frame: `\n` terminator on every message (LrSocket buffers until newline)
 - Plugin allows **one client per port at a time**. MCP server holds a persistent connection.
 - `LrSocket.bind` in `mode='receive'` has a 10s no-client timeout that fires `onError`. Plugin auto-calls `:reconnect()` from a monitor loop in response. Reconnect storms are prevented by setting flags in callbacks and acting on them in the loop (never `:reconnect()` synchronously from `onError`).
@@ -62,4 +62,4 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 - TS strict mode on. ESM imports must include `.js` extension (NodeNext).
 - New Lua handlers: add file under `plugin/LightroomMCP.lrplugin/Handler*.lua`, register in `DISPATCH` table in `PluginInfoProvider.lua`, declare any new LR globals in `.luacheckrc`.
 - New MCP tool: add schema in `server/src/index.ts` `ListToolsRequestSchema` handler **and** add a `DISPATCH` entry in `PluginInfoProvider.lua`.
-- Ports `58763` (request) and `58764` (response) are hardcoded both sides — change in lockstep.
+- Default ports `58763` (request) / `58764` (response). Server overrides via env vars `LIGHTROOM_MCP_REQUEST_PORT` / `LIGHTROOM_MCP_RESPONSE_PORT` (parsed in `server/src/ports.ts`); plugin overrides via Plug-in Manager fields stored in `LrPrefs` (`requestPort` / `responsePort`). Both sides must agree — change in lockstep.
