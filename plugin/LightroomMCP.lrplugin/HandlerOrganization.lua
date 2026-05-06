@@ -71,11 +71,15 @@ function OrganizationHandler.setRating(args)
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
 
+    -- LrSDK rejects literal 0 on the rating field; nil means "no rating".
+    local ratingValue = args.rating
+    if ratingValue == 0 then ratingValue = nil end
+
     catalog:withWriteAccessDo("Set Rating", function()
         local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, entry in ipairs(resolved) do
             if entry.photo then
-                entry.photo:setRawMetadata('rating', args.rating)
+                entry.photo:setRawMetadata('rating', ratingValue)
                 updatedCount = updatedCount + 1
             end
         end

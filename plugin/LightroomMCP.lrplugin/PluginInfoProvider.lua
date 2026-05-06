@@ -5,6 +5,9 @@ local LrFunctionContext = import 'LrFunctionContext'
 local LrSocket = import 'LrSocket'
 local LrPrefs = import 'LrPrefs'
 local LrView = import 'LrView'
+local LrUUID = import 'LrUUID'
+local LrPathUtils = import 'LrPathUtils'
+local LrFileUtils = import 'LrFileUtils'
 
 local JSON = require 'JSON'
 local HandlerSearch = require 'HandlerSearch'
@@ -22,6 +25,14 @@ logger:enable("logfile")
 local DEFAULT_REQUEST_PORT = 58763
 local DEFAULT_RESPONSE_PORT = 58764
 
+-- LrSocket fires these on its accept-loop when no client is attached yet.
+-- Both are benign listen-side states, not real failures.
+local function isNoClientError(errStr)
+    if errStr == "timeout" then return true end
+    if errStr:find("failed to open", 1, true) then return true end
+    return false
+end
+
 local function validPort(n)
     return type(n) == "number" and n == math.floor(n) and n >= 1 and n <= 65535
 end
@@ -36,9 +47,14 @@ local function readPortPrefs()
 end
 
 -- State on _G so it survives "Reload Plug-in" within the same Lua state.
--- The previous async task closes over this same table, so flipping its
--- `running` flag here makes the old monitor loop exit on its next tick.
+-- This module body executes BOTH when PluginInit requires it AND when
+-- Lr loads it as the InfoProvider, so it can run twice in quick
+-- succession. We must not blow away an existing state on the second
+-- load, otherwise we end up with two pluginState tables, two LrSocket
+-- binds, two tokens, and connections land on whichever listener the
+-- kernel hands the accept to — usually the wrong one.
 if _G.LightroomMCP_State and _G.LightroomMCP_State.running then
+    -- True Reload Plug-in of a running server: tear down the old loop.
     local old = _G.LightroomMCP_State
     logger:info("Reload detected - stopping previous server instance")
     old.running = false
@@ -48,20 +64,22 @@ if _G.LightroomMCP_State and _G.LightroomMCP_State.running then
     if old.responseSocket then
         pcall(function() old.responseSocket:close() end)
     end
+    _G.LightroomMCP_State = nil
 end
 
-_G.LightroomMCP_State = {
-    running = false,
-    requestSocket = nil,
-    responseSocket = nil,
-    sendConnected = false,
-    receiveConnected = false,
-    requestsProcessed = 0,
-    lastEvent = nil,
-    log = {},
-    token = nil,
-    authenticated = false,
-}
+if not _G.LightroomMCP_State then
+    _G.LightroomMCP_State = {
+        running = false,
+        requestSocket = nil,
+        responseSocket = nil,
+        sendConnected = false,
+        receiveConnected = false,
+        requestsProcessed = 0,
+        lastEvent = nil,
+        log = {},
+        token = nil,
+    }
+end
 
 local pluginState = _G.LightroomMCP_State
 
@@ -99,9 +117,9 @@ local function writeTokenFile(token)
     end
     fh:write(token)
     fh:close()
-    if not WIN_ENV then
-        os.execute('chmod 600 "' .. path .. '"')
-    end
+    -- Lightroom's Lua sandbox has no os.execute; skip chmod. File sits in
+    -- ~/.config/lightroom-mcp/ which is user-private on macOS. Token only
+    -- gates a localhost socket, so threat is local-user only.
     return true
 end
 
@@ -122,7 +140,12 @@ local DISPATCH = {
     set_develop_settings = HandlerDevelop.setDevelopSettings,
 }
 
-local SEND_WAIT_SECONDS = 5
+-- Generous wait so the very first response after handshake doesn't get
+-- dropped while LrSocket is still settling sendConnected on the response
+-- side. Must stay below the server's dispatcher timeout (30s) so a real
+-- send-side outage still surfaces as a server-side timeout, not silent
+-- success.
+local SEND_WAIT_SECONDS = 25
 
 local function sendResponse(response)
     local waited = 0
@@ -143,30 +166,7 @@ local function sendResponse(response)
     pluginState.requestsProcessed = pluginState.requestsProcessed + 1
 end
 
-local function handleRequest(message)
-    pluginState.lastEvent = os.date("%H:%M:%S")
-
-    local parsedOk, request = pcall(function() return JSON:decode(message) end)
-    if not parsedOk or type(request) ~= "table" then
-        addLog("JSON decode failed: " .. tostring(message))
-        return
-    end
-
-    if not pluginState.authenticated then
-        if request.hello and request.hello == pluginState.token then
-            pluginState.authenticated = true
-            addLog("Client authenticated")
-        else
-            addLog("Auth failed - dropping client")
-            if pluginState.requestSocket then
-                pcall(function() pluginState.requestSocket:close() end)
-            end
-            pluginState.receiveConnected = false
-            pluginState.requestNeedsReconnect = true
-        end
-        return
-    end
-
+local function dispatchAction(request)
     local id = request.id
     local action = request.action
     local params = request.params or {}
@@ -188,6 +188,30 @@ local function handleRequest(message)
     end
 end
 
+-- Runs SYNCHRONOUSLY in onMessage. Every request must carry the current
+-- token in `hello`; we authenticate per-message so connection-state
+-- races (reload, dual-instance, reconnect) can't desync auth from the
+-- live token.
+local function consumeMessage(message)
+    pluginState.lastEvent = os.date("%H:%M:%S")
+
+    local parsedOk, request = pcall(function() return JSON:decode(message) end)
+    if not parsedOk or type(request) ~= "table" then
+        addLog("JSON decode failed: " .. tostring(message))
+        return nil
+    end
+
+    if not pluginState.token or request.hello ~= pluginState.token then
+        -- Drop silently. We CANNOT call sendResponse here: onMessage runs
+        -- in a non-yielding context and sendResponse uses LrTasks.sleep.
+        -- Server will time out, which is correct behaviour for auth fail.
+        addLog("Auth failed (token mismatch) id=" .. tostring(request.id))
+        return nil
+    end
+
+    return request
+end
+
 local function startServer()
     if pluginState.running then
         addLog("Already running")
@@ -195,7 +219,6 @@ local function startServer()
     end
 
     pluginState.token = generateToken()
-    pluginState.authenticated = false
     if writeTokenFile(pluginState.token) then
         addLog("Token written to " .. tokenFilePath())
     end
@@ -208,69 +231,96 @@ local function startServer()
     addLog("Starting LrSocket servers")
 
     LrFunctionContext.postAsyncTaskWithContext("LightroomMCPServer", function(context)
-        pluginState.requestSocket = LrSocket.bind {
-            functionContext = context,
-            plugin = _PLUGIN,
-            port = requestPort,
-            mode = "receive",
-            onConnected = function()
-                pluginState.receiveConnected = true
-                pluginState.authenticated = false
-                addLog("REQUEST socket connected")
-            end,
-            onMessage = function(_, message)
-                LrTasks.startAsyncTask(function()
-                    handleRequest(message)
-                end)
-            end,
-            onClosed = function()
-                pluginState.receiveConnected = false
-                pluginState.authenticated = false
-                pluginState.requestNeedsReconnect = true
-            end,
-            onError = function(_, err)
-                local errStr = tostring(err)
-                if errStr == "timeout" then
-                    -- listen socket timeout. Only reconnect if no active client.
-                    if not pluginState.receiveConnected then
-                        pluginState.requestNeedsReconnect = true
-                    end
-                else
-                    pluginState.receiveConnected = false
-                    pluginState.authenticated = false
-                    pluginState.requestNeedsReconnect = true
-                    addLog("REQUEST socket error: " .. errStr)
-                end
-            end,
-        }
-        addLog("REQUEST bound on " .. requestPort)
-
-        pluginState.responseSocket = LrSocket.bind {
-            functionContext = context,
-            plugin = _PLUGIN,
-            port = responsePort,
-            mode = "send",
-            onConnected = function()
-                pluginState.sendConnected = true
-                addLog("RESPONSE socket connected")
-            end,
-            onClosed = function()
-                pluginState.sendConnected = false
-                pluginState.responseNeedsReconnect = true
-            end,
-            onError = function(_, err)
-                local errStr = tostring(err)
-                if errStr == "timeout" then
-                    if not pluginState.sendConnected then
-                        pluginState.responseNeedsReconnect = true
-                    end
-                else
+        local function bindRequest()
+            return LrSocket.bind {
+                functionContext = context,
+                plugin = _PLUGIN,
+                port = requestPort,
+                mode = "receive",
+                onConnected = function()
+                    pluginState.receiveConnected = true
+                    -- New request client = new MCP session. Force a
+                    -- response-side rebind so the freshly-bound listener
+                    -- accepts THIS client's response-port TCP. LrSocket
+                    -- send-mode doesn't reliably notice client disconnect,
+                    -- so without this `sendConnected` stays true pointing
+                    -- at the prior client and :send() writes to the void.
                     pluginState.sendConnected = false
-                    pluginState.responseNeedsReconnect = true
-                    addLog("RESPONSE socket error: " .. errStr)
-                end
-            end,
-        }
+                    pluginState.responseNeedsRebind = true
+                    addLog("REQUEST socket connected")
+                end,
+                onMessage = function(_, message)
+                    local request = consumeMessage(message)
+                    if request then
+                        LrTasks.startAsyncTask(function()
+                            dispatchAction(request)
+                        end)
+                    end
+                end,
+                onClosed = function()
+                    pluginState.receiveConnected = false
+                    pluginState.requestNeedsReconnect = true
+                end,
+                onError = function(_, err)
+                    local errStr = tostring(err)
+                    if isNoClientError(errStr) then
+                        if not pluginState.receiveConnected then
+                            pluginState.requestNeedsReconnect = true
+                        end
+                    else
+                        pluginState.receiveConnected = false
+                        pluginState.requestNeedsReconnect = true
+                        addLog("REQUEST socket error: " .. errStr)
+                    end
+                end,
+            }
+        end
+
+        -- Each rebind bumps a generation. Old-listener callbacks compare
+        -- their captured gen to the live one and ignore themselves if
+        -- stale. Without this, an onError/onClosed from the just-closed
+        -- listener can flag rebind AGAIN immediately after we just
+        -- finished rebinding, looping us out of the new client.
+        pluginState.responseGen = 0
+
+        local function bindResponse()
+            pluginState.responseGen = pluginState.responseGen + 1
+            local myGen = pluginState.responseGen
+            local function isLive() return pluginState.responseGen == myGen end
+            return LrSocket.bind {
+                functionContext = context,
+                plugin = _PLUGIN,
+                port = responsePort,
+                mode = "send",
+                onConnected = function()
+                    if not isLive() then return end
+                    pluginState.sendConnected = true
+                    addLog("RESPONSE socket connected")
+                end,
+                onClosed = function()
+                    if not isLive() then return end
+                    pluginState.sendConnected = false
+                    pluginState.responseNeedsRebind = true
+                end,
+                onError = function(_, err)
+                    if not isLive() then return end
+                    local errStr = tostring(err)
+                    if isNoClientError(errStr) then
+                        if not pluginState.sendConnected then
+                            pluginState.responseNeedsReconnect = true
+                        end
+                    else
+                        pluginState.sendConnected = false
+                        pluginState.responseNeedsRebind = true
+                        addLog("RESPONSE socket error: " .. errStr)
+                    end
+                end,
+            }
+        end
+
+        pluginState.requestSocket = bindRequest()
+        addLog("REQUEST bound on " .. requestPort)
+        pluginState.responseSocket = bindResponse()
         addLog("RESPONSE bound on " .. responsePort)
 
         while pluginState.running do
@@ -278,7 +328,18 @@ local function startServer()
                 pluginState.requestNeedsReconnect = false
                 pluginState.requestSocket:reconnect()
             end
-            if pluginState.responseNeedsReconnect and pluginState.responseSocket then
+            -- Response socket has two recovery paths:
+            -- - rebind: full close+rebind for true client disconnect
+            -- - reconnect: cheap reconnect for listen-side timeouts
+            if pluginState.responseNeedsRebind then
+                if pluginState.responseSocket then
+                    pcall(function() pluginState.responseSocket:close() end)
+                end
+                pluginState.responseSocket = bindResponse()
+                pluginState.responseNeedsRebind = false
+                pluginState.responseNeedsReconnect = false
+                addLog("RESPONSE rebound on " .. responsePort)
+            elseif pluginState.responseNeedsReconnect and pluginState.responseSocket then
                 pluginState.responseNeedsReconnect = false
                 pluginState.responseSocket:reconnect()
             end
@@ -296,7 +357,6 @@ local function startServer()
         pluginState.responseSocket = nil
         pluginState.sendConnected = false
         pluginState.receiveConnected = false
-        pluginState.authenticated = false
         pluginState.token = nil
     end)
 end
@@ -371,7 +431,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
             },
             f:row {
                 f:static_text { title = "Request port:", width = 110 },
-                f:edit_text {
+                f:edit_field {
                     value = LrView.bind('requestPort'),
                     width_in_chars = 7,
                     precision = 0,
@@ -382,7 +442,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
             },
             f:row {
                 f:static_text { title = "Response port:", width = 110 },
-                f:edit_text {
+                f:edit_field {
                     value = LrView.bind('responsePort'),
                     width_in_chars = 7,
                     precision = 0,

@@ -6,15 +6,34 @@
 //   node manual-test.mjs list_collections
 //   node manual-test.mjs search_photos '{"rating":5}'
 
+import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 
-const REQUEST_PORT = 58763;
-const RESPONSE_PORT = 58764;
+const REQUEST_PORT = Number(process.env.LIGHTROOM_MCP_REQUEST_PORT ?? 58763);
+const RESPONSE_PORT = Number(process.env.LIGHTROOM_MCP_RESPONSE_PORT ?? 58764);
+const TOKEN_PATH =
+  process.env.LIGHTROOM_MCP_TOKEN_PATH ??
+  path.join(os.homedir(), ".config", "lightroom-mcp", "token");
 const TIMEOUT_MS = 30_000;
 
 const action = process.argv[2] ?? "list_collections";
 const params = process.argv[3] ? JSON.parse(process.argv[3]) : {};
 const id = `manual_${Date.now()}`;
+
+let token;
+try {
+  token = fs.readFileSync(TOKEN_PATH, "utf8").trim();
+} catch (err) {
+  console.error(`token read failed at ${TOKEN_PATH}: ${err.message}`);
+  console.error("start the plugin in Lightroom first");
+  process.exit(1);
+}
+if (!token) {
+  console.error(`token file ${TOKEN_PATH} is empty`);
+  process.exit(1);
+}
 
 function connect(port, label) {
   return new Promise((resolve, reject) => {
@@ -54,6 +73,8 @@ const responsePromise = new Promise((resolve, reject) => {
   });
   respSock.on("close", () => reject(new Error("response socket closed")));
 });
+
+reqSock.write(JSON.stringify({ hello: token }) + "\n");
 
 const payload = JSON.stringify({ id, action, params });
 console.log(`>>> ${payload}`);

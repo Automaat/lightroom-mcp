@@ -36,11 +36,14 @@ function ExportHandler.exportPhotos(args)
             error("No photos found to export")
         end
 
-        -- Prepare export settings
+        -- destinationType=specificFolder makes LR honour
+        -- LR_export_destinationPathPrefix; sourceFolder ignores it and
+        -- writes next to the original. LR_format is set in the
+        -- format-specific block below.
         local exportSettings = {
-            LR_export_destinationType = 'sourceFolder',
+            LR_export_destinationType = 'specificFolder',
             LR_export_destinationPathPrefix = args.destination,
-            LR_format = args.format or 'JPEG',
+            LR_export_useSubfolder = false,
             LR_jpeg_quality = args.quality or 90,
         }
 

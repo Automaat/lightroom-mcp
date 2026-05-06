@@ -17,6 +17,7 @@ describe('Dispatcher', () => {
         sent.push(line);
         return true;
       },
+      getToken: () => 'test-token',
       timeoutMs: 1000,
       log: (msg) => logs.push(msg),
     });

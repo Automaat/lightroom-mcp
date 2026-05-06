@@ -12,6 +12,7 @@ interface PendingResponse {
 
 export interface DispatcherOptions {
   send: (line: string) => boolean;
+  getToken: () => string;
   timeoutMs?: number;
   log?: (msg: string) => void;
 }
@@ -21,10 +22,12 @@ export class Dispatcher {
   private idCounter = 0;
   private readonly timeoutMs: number;
   private readonly send: (line: string) => boolean;
+  private readonly getToken: () => string;
   private readonly log: (msg: string) => void;
 
   constructor(opts: DispatcherOptions) {
     this.send = opts.send;
+    this.getToken = opts.getToken;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
     this.log = opts.log ?? ((msg: string) => console.error(msg));
   }
@@ -58,11 +61,22 @@ export class Dispatcher {
       this.pending.set(id, { resolve, reject, timer });
     });
 
-    const sent = this.send(JSON.stringify({ id, action, params: params ?? {} }));
-    if (!sent) {
+    const cleanup = () => {
       const p = this.pending.get(id);
       if (p) clearTimeout(p.timer);
       this.pending.delete(id);
+    };
+
+    let payload: string;
+    try {
+      payload = JSON.stringify({ hello: this.getToken(), id, action, params: params ?? {} });
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
+
+    if (!this.send(payload)) {
+      cleanup();
       throw new Error("Failed to send request to plugin (socket dropped)");
     }
 

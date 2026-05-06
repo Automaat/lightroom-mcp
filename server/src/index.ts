@@ -28,17 +28,12 @@ try {
 const requestSocket = new PluginSocket({
   port: REQUEST_PORT,
   label: "request",
-  onConnect: () => {
-    try {
-      const token = readToken();
-      requestSocket.send(JSON.stringify({ hello: token }));
-    } catch (err) {
-      console.error(`[request] token read failed: ${(err as Error).message}`);
-    }
-  },
 });
 const dispatcher = new Dispatcher({
   send: (line) => requestSocket.send(line),
+  // Re-read on every call so a token rotation by the plugin (e.g. server
+  // restart in Plug-in Manager) is picked up without bouncing this process.
+  getToken: () => readToken(),
   timeoutMs: REQUEST_TIMEOUT_MS,
 });
 const responseSocket = new PluginSocket({
