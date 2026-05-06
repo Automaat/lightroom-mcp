@@ -25,6 +25,7 @@ describe("HandlerSearch.searchPhotos", function()
         local result = Handler.searchPhotos({})
         assert.are.equal(3, result.count)
         assert.are.equal(3, #result.photos)
+        assert.is_false(result.has_more)
     end)
 
     it("filters by rating", function()
@@ -51,5 +52,62 @@ describe("HandlerSearch.searchPhotos", function()
         local result = Handler.searchPhotos({ rating = 1 })
         assert.are.equal(0, result.count)
         assert.are.same({}, result.photos)
+        assert.is_false(result.has_more)
+    end)
+end)
+
+describe("HandlerSearch.searchPhotos pagination", function()
+    local Handler
+
+    before_each(function()
+        local photos = {}
+        for i = 1, 250 do
+            table.insert(photos, helper.fakePhoto({
+                id = tostring(i),
+                path = "/p/" .. i .. ".jpg",
+                fileName = "p" .. i .. ".jpg",
+                rating = 0,
+                dateTimeOriginal = "2024-06-01",
+            }))
+        end
+        local catalog = helper.fakeCatalog({ photos = photos })
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrLogger = helper.defaultLrLogger(),
+        })
+        package.loaded.HandlerSearch = nil
+        Handler = require 'HandlerSearch'
+    end)
+
+    it("caps to 100 by default and signals has_more", function()
+        local r = Handler.searchPhotos({})
+        assert.are.equal(250, r.count)
+        assert.are.equal(100, #r.photos)
+        assert.is_true(r.has_more)
+        assert.are.equal("1", r.photos[1].id)
+        assert.are.equal("100", r.photos[100].id)
+    end)
+
+    it("respects explicit limit up to total", function()
+        local r = Handler.searchPhotos({ limit = 500 })
+        assert.are.equal(250, r.count)
+        assert.are.equal(250, #r.photos)
+        assert.is_false(r.has_more)
+    end)
+
+    it("paginates via offset", function()
+        local r = Handler.searchPhotos({ limit = 50, offset = 100 })
+        assert.are.equal(250, r.count)
+        assert.are.equal(50, #r.photos)
+        assert.are.equal("101", r.photos[1].id)
+        assert.are.equal("150", r.photos[50].id)
+        assert.is_true(r.has_more)
+    end)
+
+    it("returns empty slice past the end without erroring", function()
+        local r = Handler.searchPhotos({ offset = 1000 })
+        assert.are.equal(250, r.count)
+        assert.are.equal(0, #r.photos)
+        assert.is_false(r.has_more)
     end)
 end)

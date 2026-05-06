@@ -23,6 +23,26 @@ describe("HandlerCollections.listCollections", function()
         assert.are.equal(2, r.count)
         assert.are.equal("Trip", r.collections[1].name)
         assert.are.equal(3, r.collections[1].photoCount)
+        assert.is_false(r.has_more)
+    end)
+
+    it("caps and paginates", function()
+        local cols = {}
+        for i = 1, 150 do
+            table.insert(cols, helper.fakeCollection("c" .. i, {}))
+        end
+        local _, Handler = setup({ collections = cols })
+
+        local r1 = Handler.listCollections({})
+        assert.are.equal(150, r1.count)
+        assert.are.equal(100, #r1.collections)
+        assert.is_true(r1.has_more)
+
+        local r2 = Handler.listCollections({ limit = 50, offset = 100 })
+        assert.are.equal(150, r2.count)
+        assert.are.equal(50, #r2.collections)
+        assert.are.equal("c101", r2.collections[1].name)
+        assert.is_false(r2.has_more)
     end)
 
     it("descends into collection sets and prefixes names", function()

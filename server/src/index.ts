@@ -44,7 +44,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "search_photos",
-        description: "Search for photos in Lightroom catalog by criteria",
+        description: "Search for photos in Lightroom catalog by criteria (paginated, default limit 100)",
         inputSchema: {
           type: "object",
           properties: {
@@ -62,6 +62,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             start_date: { type: "string", description: "Start date (YYYY-MM-DD)" },
             end_date: { type: "string", description: "End date (YYYY-MM-DD)" },
+            limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
+            offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
           },
         },
       },
@@ -78,8 +80,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "list_collections",
-        description: "List all collections in Lightroom catalog",
-        inputSchema: { type: "object", properties: {} },
+        description: "List all collections in Lightroom catalog (paginated, default limit 100)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: { type: "number", description: "Max collections to return (default 100)", minimum: 0 },
+            offset: { type: "number", description: "Number of collections to skip (default 0)", minimum: 0 },
+          },
+        },
       },
       {
         name: "create_collection",

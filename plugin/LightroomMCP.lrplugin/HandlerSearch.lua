@@ -54,6 +54,13 @@ function SearchHandler.searchPhotos(args)
     local searchDesc = buildSearchDesc(args)
     local hasFilters = #searchDesc > 0
 
+    local limit = tonumber(args.limit) or 100
+    if limit < 0 then limit = 0 end
+    local offset = tonumber(args.offset) or 0
+    if offset < 0 then offset = 0 end
+
+    local total = 0
+
     catalog:withReadAccessDo(function()
         local matches
         if hasFilters then
@@ -62,16 +69,20 @@ function SearchHandler.searchPhotos(args)
             matches = catalog:getAllPhotos()
         end
 
-        for _, photo in ipairs(matches) do
-            table.insert(results, buildResult(photo))
+        total = #matches
+        local last = math.min(offset + limit, total)
+        for i = offset + 1, last do
+            table.insert(results, buildResult(matches[i]))
         end
     end)
 
-    logger:info(string.format("Search found %d photos", #results))
+    logger:info(string.format("Search matched %d photos, returning %d (offset=%d, limit=%d)",
+        total, #results, offset, limit))
 
     return {
-        count = #results,
+        count = total,
         photos = results,
+        has_more = (offset + #results) < total,
     }
 end
 

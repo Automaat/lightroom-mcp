@@ -6,49 +6,57 @@ local logger = LrLogger('LightroomMCP')
 local CollectionsHandler = {}
 
 function CollectionsHandler.listCollections(args)
+    args = args or {}
     local catalog = LrApplication.activeCatalog()
-    local collectionsList = {}
+    local all = {}
+
+    local limit = tonumber(args.limit) or 100
+    if limit < 0 then limit = 0 end
+    local offset = tonumber(args.offset) or 0
+    if offset < 0 then offset = 0 end
 
     catalog:withReadAccessDo(function()
-        local collections = catalog:getChildCollections()
-
-        for _, collection in ipairs(collections) do
-            table.insert(collectionsList, {
+        for _, collection in ipairs(catalog:getChildCollections()) do
+            table.insert(all, {
                 name = collection:getName(),
                 type = collection:type(),
-                photoCount = #collection:getPhotos()
+                photoCount = #collection:getPhotos(),
             })
         end
 
-        -- Also get collection sets
-        local collectionSets = catalog:getChildCollectionSets()
-        for _, set in ipairs(collectionSets) do
-            local function addCollectionsFromSet(collSet, prefix)
-                local setCollections = collSet:getChildCollections()
-                for _, coll in ipairs(setCollections) do
-                    table.insert(collectionsList, {
-                        name = prefix .. coll:getName(),
-                        parent = collSet:getName(),
-                        type = coll:type(),
-                        photoCount = #coll:getPhotos()
-                    })
-                end
-
-                local childSets = collSet:getChildCollectionSets()
-                for _, childSet in ipairs(childSets) do
-                    addCollectionsFromSet(childSet, prefix .. childSet:getName() .. " / ")
-                end
+        local function addCollectionsFromSet(collSet, prefix)
+            for _, coll in ipairs(collSet:getChildCollections()) do
+                table.insert(all, {
+                    name = prefix .. coll:getName(),
+                    parent = collSet:getName(),
+                    type = coll:type(),
+                    photoCount = #coll:getPhotos(),
+                })
             end
+            for _, childSet in ipairs(collSet:getChildCollectionSets()) do
+                addCollectionsFromSet(childSet, prefix .. childSet:getName() .. " / ")
+            end
+        end
 
+        for _, set in ipairs(catalog:getChildCollectionSets()) do
             addCollectionsFromSet(set, set:getName() .. " / ")
         end
     end)
 
-    logger:info(string.format("Found %d collections", #collectionsList))
+    local total = #all
+    local last = math.min(offset + limit, total)
+    local slice = {}
+    for i = offset + 1, last do
+        table.insert(slice, all[i])
+    end
+
+    logger:info(string.format("Found %d collections, returning %d (offset=%d, limit=%d)",
+        total, #slice, offset, limit))
 
     return {
-        count = #collectionsList,
-        collections = collectionsList
+        count = total,
+        collections = slice,
+        has_more = (offset + #slice) < total,
     }
 end
 
