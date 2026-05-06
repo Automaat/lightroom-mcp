@@ -22,7 +22,22 @@ logger:enable("logfile")
 local REQUEST_PORT = 58763  -- plugin RECEIVES requests here (server in 'receive' mode)
 local RESPONSE_PORT = 58764 -- plugin SENDS responses here (server in 'send' mode)
 
-local pluginState = {
+-- State on _G so it survives "Reload Plug-in" within the same Lua state.
+-- The previous async task closes over this same table, so flipping its
+-- `running` flag here makes the old monitor loop exit on its next tick.
+if _G.LightroomMCP_State and _G.LightroomMCP_State.running then
+    local old = _G.LightroomMCP_State
+    logger:info("Reload detected - stopping previous server instance")
+    old.running = false
+    if old.requestSocket then
+        pcall(function() old.requestSocket:close() end)
+    end
+    if old.responseSocket then
+        pcall(function() old.responseSocket:close() end)
+    end
+end
+
+_G.LightroomMCP_State = {
     running = false,
     requestSocket = nil,
     responseSocket = nil,
@@ -32,6 +47,8 @@ local pluginState = {
     lastEvent = nil,
     log = {},
 }
+
+local pluginState = _G.LightroomMCP_State
 
 local function addLog(msg)
     table.insert(pluginState.log, os.date("%H:%M:%S") .. " - " .. msg)
@@ -194,6 +211,12 @@ local function startServer()
         end
 
         addLog("Server loop exiting")
+        if pluginState.requestSocket then
+            pcall(function() pluginState.requestSocket:close() end)
+        end
+        if pluginState.responseSocket then
+            pcall(function() pluginState.responseSocket:close() end)
+        end
         pluginState.requestSocket = nil
         pluginState.responseSocket = nil
         pluginState.sendConnected = false

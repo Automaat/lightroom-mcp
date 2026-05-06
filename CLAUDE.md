@@ -55,7 +55,7 @@ Copy `plugin/LightroomMCP.lrplugin/` to:
 
 Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/LightroomMCP.log`.
 
-**Reload caveat**: Lightroom's "Reload Plug-in" does NOT kill the previous async task — its sockets stay bound and block new ones. Quit Lightroom (Cmd+Q) and reopen if you see "failed to open localhost:58763" after a reload.
+**Reload behaviour**: "Reload Plug-in" tears down old sockets via `_G.LightroomMCP_State` and rebinds within ~2s. If you still see "failed to open localhost:58763", the previous async task is wedged — quit Lightroom (Cmd+Q) and reopen.
 
 ## Conventions
 
