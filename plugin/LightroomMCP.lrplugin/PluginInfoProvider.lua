@@ -3,6 +3,8 @@ local LrLogger = import 'LrLogger'
 local LrDialogs = import 'LrDialogs'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrSocket = import 'LrSocket'
+local LrPrefs = import 'LrPrefs'
+local LrView = import 'LrView'
 
 local JSON = require 'JSON'
 local HandlerSearch = require 'HandlerSearch'
@@ -210,9 +212,21 @@ end
 
 addLog("PluginInfoProvider loaded")
 
-local PluginInfoProvider = {}
+local PluginInfoProvider = {
+    startServer = startServer,
+    stopServer = stopServer,
+}
 
 function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
+    local prefs = LrPrefs.prefsForPlugin()
+    if prefs.autoStartServer == nil then
+        prefs.autoStartServer = true
+    end
+    propertyTable.autoStartServer = prefs.autoStartServer
+    propertyTable:addObserver('autoStartServer', function(_, _, value)
+        prefs.autoStartServer = value
+    end)
+
     local statusText = "=== Lightroom MCP Status ===\n\n"
     statusText = statusText .. "Running: " .. tostring(pluginState.running) .. "\n"
     statusText = statusText .. "Request socket connected: " .. tostring(pluginState.receiveConnected) .. "\n"
@@ -235,6 +249,10 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                 fill_horizontal = 1,
                 width_in_chars = 70,
                 height_in_lines = 25,
+            },
+            f:checkbox {
+                title = "Auto-start server on Lightroom launch",
+                value = LrView.bind('autoStartServer'),
             },
             f:row {
                 f:push_button {
