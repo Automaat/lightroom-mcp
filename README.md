@@ -122,6 +122,41 @@ Replace `/Users/YOUR_USERNAME/` with your actual path.
 
 Restart Claude Desktop to load the MCP server.
 
+## Security
+
+### Token file permissions
+
+On first **Start Server**, the plugin generates a 256-bit random token and
+writes it to:
+
+- macOS/Linux: `~/.config/lightroom-mcp/token`
+- Windows: `%USERPROFILE%\.config\lightroom-mcp\token`
+
+The token authenticates every message from the MCP server to the plugin over
+the localhost socket. It is regenerated each time the plugin starts.
+
+**Lightroom's Lua sandbox has no `os.execute`**, so the plugin cannot call
+`chmod` itself. The file is created with whatever permissions your OS umask
+applies (typically `644` on Linux — world-readable by local users).
+
+**macOS**: home directories are not world-readable by default
+(`drwx------`), so `~/.config/` inherits that privacy. No action needed for
+single-user macOS installs.
+
+**Linux / multi-user systems**: if `~/.config/` or its parents are
+world-readable (common on shared servers), other local users can read the
+token. After the first **Start Server** click, lock down the directory:
+
+```bash
+chmod 700 ~/.config/lightroom-mcp
+```
+
+This makes the directory and its contents accessible only to your user.
+
+**Risk scope**: the token only gates a localhost TCP socket. An attacker
+must already have local-user access on the machine to exploit a readable
+token file — there is no remote attack surface.
+
 ## Configuration
 
 Default ports: `58763` (request) / `58764` (response). To override (e.g. port conflict, multiple Lightroom instances), set both sides to matching values:

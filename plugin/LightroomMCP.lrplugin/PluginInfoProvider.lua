@@ -120,9 +120,11 @@ local function writeTokenFile(token)
     end
     fh:write(token)
     fh:close()
-    -- Lightroom's Lua sandbox has no os.execute; skip chmod. File sits in
-    -- ~/.config/lightroom-mcp/ which is user-private on macOS. Token only
-    -- gates a localhost socket, so threat is local-user only.
+    -- Lightroom's Lua sandbox has no os.execute, so chmod is impossible here.
+    -- On macOS single-user installs ~/.config/ inherits home-dir privacy (700).
+    -- On Linux/multi-user systems run: chmod 700 ~/.config/lightroom-mcp
+    -- See README "Security" section. Token gates localhost only; threat is
+    -- local-user access on the same machine.
     return true
 end
 
