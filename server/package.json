@@ -1,30 +1,54 @@
 {
-  "name": "lightroom-mcp-server",
+  "name": "@automaat/lightroom-mcp",
   "version": "0.2.0",
-  "description": "MCP server for Adobe Lightroom Classic",
+  "description": "MCP server bridging Claude/Codex/ChatGPT to Adobe Lightroom Classic via a Lua plugin.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "lightroom-mcp-server": "dist/index.js"
+    "lightroom-mcp": "dist/index.js"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
     "test": "jest",
     "test:watch": "jest --watch",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
     "model-context-protocol",
     "lightroom",
     "lightroom-classic",
-    "photography"
+    "photography",
+    "claude",
+    "codex",
+    "chatgpt"
   ],
-  "author": "",
+  "author": "Marcin Skalski",
   "license": "MIT",
+  "homepage": "https://github.com/skalskimarcin/lightroom-mcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skalskimarcin/lightroom-mcp.git",
+    "directory": "server"
+  },
+  "bugs": {
+    "url": "https://github.com/skalskimarcin/lightroom-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.4"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
