@@ -1,6 +1,22 @@
 #!/usr/bin/env node
-// Direct TCP probe that mimics what the MCP server does. Use to verify the plugin
-// is wired correctly without spinning up a full MCP client.
+// DEV-ONLY: Direct TCP probe for validating plugin dispatch without a full MCP
+// client. Connects raw sockets to the plugin's request (:58763) and response
+// (:58764) ports, sends one action, prints the reply, then exits.
+//
+// This script bypasses the MCP server entirely — it does NOT exercise MCP
+// transport, tool schemas, or server-side validation. Use it to confirm the
+// Lightroom plugin is reachable and a given handler works end-to-end.
+//
+// Prerequisites:
+//   - Lightroom Classic running with LightroomMCP plugin loaded
+//   - Plugin token written to TOKEN_PATH (created when Start Server is clicked)
+//
+// Env overrides (must match plugin Plug-in Manager settings):
+//   LIGHTROOM_MCP_REQUEST_PORT   default 58763
+//   LIGHTROOM_MCP_RESPONSE_PORT  default 58764
+//
+// Env overrides (probe/server reader only — no matching Plug-in Manager setting):
+//   LIGHTROOM_MCP_TOKEN_PATH     default ~/.config/lightroom-mcp/token
 //
 // Usage: node manual-test.mjs [action] [json-params]
 //   node manual-test.mjs list_collections
