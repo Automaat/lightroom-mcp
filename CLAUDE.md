@@ -51,6 +51,9 @@ Run before every commit (CI runs the same):
 
 Copy `plugin/LightroomMCP.lrplugin/` to:
 - macOS: `~/Library/Application Support/Adobe/Lightroom/Plugins/`
+- Windows: `%APPDATA%\Adobe\Lightroom\Plugins\`
+
+Bundle is pure Lua — same content ships in both `LightroomMCP-macos.lrplugin.zip` and `LightroomMCP-windows.lrplugin.zip` release artifacts. Split is for download UX, not platform code.
 
 Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/LightroomMCP.log`.
 

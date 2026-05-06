@@ -107,9 +107,11 @@ jobs:
         working-directory: server
         run: npm pack
 
-      - name: Zip plugin bundle
+      - name: Zip plugin bundle (per platform)
         working-directory: plugin
-        run: zip -r ../LightroomMCP.lrplugin.zip LightroomMCP.lrplugin
+        run: |
+          zip -r ../LightroomMCP-macos.lrplugin.zip LightroomMCP.lrplugin
+          zip -r ../LightroomMCP-windows.lrplugin.zip LightroomMCP.lrplugin
 
       - name: Commit, tag, push
         run: |
@@ -127,7 +129,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "v$VERSION" \
-            LightroomMCP.lrplugin.zip \
+            LightroomMCP-macos.lrplugin.zip \
+            LightroomMCP-windows.lrplugin.zip \
             "server/lightroom-mcp-server-$VERSION.tgz" \
             --title "v$VERSION" \
             --generate-notes
