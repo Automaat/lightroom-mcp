@@ -6,7 +6,6 @@ MCP server bridging Claude to Adobe Lightroom Classic.
 
 - `server/` — TypeScript MCP server (ESM, NodeNext). Stdio transport for Claude + raw TCP client to plugin sockets.
 - `plugin/LightroomMCP.lrplugin/` — Lua plugin loaded by Lightroom Classic.
-- `PLAN.md` — original plan; stale, ignore.
 - `manual-test.mjs` — direct TCP probe (bypasses MCP) for validating plugin dispatch.
 
 ## Architecture (read before changing transport)
