@@ -7,49 +7,21 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { PluginSocket } from "./plugin-socket.js";
+import { Dispatcher } from "./dispatcher.js";
 
 const REQUEST_PORT = 58763; // plugin listens here, server writes commands
 const RESPONSE_PORT = 58764; // plugin listens here, server reads responses
 const REQUEST_TIMEOUT_MS = 30_000;
 
-interface PluginResponse {
-  id: string;
-  result?: unknown;
-  error?: string;
-}
-
-interface PendingResponse {
-  resolve: (resp: PluginResponse) => void;
-  reject: (err: Error) => void;
-  timer: NodeJS.Timeout;
-}
-
-const pending = new Map<string, PendingResponse>();
-let requestIdCounter = 0;
-
-function handleResponseLine(line: string): void {
-  let resp: PluginResponse;
-  try {
-    resp = JSON.parse(line) as PluginResponse;
-  } catch (e) {
-    console.error(`Bad JSON from plugin: ${line}`);
-    return;
-  }
-  const p = pending.get(resp.id);
-  if (!p) {
-    console.error(`Response for unknown id: ${resp.id}`);
-    return;
-  }
-  clearTimeout(p.timer);
-  pending.delete(resp.id);
-  p.resolve(resp);
-}
-
 const requestSocket = new PluginSocket({ port: REQUEST_PORT, label: "request" });
+const dispatcher = new Dispatcher({
+  send: (line) => requestSocket.send(line),
+  timeoutMs: REQUEST_TIMEOUT_MS,
+});
 const responseSocket = new PluginSocket({
   port: RESPONSE_PORT,
   label: "response",
-  onLine: handleResponseLine,
+  onLine: (line) => dispatcher.handleResponseLine(line),
 });
 requestSocket.connect();
 responseSocket.connect();
@@ -249,29 +221,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 
-  const id = `req_${Date.now()}_${requestIdCounter++}`;
-
-  const responsePromise = new Promise<PluginResponse>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error(`Plugin response timeout (${REQUEST_TIMEOUT_MS / 1000}s)`));
-    }, REQUEST_TIMEOUT_MS);
-    pending.set(id, { resolve, reject, timer });
-  });
-
-  const sent = requestSocket.send(JSON.stringify({ id, action: name, params: args ?? {} }));
-  if (!sent) {
-    const p = pending.get(id);
-    if (p) clearTimeout(p.timer);
-    pending.delete(id);
-    return {
-      content: [{ type: "text", text: "Failed to send request to plugin (socket dropped)" }],
-      isError: true,
-    };
-  }
-
   try {
-    const resp = await responsePromise;
+    const resp = await dispatcher.call(name, args);
     if (resp.error) {
       return {
         content: [{ type: "text", text: `Error: ${resp.error}` }],
