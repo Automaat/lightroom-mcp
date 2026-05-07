@@ -1,4 +1,4 @@
-# @automaat/lightroom-mcp
+# @mskalski/lightroom-mcp
 
 MCP server bridging Claude / Codex / Cursor to Adobe Lightroom Classic via a bundled Lua plugin.
 
@@ -11,13 +11,13 @@ Grab the `.mcpb` from [GitHub Releases](https://github.com/Automaat/lightroom-mc
 ### Codex CLI
 
 ```bash
-codex mcp add lightroom -- npx -y @automaat/lightroom-mcp
+codex mcp add lightroom -- npx -y @mskalski/lightroom-mcp
 ```
 
 Then install the Lightroom plugin once:
 
 ```bash
-npx -y @automaat/lightroom-mcp install-plugin
+npx -y @mskalski/lightroom-mcp install-plugin
 ```
 
 ### Cursor / Windsurf / VS Code
@@ -29,7 +29,7 @@ Add to MCP config:
   "mcpServers": {
     "lightroom": {
       "command": "npx",
-      "args": ["-y", "@automaat/lightroom-mcp"]
+      "args": ["-y", "@mskalski/lightroom-mcp"]
     }
   }
 }

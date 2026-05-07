@@ -160,7 +160,7 @@ jobs:
             lightroom-mcp-*.mcpb
             LightroomMCP-macos.lrplugin.zip
             LightroomMCP-windows.lrplugin.zip
-            server/automaat-lightroom-mcp-*.tgz
+            server/mskalski-lightroom-mcp-*.tgz
           retention-days: 7
 
   build-binaries:
@@ -272,7 +272,7 @@ jobs:
             "lightroom-mcp-${VERSION}.mcpb" \
             LightroomMCP-macos.lrplugin.zip \
             LightroomMCP-windows.lrplugin.zip \
-            "automaat-lightroom-mcp-${VERSION}.tgz" \
+            "mskalski-lightroom-mcp-${VERSION}.tgz" \
             lightroom-mcp-darwin-arm64 \
             lightroom-mcp-darwin-x64 \
             lightroom-mcp-windows-x64.exe \

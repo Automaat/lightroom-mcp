@@ -18,7 +18,7 @@ That's it. No Node.js, no terminal, no JSON editing.
 ### Codex CLI
 
 ```bash
-codex mcp add lightroom -- npx -y @automaat/lightroom-mcp
+codex mcp add lightroom -- npx -y @mskalski/lightroom-mcp
 ```
 
 Or with the standalone binary if Node isn't available:
@@ -36,7 +36,7 @@ Add to the client's MCP config:
   "mcpServers": {
     "lightroom": {
       "command": "npx",
-      "args": ["-y", "@automaat/lightroom-mcp"]
+      "args": ["-y", "@mskalski/lightroom-mcp"]
     }
   }
 }
@@ -45,7 +45,7 @@ Add to the client's MCP config:
 Then install the Lightroom plugin once:
 
 ```bash
-npx -y @automaat/lightroom-mcp install-plugin
+npx -y @mskalski/lightroom-mcp install-plugin
 ```
 
 ### Manual install (any client)

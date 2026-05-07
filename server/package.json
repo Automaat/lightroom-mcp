@@ -1,5 +1,5 @@
 {
-  "name": "@automaat/lightroom-mcp",
+  "name": "@mskalski/lightroom-mcp",
   "version": "0.2.0",
   "description": "MCP server bridging Claude/Codex/ChatGPT to Adobe Lightroom Classic via a Lua plugin.",
   "type": "module",
