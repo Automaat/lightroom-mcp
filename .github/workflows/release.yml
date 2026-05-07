@@ -149,9 +149,10 @@ jobs:
           zip -r ../LightroomMCP-macos.lrplugin.zip LightroomMCP.lrplugin
           zip -r ../LightroomMCP-windows.lrplugin.zip LightroomMCP.lrplugin
 
-      - name: Rename .mcpb with version suffix
+      - name: Stage release artifacts at repo root
         run: |
           cp build/lightroom-mcp.mcpb "lightroom-mcp-${VERSION}.mcpb"
+          cp server/mskalski-lightroom-mcp-*.tgz .
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -160,7 +161,7 @@ jobs:
             lightroom-mcp-*.mcpb
             LightroomMCP-macos.lrplugin.zip
             LightroomMCP-windows.lrplugin.zip
-            server/mskalski-lightroom-mcp-*.tgz
+            mskalski-lightroom-mcp-*.tgz
           retention-days: 7
 
   build-binaries:
