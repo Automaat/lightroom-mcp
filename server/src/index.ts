@@ -17,7 +17,7 @@ import {
 } from "./install-plugin.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
-const PKG_VERSION = "0.3.0";
+const PKG_VERSION = "0.3.1";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
