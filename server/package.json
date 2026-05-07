@@ -8,7 +8,8 @@
     "lightroom-mcp": "dist/index.js"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "files": [
     "dist",
@@ -35,14 +36,14 @@
   ],
   "author": "Marcin Skalski",
   "license": "MIT",
-  "homepage": "https://github.com/skalskimarcin/lightroom-mcp#readme",
+  "homepage": "https://github.com/Automaat/lightroom-mcp#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/skalskimarcin/lightroom-mcp.git",
+    "url": "git+https://github.com/Automaat/lightroom-mcp.git",
     "directory": "server"
   },
   "bugs": {
-    "url": "https://github.com/skalskimarcin/lightroom-mcp/issues"
+    "url": "https://github.com/Automaat/lightroom-mcp/issues"
   },
   "engines": {
     "node": ">=18"

@@ -6,7 +6,7 @@ MCP server bridging Claude / Codex / Cursor to Adobe Lightroom Classic via a bun
 
 ### Claude Desktop / Claude Code (one-click)
 
-Grab the `.mcpb` from [GitHub Releases](https://github.com/skalskimarcin/lightroom-mcp/releases/latest) and double-click. The Lightroom plugin auto-installs on first run.
+Grab the `.mcpb` from [GitHub Releases](https://github.com/Automaat/lightroom-mcp/releases/latest) and double-click. The Lightroom plugin auto-installs on first run.
 
 ### Codex CLI
 
@@ -45,7 +45,7 @@ lightroom-mcp install-plugin     Copy plugin into Lightroom Modules folder
 ## Docs and source
 
 Full documentation, architecture notes, and the Lightroom plugin live at
-<https://github.com/skalskimarcin/lightroom-mcp>.
+<https://github.com/Automaat/lightroom-mcp>.
 
 ## License
 

@@ -8,7 +8,7 @@ Pick the path that matches your AI assistant.
 
 ### Claude Desktop / Claude Code (1-click)
 
-1. Download `lightroom-mcp-<version>.mcpb` from [Releases](https://github.com/skalskimarcin/lightroom-mcp/releases/latest).
+1. Download `lightroom-mcp-<version>.mcpb` from [Releases](https://github.com/Automaat/lightroom-mcp/releases/latest).
 2. Double-click the file. Claude installs it.
 3. The bundled Lightroom plugin auto-installs into Lightroom's Modules folder on first run. Restart Lightroom Classic once.
 4. In Lightroom: **File → Plug-in Manager → Lightroom MCP → Start Server**.
