@@ -1,40 +1,83 @@
 # Lightroom Classic MCP Server
 
-MCP (Model Context Protocol) server for Adobe Lightroom Classic. Talk to your photo catalog from Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, and VS Code.
+Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** photo catalog. Search photos, set ratings, edit develop settings, manage collections, import/export — all by chatting.
 
 [![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
 [![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
 
-## Requirements
+> **Works with:** Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, VS Code.
+> **Needs:** Lightroom Classic on macOS or Windows. Nothing else — no programming required.
 
-- **Adobe Lightroom Classic** (any version with the LR SDK — LR 6 / CC 2015+ tested up to LR 14)
-- macOS or Windows (Linux works for the server but Lightroom is Mac/Windows-only)
+---
 
-That's it for the install paths below — they bundle everything else.
+## Install (Claude Desktop — easiest, 3 steps)
 
-## Install
+This is the recommended path. Takes ~2 minutes, no terminal needed.
 
-Pick the path that matches your AI assistant. **All paths end with the same step**: open Lightroom → **File → Plug-in Manager → Lightroom MCP → Start Server**. The plugin auto-installs into Lightroom's Modules folder; just restart Lightroom once after install.
+### 1. Download the installer
 
-### Claude Desktop / Claude Code (1-click)
+Go to the [latest release page](https://github.com/Automaat/lightroom-mcp/releases/latest) and download the file ending in **`.mcpb`** (it's near the top, called `lightroom-mcp-<version>.mcpb`).
 
-1. Download `lightroom-mcp-<version>.mcpb` from [the latest release](https://github.com/Automaat/lightroom-mcp/releases/latest).
-2. Double-click the file. Claude installs it.
-3. Restart Lightroom Classic. Click **Start Server** in Plug-in Manager.
+### 2. Double-click the downloaded file
 
-No Node.js, no terminal, no JSON editing.
+Claude Desktop opens automatically and asks: *"Install Lightroom Classic extension?"*. Click **Install**.
 
-### Codex CLI
+> Don't have Claude Desktop yet? Get it free from [claude.com/download](https://claude.com/download). It runs on Mac and Windows.
+
+### 3. Turn on the plugin in Lightroom
+
+1. **Quit and reopen Lightroom Classic.** (The plugin needs a restart to show up.)
+2. In Lightroom, click **File** in the menu bar → **Plug-in Manager**.
+3. In the left list, click **Lightroom MCP**.
+4. On the right, click the **Start Server** button.
+5. You should see "Server running" appear. Done!
+
+### Try it
+
+Open Claude Desktop and type:
+
+> *List all my Lightroom collections.*
+
+Claude will list every collection in your catalog.
+
+Some other things to try:
+- *"Find all my 5-star photos from last summer."*
+- *"Add the keyword 'portfolio' to the photos I have selected in Lightroom."*
+- *"Apply the 'Vivid' develop preset to these photos."*
+- *"Export the selected photos to my Desktop as JPEGs at 2000px wide."*
+
+---
+
+## Install (other AI tools)
+
+Already using Claude Code, Codex, Cursor, Windsurf, or VS Code? Pick your tool below. **All paths still end with the Lightroom step from the section above** — restart Lightroom and click **Start Server** in Plug-in Manager.
+
+<details>
+<summary><b>Claude Code</b></summary>
+
+Same `.mcpb` file as Claude Desktop above — Claude Code accepts it too. Or install via the CLI:
+
+```bash
+claude mcp add lightroom -- npx -y @mskalski/lightroom-mcp
+```
+
+</details>
+
+<details>
+<summary><b>Codex CLI</b></summary>
 
 ```bash
 codex mcp add lightroom -- npx -y @mskalski/lightroom-mcp
 ```
 
-The plugin auto-installs into Lightroom's Modules folder the first time Codex starts the server. Restart Lightroom and click **Start Server**.
+The Lightroom plugin installs itself the first time Codex talks to the server.
 
-### Cursor / Windsurf / VS Code (Continue, Cline, Roo, etc.)
+</details>
 
-Add to your client's MCP config:
+<details>
+<summary><b>Cursor / Windsurf / VS Code (Continue, Cline, Roo, ...)</b></summary>
+
+Open your client's MCP settings and add:
 
 ```json
 {
@@ -47,56 +90,64 @@ Add to your client's MCP config:
 }
 ```
 
-The plugin auto-installs the first time the client starts the server. If the client never starts the server (some only spawn it on first tool call), pre-install with:
+The plugin installs itself the first time your client starts the server. If your client only starts the server on first tool call, you can install the plugin upfront:
 
 ```bash
 npx -y @mskalski/lightroom-mcp install-plugin
 ```
 
-Restart Lightroom and click **Start Server**.
+</details>
 
-### Standalone binary (no Node required)
+<details>
+<summary><b>No Node.js installed? Use the standalone binary</b></summary>
 
-If Node isn't installed:
+1. Download the right file from the [latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
+   - **Mac (Apple Silicon, M1/M2/M3/M4):** `lightroom-mcp-darwin-arm64`
+   - **Mac (Intel):** `lightroom-mcp-darwin-x64`
+   - **Windows:** `lightroom-mcp-windows-x64.exe`
 
-1. Download from [the latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
-   - macOS Apple Silicon: `lightroom-mcp-darwin-arm64`
-   - macOS Intel: `lightroom-mcp-darwin-x64`
-   - Windows: `lightroom-mcp-windows-x64.exe`
-2. Make it executable + bypass macOS Gatekeeper (binaries are not signed):
+2. **macOS only** — make it runnable and bypass Gatekeeper (the binary isn't signed):
    ```bash
    chmod +x ~/Downloads/lightroom-mcp-darwin-arm64
    xattr -d com.apple.quarantine ~/Downloads/lightroom-mcp-darwin-arm64
    ```
-3. Install the Lightroom plugin once:
+
+3. Install the Lightroom plugin:
    ```bash
    ~/Downloads/lightroom-mcp-darwin-arm64 install-plugin
    ```
-4. Point your MCP client at the binary path:
+
+4. Point your AI tool at the binary's full path. Example for Codex:
    ```bash
-   codex mcp add lightroom -- /full/path/to/lightroom-mcp-darwin-arm64
+   codex mcp add lightroom -- /Users/you/Downloads/lightroom-mcp-darwin-arm64
    ```
-5. Restart Lightroom, click **Start Server**.
 
-### Manual plugin install (any client)
+</details>
 
-If you'd rather skip the auto-installer, drop `LightroomMCP.lrplugin` (from the `LightroomMCP-macos.lrplugin.zip` / `LightroomMCP-windows.lrplugin.zip` release asset) into Lightroom's auto-load Modules folder:
+<details>
+<summary><b>Install the Lightroom plugin manually (any client)</b></summary>
 
-- macOS: `~/Library/Application Support/Adobe/Lightroom/Modules/`
-- Windows: `%APPDATA%\Adobe\Lightroom\Modules\`
+If you'd rather drop the plugin in by hand:
 
-Lightroom auto-loads it on next start. Then click **Start Server** in Plug-in Manager.
+1. Download the matching zip from the [latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
+   - Mac: `LightroomMCP-macos.lrplugin.zip`
+   - Windows: `LightroomMCP-windows.lrplugin.zip`
+2. Unzip it. You get a folder called `LightroomMCP.lrplugin`.
+3. Move that folder into Lightroom's Modules folder:
+   - **Mac:** `~/Library/Application Support/Adobe/Lightroom/Modules/`
+   - **Windows:** `%APPDATA%\Adobe\Lightroom\Modules\`
+   - (If the `Modules` folder doesn't exist, create it.)
+4. Restart Lightroom → **Plug-in Manager** → **Start Server**.
 
-## Verify it works
+</details>
 
-After **Start Server**, ask your assistant something like:
+---
 
-> List all my Lightroom collections.
+## Something not working?
 
-Should return a JSON dump of every collection in your active catalog. If it doesn't:
-
-- Plug-in Manager → **Lightroom MCP** → **Show Status** — check both sockets show `connected: true`.
-- See [Troubleshooting](#troubleshooting).
+1. Open Lightroom → **File → Plug-in Manager → Lightroom MCP → Show Status**. Both sockets should say `connected: true`. If not, click **Start Server**.
+2. Make sure you **fully quit and reopened Lightroom** after install (Cmd+Q on Mac, Alt+F4 on Windows). "Reload Plug-in" alone is not enough.
+3. See [Troubleshooting](#troubleshooting) below for specific errors.
 
 ## Tools
 
