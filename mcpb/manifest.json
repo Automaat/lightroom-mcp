@@ -1,0 +1,67 @@
+{
+  "manifest_version": "0.3",
+  "name": "lightroom-mcp",
+  "display_name": "Lightroom Classic",
+  "version": "0.2.0",
+  "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
+  "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
+  "author": {
+    "name": "Marcin Skalski"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skalskimarcin/lightroom-mcp"
+  },
+  "license": "MIT",
+  "keywords": ["lightroom", "lightroom-classic", "photography", "adobe"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/dist/index.js"],
+      "env": {
+        "LIGHTROOM_MCP_REQUEST_PORT": "${user_config.request_port}",
+        "LIGHTROOM_MCP_RESPONSE_PORT": "${user_config.response_port}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "search_photos", "description": "Search the catalog by filename, keywords, rating, or date." },
+    { "name": "get_selected_photos", "description": "Photos currently selected in Lightroom (or the filmstrip)." },
+    { "name": "get_photo_metadata", "description": "Detailed EXIF + develop metadata for a photo." },
+    { "name": "list_collections", "description": "List all collections and collection sets." },
+    { "name": "create_collection", "description": "Create a new collection." },
+    { "name": "add_to_collection", "description": "Add photos to an existing collection." },
+    { "name": "set_keywords", "description": "Add or remove keywords on photos." },
+    { "name": "set_rating", "description": "Set star rating on photos." },
+    { "name": "import_photos", "description": "Import photos into the catalog." },
+    { "name": "export_photos", "description": "Export photos with format/quality/dimensions." },
+    { "name": "list_develop_presets", "description": "List available Develop presets." },
+    { "name": "apply_develop_preset", "description": "Apply a Develop preset to photos." },
+    { "name": "copy_develop_settings", "description": "Copy Develop settings from one photo to others." },
+    { "name": "set_develop_settings", "description": "Set Develop settings directly on a photo." }
+  ],
+  "user_config": {
+    "request_port": {
+      "type": "string",
+      "title": "Plugin request port",
+      "description": "TCP port the Lightroom plugin listens on for requests. Must match the Plug-in Manager setting.",
+      "default": "58763",
+      "required": false
+    },
+    "response_port": {
+      "type": "string",
+      "title": "Plugin response port",
+      "description": "TCP port the Lightroom plugin sends responses on. Must match the Plug-in Manager setting.",
+      "default": "58764",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
