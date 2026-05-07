@@ -160,7 +160,7 @@ jobs:
             lightroom-mcp-*.mcpb
             LightroomMCP-macos.lrplugin.zip
             LightroomMCP-windows.lrplugin.zip
-            server/lightroom-mcp-server-*.tgz
+            server/automaat-lightroom-mcp-*.tgz
           retention-days: 7
 
   build-binaries:
@@ -206,6 +206,40 @@ jobs:
           name: binary-${{ matrix.target }}
           path: build/bin/${{ matrix.asset }}
           retention-days: 7
+
+  publish-npm:
+    name: Publish to npm
+    needs: [prepare, build-bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Setup Node.js (with npm registry auth)
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '25'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install + build
+        working-directory: server
+        run: |
+          npm ci --ignore-scripts
+          npx tsc
+
+      - name: Publish to npm with provenance
+        working-directory: server
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance
 
   publish:
     name: Publish GitHub release
