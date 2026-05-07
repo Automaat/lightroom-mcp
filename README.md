@@ -2,18 +2,27 @@
 
 MCP (Model Context Protocol) server for Adobe Lightroom Classic. Talk to your photo catalog from Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, and VS Code.
 
+[![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
+[![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
+
+## Requirements
+
+- **Adobe Lightroom Classic** (any version with the LR SDK — LR 6 / CC 2015+ tested up to LR 14)
+- macOS or Windows (Linux works for the server but Lightroom is Mac/Windows-only)
+
+That's it for the install paths below — they bundle everything else.
+
 ## Install
 
-Pick the path that matches your AI assistant.
+Pick the path that matches your AI assistant. **All paths end with the same step**: open Lightroom → **File → Plug-in Manager → Lightroom MCP → Start Server**. The plugin auto-installs into Lightroom's Modules folder; just restart Lightroom once after install.
 
 ### Claude Desktop / Claude Code (1-click)
 
-1. Download `lightroom-mcp-<version>.mcpb` from [Releases](https://github.com/Automaat/lightroom-mcp/releases/latest).
+1. Download `lightroom-mcp-<version>.mcpb` from [the latest release](https://github.com/Automaat/lightroom-mcp/releases/latest).
 2. Double-click the file. Claude installs it.
-3. The bundled Lightroom plugin auto-installs into Lightroom's Modules folder on first run. Restart Lightroom Classic once.
-4. In Lightroom: **File → Plug-in Manager → Lightroom MCP → Start Server**.
+3. Restart Lightroom Classic. Click **Start Server** in Plug-in Manager.
 
-That's it. No Node.js, no terminal, no JSON editing.
+No Node.js, no terminal, no JSON editing.
 
 ### Codex CLI
 
@@ -21,15 +30,11 @@ That's it. No Node.js, no terminal, no JSON editing.
 codex mcp add lightroom -- npx -y @mskalski/lightroom-mcp
 ```
 
-Or with the standalone binary if Node isn't available:
+The plugin auto-installs into Lightroom's Modules folder the first time Codex starts the server. Restart Lightroom and click **Start Server**.
 
-```bash
-codex mcp add lightroom -- /path/to/lightroom-mcp-darwin-arm64
-```
+### Cursor / Windsurf / VS Code (Continue, Cline, Roo, etc.)
 
-### Cursor / Windsurf / VS Code (Continue, Cline, etc.)
-
-Add to the client's MCP config:
+Add to your client's MCP config:
 
 ```json
 {
@@ -42,20 +47,56 @@ Add to the client's MCP config:
 }
 ```
 
-Then install the Lightroom plugin once:
+The plugin auto-installs the first time the client starts the server. If the client never starts the server (some only spawn it on first tool call), pre-install with:
 
 ```bash
 npx -y @mskalski/lightroom-mcp install-plugin
 ```
 
-### Manual install (any client)
+Restart Lightroom and click **Start Server**.
 
-If you prefer not to use the .mcpb bundle on Claude Desktop, copy the plugin yourself:
+### Standalone binary (no Node required)
+
+If Node isn't installed:
+
+1. Download from [the latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
+   - macOS Apple Silicon: `lightroom-mcp-darwin-arm64`
+   - macOS Intel: `lightroom-mcp-darwin-x64`
+   - Windows: `lightroom-mcp-windows-x64.exe`
+2. Make it executable + bypass macOS Gatekeeper (binaries are not signed):
+   ```bash
+   chmod +x ~/Downloads/lightroom-mcp-darwin-arm64
+   xattr -d com.apple.quarantine ~/Downloads/lightroom-mcp-darwin-arm64
+   ```
+3. Install the Lightroom plugin once:
+   ```bash
+   ~/Downloads/lightroom-mcp-darwin-arm64 install-plugin
+   ```
+4. Point your MCP client at the binary path:
+   ```bash
+   codex mcp add lightroom -- /full/path/to/lightroom-mcp-darwin-arm64
+   ```
+5. Restart Lightroom, click **Start Server**.
+
+### Manual plugin install (any client)
+
+If you'd rather skip the auto-installer, drop `LightroomMCP.lrplugin` (from the `LightroomMCP-macos.lrplugin.zip` / `LightroomMCP-windows.lrplugin.zip` release asset) into Lightroom's auto-load Modules folder:
 
 - macOS: `~/Library/Application Support/Adobe/Lightroom/Modules/`
 - Windows: `%APPDATA%\Adobe\Lightroom\Modules\`
 
-Drop the `LightroomMCP.lrplugin` folder there and Lightroom auto-loads it on next start.
+Lightroom auto-loads it on next start. Then click **Start Server** in Plug-in Manager.
+
+## Verify it works
+
+After **Start Server**, ask your assistant something like:
+
+> List all my Lightroom collections.
+
+Should return a JSON dump of every collection in your active catalog. If it doesn't:
+
+- Plug-in Manager → **Lightroom MCP** → **Show Status** — check both sockets show `connected: true`.
+- See [Troubleshooting](#troubleshooting).
 
 ## Tools
 
@@ -76,7 +117,7 @@ Drop the `LightroomMCP.lrplugin` folder there and Lightroom auto-loads it on nex
 | `copy_develop_settings` | Copy develop settings between photos. |
 | `set_develop_settings` | Write SDK setting key/values directly. |
 
-Full schemas and parameter docs: see [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
+Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
 
 ## How it works
 
@@ -144,11 +185,18 @@ Repo layout:
 
 ## Troubleshooting
 
-- **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port. Quit Lightroom (Cmd+Q) and reopen.
-- **Plugin not connected** — click **Start Server** in Plug-in Manager; server reconnects within 1s.
-- **Timeout errors** — handler may be scanning a large catalog without filters; add `rating`, `filename`, `keywords`, or date filters.
+- **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port. Quit Lightroom (Cmd+Q on macOS / Alt+F4 on Windows) and reopen.
+- **Plugin not connected** — click **Start Server** in Plug-in Manager; the server reconnects within ~1s.
+- **Timeout errors** — handler may be scanning a large catalog without filters; add `rating`, `filename`, `keywords`, or date filters to narrow.
+- **macOS "cannot be opened because the developer cannot be verified"** (binary path) — `xattr -d com.apple.quarantine /path/to/binary`. Or right-click → Open the first time.
+- **Windows SmartScreen blocks the .exe** — More info → Run anyway.
 
-Logs: `~/Documents/LrClassicLogs/LightroomMCP.log` (plugin) and `~/Library/Logs/Claude/mcp*.log` (Claude Desktop).
+Logs:
+
+| Component | macOS | Windows |
+| --- | --- | --- |
+| Plugin | `~/Documents/LrClassicLogs/LightroomMCP.log` | `%USERPROFILE%\Documents\LrClassicLogs\LightroomMCP.log` |
+| Claude Desktop | `~/Library/Logs/Claude/mcp*.log` | `%APPDATA%\Claude\Logs\mcp*.log` |
 
 ## License
 
