@@ -16,26 +16,39 @@ function OrganizationHandler.setKeywords(args)
     local updatedCount = 0
 
     catalog:withWriteAccessDo("Set Keywords", function()
+        -- Resolve each unique add/remove keyword once before the per-photo
+        -- loop. createKeyword called repeatedly with the same name inside a
+        -- single write transaction trips an SDK assertion and aborts the
+        -- whole batch (0 photos updated). The removeSet also turns the
+        -- remove path from O(N×M) into O(N) per photo.
+        local keywordObjs = {}
+        if args.add_keywords then
+            for _, kw in ipairs(args.add_keywords) do
+                table.insert(keywordObjs, catalog:createKeyword(kw, {}, true, nil, true))
+            end
+        end
+
+        local removeSet = {}
+        if args.remove_keywords then
+            for _, kw in ipairs(args.remove_keywords) do
+                removeSet[kw] = true
+            end
+        end
+
         local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, entry in ipairs(resolved) do
             local photo = entry.photo
             if photo then
-                -- Add keywords
-                if args.add_keywords and #args.add_keywords > 0 then
-                    for _, kw in ipairs(args.add_keywords) do
-                        photo:addKeyword(catalog:createKeyword(kw, {}, true, nil, true))
-                    end
+                for _, kwObj in ipairs(keywordObjs) do
+                    photo:addKeyword(kwObj)
                 end
 
-                -- Remove keywords
-                if args.remove_keywords and #args.remove_keywords > 0 then
+                if next(removeSet) then
                     local existingKeywords = photo:getRawMetadata('keywords')
                     if existingKeywords then
                         for _, kw in ipairs(existingKeywords) do
-                            for _, removeKw in ipairs(args.remove_keywords) do
-                                if kw:getName() == removeKw then
-                                    photo:removeKeyword(kw)
-                                end
+                            if removeSet[kw:getName()] then
+                                photo:removeKeyword(kw)
                             end
                         end
                     end
