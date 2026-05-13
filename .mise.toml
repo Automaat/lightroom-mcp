@@ -1,6 +1,6 @@
 [tools]
 node = "24"
-bun = "1.3.13"
+bun = "1.3.14"
 
 [tasks.install]
 description = "Install dependencies"
