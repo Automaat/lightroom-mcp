@@ -101,11 +101,13 @@ export const TOOL_DEFINITIONS: Tool[] = [
         add_keywords: {
           type: "array",
           items: { type: "string" },
+          maxItems: 1000,
           description: "Keywords to add",
         },
         remove_keywords: {
           type: "array",
           items: { type: "string" },
+          maxItems: 1000,
           description: "Keywords to remove",
         },
       },

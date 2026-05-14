@@ -56,6 +56,15 @@ describe("HandlerOrganization.setKeywords", function()
         assert.are.equal(2, #catalog.getCreatedKeywords())
     end)
 
+    it("creates duplicate add keywords once", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "summer", "summer" } })
+
+        assert.are.equal(1, #catalog.getCreatedKeywords())
+    end)
+
     it("removes existing keywords by name match", function()
         local existing = { getName = function() return "old" end }
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = { existing } })
@@ -73,5 +82,16 @@ describe("HandlerOrganization.setKeywords", function()
         local _, Handler = setup({})
         assert.has_error(function() Handler.setKeywords({}) end)
         assert.has_error(function() Handler.setKeywords({ photo_ids = {} }) end)
+    end)
+
+    it("limits keyword batch size", function()
+        local _, Handler = setup({})
+        local keywords = {}
+        for i = 1, 1001 do
+            table.insert(keywords, "kw" .. i)
+        end
+
+        assert.has_error(function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = keywords }) end)
+        assert.has_error(function() Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = keywords }) end)
     end)
 end)

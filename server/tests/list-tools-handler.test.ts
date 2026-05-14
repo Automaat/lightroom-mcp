@@ -76,3 +76,13 @@ describe('tool required fields', () => {
     },
   );
 });
+
+describe('set_keywords schema', () => {
+  it('caps add/remove keyword arrays', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_keywords');
+    const properties = tool?.inputSchema.properties as Record<string, { maxItems?: number }>;
+
+    expect(properties.add_keywords.maxItems).toBe(1000);
+    expect(properties.remove_keywords.maxItems).toBe(1000);
+  });
+});

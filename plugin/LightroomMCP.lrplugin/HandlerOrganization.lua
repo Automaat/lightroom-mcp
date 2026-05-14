@@ -6,33 +6,47 @@ local PhotoLookup = require 'PhotoLookup'
 local logger = LrLogger('LightroomMCP')
 
 local OrganizationHandler = {}
+local MAX_KEYWORDS_PER_REQUEST = 1000
+
+local function validateKeywordLimit(keywords, fieldName)
+    if keywords and #keywords > MAX_KEYWORDS_PER_REQUEST then
+        error(fieldName .. " must contain at most " .. MAX_KEYWORDS_PER_REQUEST .. " keywords")
+    end
+end
 
 function OrganizationHandler.setKeywords(args)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
+    validateKeywordLimit(args.add_keywords, "add_keywords")
+    validateKeywordLimit(args.remove_keywords, "remove_keywords")
 
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
 
-    catalog:withWriteAccessDo("Set Keywords", function()
-        -- Resolve each unique add/remove keyword once before the per-photo
-        -- loop. createKeyword called repeatedly with the same name inside a
-        -- single write transaction trips an SDK assertion and aborts the
-        -- whole batch (0 photos updated). The removeSet also turns the
-        -- remove path from O(N×M) into O(N) per photo.
-        local keywordObjs = {}
-        if args.add_keywords then
-            for _, kw in ipairs(args.add_keywords) do
-                table.insert(keywordObjs, catalog:createKeyword(kw, {}, true, nil, true))
+    local addKeywordNames = {}
+    local addSet = {}
+    if args.add_keywords then
+        for _, kw in ipairs(args.add_keywords) do
+            if not addSet[kw] then
+                addSet[kw] = true
+                table.insert(addKeywordNames, kw)
             end
         end
+    end
 
-        local removeSet = {}
-        if args.remove_keywords then
-            for _, kw in ipairs(args.remove_keywords) do
-                removeSet[kw] = true
-            end
+    local removeSet = {}
+    if args.remove_keywords then
+        for _, kw in ipairs(args.remove_keywords) do
+            removeSet[kw] = true
+        end
+    end
+
+    catalog:withWriteAccessDo("Set Keywords", function()
+        -- createKeyword is not idempotent within one write transaction.
+        local keywordObjs = {}
+        for _, kw in ipairs(addKeywordNames) do
+            table.insert(keywordObjs, catalog:createKeyword(kw, {}, true, nil, true))
         end
 
         local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
