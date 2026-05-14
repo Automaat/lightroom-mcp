@@ -184,25 +184,17 @@ local function dispatchAction(request)
         return
     end
 
-    local capturedTraceback
+    -- xpcall, debug.traceback, and os.getenv aren't reliably exposed by
+    -- Lightroom's Lua sandbox: using them in the dispatcher's error path
+    -- turns a handler error into a silent nil-call that never reaches the
+    -- client. Stick to LrTasks.pcall.
     local execOk, resultOrErr = LrTasks.pcall(function()
-        local ok, result = xpcall(function() return handler(params) end, function(err)
-            capturedTraceback = debug.traceback(nil, 2)
-            return err
-        end)
-        if not ok then
-            error(result, 0)
-        end
-        return result
+        return handler(params)
     end)
     if execOk then
         sendResponse({ id = id, result = resultOrErr })
     else
-        local errMsg = "Handler " .. action .. " error: " .. tostring(resultOrErr)
-        if os.getenv("LIGHTROOM_MCP_DEBUG") then
-            errMsg = errMsg .. "\n" .. (capturedTraceback or "")
-        end
-        addLog(errMsg)
+        addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
         sendResponse({ id = id, error = tostring(resultOrErr) })
     end
 end

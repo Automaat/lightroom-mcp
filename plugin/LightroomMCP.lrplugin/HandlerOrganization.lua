@@ -6,36 +6,63 @@ local PhotoLookup = require 'PhotoLookup'
 local logger = LrLogger('LightroomMCP')
 
 local OrganizationHandler = {}
+local MAX_KEYWORDS_PER_REQUEST = 1000
+
+local function validateKeywordLimit(keywords, fieldName)
+    if keywords and #keywords > MAX_KEYWORDS_PER_REQUEST then
+        error(fieldName .. " must contain at most " .. MAX_KEYWORDS_PER_REQUEST .. " keywords")
+    end
+end
 
 function OrganizationHandler.setKeywords(args)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
+    validateKeywordLimit(args.add_keywords, "add_keywords")
+    validateKeywordLimit(args.remove_keywords, "remove_keywords")
 
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
 
+    local addKeywordNames = {}
+    local addSet = {}
+    if args.add_keywords then
+        for _, kw in ipairs(args.add_keywords) do
+            if not addSet[kw] then
+                addSet[kw] = true
+                table.insert(addKeywordNames, kw)
+            end
+        end
+    end
+
+    local removeSet = {}
+    if args.remove_keywords then
+        for _, kw in ipairs(args.remove_keywords) do
+            removeSet[kw] = true
+        end
+    end
+
     catalog:withWriteAccessDo("Set Keywords", function()
+        -- createKeyword is not idempotent within one write transaction.
+        local keywordObjs = {}
+        for _, kw in ipairs(addKeywordNames) do
+            table.insert(keywordObjs, catalog:createKeyword(kw, {}, true, nil, true))
+        end
+
         local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, entry in ipairs(resolved) do
             local photo = entry.photo
             if photo then
-                -- Add keywords
-                if args.add_keywords and #args.add_keywords > 0 then
-                    for _, kw in ipairs(args.add_keywords) do
-                        photo:addKeyword(catalog:createKeyword(kw, {}, true, nil, true))
-                    end
+                for _, kwObj in ipairs(keywordObjs) do
+                    photo:addKeyword(kwObj)
                 end
 
-                -- Remove keywords
-                if args.remove_keywords and #args.remove_keywords > 0 then
+                if next(removeSet) then
                     local existingKeywords = photo:getRawMetadata('keywords')
                     if existingKeywords then
                         for _, kw in ipairs(existingKeywords) do
-                            for _, removeKw in ipairs(args.remove_keywords) do
-                                if kw:getName() == removeKw then
-                                    photo:removeKeyword(kw)
-                                end
+                            if removeSet[kw:getName()] then
+                                photo:removeKeyword(kw)
                             end
                         end
                     end
