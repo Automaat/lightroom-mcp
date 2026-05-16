@@ -18,6 +18,7 @@
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "lint": "eslint src tests",
     "watch": "tsc --watch",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -54,8 +55,11 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^25.6.0",
+    "eslint": "^10.4.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
     "jest": "^30.0.0",
     "ts-jest": "^29.2.5",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "typescript-eslint": "^8.59.3"
   }
 }

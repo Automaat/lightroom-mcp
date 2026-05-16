@@ -1,4 +1,4 @@
-import { Dispatcher } from "./dispatcher.js";
+import type { Dispatcher } from "./dispatcher.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
