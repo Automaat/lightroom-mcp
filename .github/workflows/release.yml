@@ -63,13 +63,7 @@ jobs:
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "invalid version: $VERSION" >&2; exit 1
           fi
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          {
-            echo "VERSION=$VERSION"
-            echo "MAJOR=$MAJOR"
-            echo "MINOR=$MINOR"
-            echo "PATCH=$PATCH"
-          } >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
 
@@ -80,36 +74,17 @@ jobs:
             echo "tag v$VERSION already exists" >&2; exit 1
           fi
 
-      - name: Bump server package.json
-        working-directory: server
-        run: npm version --no-git-tag-version "$VERSION"
-
-      - name: Bump server runtime version string
+      - name: Bump all version sources
         run: |
-          sed -i -E 's/version: "[0-9]+\.[0-9]+\.[0-9]+"/version: "'"$VERSION"'"/' server/src/create-server.ts
-          grep -q "version: \"$VERSION\"" server/src/create-server.ts
-
-      - name: Bump server CLI version string
-        run: |
-          sed -i -E 's/^const PKG_VERSION = "[0-9]+\.[0-9]+\.[0-9]+";/const PKG_VERSION = "'"$VERSION"'";/' server/src/index.ts
-          grep -q "const PKG_VERSION = \"$VERSION\"" server/src/index.ts
-
-      - name: Bump mcpb manifest version
-        run: |
-          node -e 'const fs=require("fs"); const p="mcpb/manifest.json"; const m=JSON.parse(fs.readFileSync(p,"utf8")); m.version=process.env.VERSION; fs.writeFileSync(p, JSON.stringify(m,null,2)+"\n");'
-          grep -q "\"version\": \"$VERSION\"" mcpb/manifest.json
-
-      - name: Bump plugin Info.lua
-        run: |
-          sed -i -E 's/VERSION = \{ major=[0-9]+, minor=[0-9]+, revision=[0-9]+, build=[0-9]+ \}/VERSION = { major='"$MAJOR"', minor='"$MINOR"', revision='"$PATCH"', build=0 }/' plugin/LightroomMCP.lrplugin/Info.lua
-          grep -q "major=$MAJOR, minor=$MINOR, revision=$PATCH" plugin/LightroomMCP.lrplugin/Info.lua
+          node scripts/bump-version.mjs "$VERSION"
+          node scripts/bump-version.mjs --check
 
       - name: Commit, tag, push
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add server/package.json server/package-lock.json server/src/create-server.ts server/src/index.ts mcpb/manifest.json plugin/LightroomMCP.lrplugin/Info.lua
+          git add server/package.json server/package-lock.json server/src/version.ts mcpb/manifest.json plugin/LightroomMCP.lrplugin/Info.lua
           git commit -m "chore(release): v$VERSION"
           git tag "v$VERSION"
           git push origin HEAD:main

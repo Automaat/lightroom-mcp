@@ -6,6 +6,7 @@ import {
 import type { Dispatcher } from "./dispatcher.js";
 import { createCallToolHandler } from "./tool-handler.js";
 import { listToolsHandler } from "./list-tools-handler.js";
+import { VERSION } from "./version.js";
 
 export interface ServerDeps {
   dispatcher: Pick<Dispatcher, "call">;
@@ -14,7 +15,7 @@ export interface ServerDeps {
 
 export function createMcpServer(deps: ServerDeps): Server {
   const server = new Server(
-    { name: "lightroom-mcp-server", version: "0.3.1" },
+    { name: "lightroom-mcp-server", version: VERSION },
     { capabilities: { tools: {} } },
   );
 

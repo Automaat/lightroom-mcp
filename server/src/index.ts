@@ -9,6 +9,7 @@ import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
 import { createMcpServer } from "./create-server.js";
 import { parseCli, helpText } from "./cli.js";
+import { VERSION } from "./version.js";
 import {
   ensurePluginInstalled,
   findBundledPlugin,
@@ -17,7 +18,6 @@ import {
 } from "./install-plugin.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
-const PKG_VERSION = "0.3.1";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,7 +35,7 @@ async function main() {
     return;
   }
   if (cli.command === "version") {
-    process.stdout.write(PKG_VERSION + "\n");
+    process.stdout.write(VERSION + "\n");
     return;
   }
   if (cli.command === "install-plugin") {
@@ -76,7 +76,7 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`Lightroom MCP server v${PKG_VERSION} running on stdio`);
+  console.error(`Lightroom MCP server v${VERSION} running on stdio`);
   console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
   console.error(`Token file: ${tokenFilePath()}`);
 }
