@@ -19,4 +19,22 @@ export default {
   },
   testMatch: ['**/tests/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts'],
+  // Ratchet: raise these as coverage climbs. `index.ts` is the bin entrypoint
+  // (socket + stdio wiring) and is not unit-tested yet — issue #97 step 4
+  // tracks covering it before its threshold is lifted off the floor. A path
+  // entry is subtracted from `global`, so `global` covers every other file.
+  coverageThreshold: {
+    global: {
+      statements: 94,
+      branches: 87,
+      functions: 90,
+      lines: 95,
+    },
+    './src/index.ts': {
+      statements: 0,
+      branches: 0,
+      functions: 0,
+      lines: 0,
+    },
+  },
 };

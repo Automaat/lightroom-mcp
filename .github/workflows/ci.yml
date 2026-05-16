@@ -47,7 +47,7 @@ jobs:
         run: npm run build
 
       - name: Test
-        run: npm test -- --ci --reporters=default
+        run: npm run test:coverage -- --ci --reporters=default
 
       - name: Upload build artifacts
         if: matrix.os == 'ubuntu-latest'
