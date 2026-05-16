@@ -30,27 +30,29 @@ describe('lightroomModulesDir', () => {
 
   it('returns a darwin path on macOS', () => {
     setPlatform('darwin');
-    expect(lightroomModulesDir()).toMatch(
-      /Library\/Application Support\/Adobe\/Lightroom\/Modules$/,
-    );
+    expect(lightroomModulesDir().endsWith(
+      path.join('Library', 'Application Support', 'Adobe', 'Lightroom', 'Modules'),
+    )).toBe(true);
   });
 
   it('returns an APPDATA-based path on win32', () => {
     setPlatform('win32');
     process.env.APPDATA = path.join('C:', 'Users', 'tester', 'AppData', 'Roaming');
-    expect(lightroomModulesDir()).toMatch(/Adobe[\\/]+Lightroom[\\/]+Modules$/);
+    expect(lightroomModulesDir().endsWith(path.join('Adobe', 'Lightroom', 'Modules'))).toBe(true);
     expect(lightroomModulesDir()).toContain(process.env.APPDATA);
   });
 
   it('falls back to homedir AppData on win32 when APPDATA unset', () => {
     setPlatform('win32');
     delete process.env.APPDATA;
-    expect(lightroomModulesDir()).toMatch(/AppData[\\/]+Roaming[\\/]+Adobe/);
+    expect(lightroomModulesDir()).toContain(path.join('AppData', 'Roaming', 'Adobe'));
   });
 
   it('returns an XDG-style path on linux', () => {
     setPlatform('linux');
-    expect(lightroomModulesDir()).toMatch(/\.local\/share\/Adobe\/Lightroom\/Modules$/);
+    expect(lightroomModulesDir().endsWith(
+      path.join('.local', 'share', 'Adobe', 'Lightroom', 'Modules'),
+    )).toBe(true);
   });
 });
 
@@ -59,26 +61,28 @@ describe('lightroomPluginsDir', () => {
 
   it('returns a darwin path on macOS', () => {
     setPlatform('darwin');
-    expect(lightroomPluginsDir()).toMatch(
-      /Library\/Application Support\/Adobe\/Lightroom\/Plugins$/,
-    );
+    expect(lightroomPluginsDir().endsWith(
+      path.join('Library', 'Application Support', 'Adobe', 'Lightroom', 'Plugins'),
+    )).toBe(true);
   });
 
   it('returns an APPDATA-based path on win32', () => {
     setPlatform('win32');
     process.env.APPDATA = path.join('C:', 'Users', 'tester', 'AppData', 'Roaming');
-    expect(lightroomPluginsDir()).toMatch(/Adobe[\\/]+Lightroom[\\/]+Plugins$/);
+    expect(lightroomPluginsDir().endsWith(path.join('Adobe', 'Lightroom', 'Plugins'))).toBe(true);
   });
 
   it('falls back to homedir AppData on win32 when APPDATA unset', () => {
     setPlatform('win32');
     delete process.env.APPDATA;
-    expect(lightroomPluginsDir()).toMatch(/AppData[\\/]+Roaming[\\/]+Adobe/);
+    expect(lightroomPluginsDir()).toContain(path.join('AppData', 'Roaming', 'Adobe'));
   });
 
   it('returns an XDG-style path on linux', () => {
     setPlatform('linux');
-    expect(lightroomPluginsDir()).toMatch(/\.local\/share\/Adobe\/Lightroom\/Plugins$/);
+    expect(lightroomPluginsDir().endsWith(
+      path.join('.local', 'share', 'Adobe', 'Lightroom', 'Plugins'),
+    )).toBe(true);
   });
 });
 
