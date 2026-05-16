@@ -29,8 +29,10 @@ Use mise tasks from repo root:
 - `mise run build` — `tsc` (outputs `server/dist/`)
 - `mise run test` — Jest (ESM via ts-jest)
 - `mise run dev` — `tsc --watch`
+- `mise run lua:lint` — `luacheck plugin --no-color --codes`
+- `mise run lua:test` — `busted` specs for the plugin
 
-Lua: `luacheck plugin --no-color --codes` (CI runs this; `.luacheckrc` declares LR SDK globals, excludes `JSON.lua`).
+Lua tooling: `mise install` provisions `lua` + `luarocks`; `lua:lint`/`lua:test` auto-install `luacheck`/`busted` into `lua_modules/` (gitignored) via the `lua:deps` task. `.luacheckrc` declares LR SDK globals, excludes `JSON.lua`.
 
 ## CI
 
@@ -45,7 +47,8 @@ Run before every commit (CI runs the same):
 - `cd server && npx tsc --noEmit` — type check must pass
 - `mise run build` — `tsc` compile must succeed
 - `mise run test` — Jest suite must pass
-- `luacheck plugin --no-color --codes` — only if Lua changed
+- `mise run lua:lint` — only if Lua changed
+- `mise run lua:test` — only if Lua changed
 
 ## Plugin install (manual, no automation)
 

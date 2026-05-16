@@ -1,6 +1,11 @@
 [tools]
 node = "24"
 bun = "1.3.14"
+lua = "5.4"
+
+[env]
+# Project-local LuaRocks tree (busted, luacheck) installed by `lua:deps`.
+_.path = ["lua_modules/bin"]
 
 [tasks.install]
 description = "Install dependencies"
@@ -25,3 +30,20 @@ run = "node scripts/build-mcpb.mjs"
 [tasks.binary]
 description = "Build single-file binaries (macos + windows) via Bun"
 run = "node scripts/build-binary.mjs"
+
+[tasks."lua:deps"]
+description = "Install Lua test/lint rocks (busted, luacheck) into lua_modules/"
+run = '''
+test -x lua_modules/bin/busted   || luarocks install --tree lua_modules busted
+test -x lua_modules/bin/luacheck || luarocks install --tree lua_modules luacheck
+'''
+
+[tasks."lua:test"]
+description = "Run busted specs for the Lightroom plugin"
+depends = ["lua:deps"]
+run = "busted"
+
+[tasks."lua:lint"]
+description = "Lint the Lightroom plugin with luacheck"
+depends = ["lua:deps"]
+run = "luacheck plugin --no-color --codes"
