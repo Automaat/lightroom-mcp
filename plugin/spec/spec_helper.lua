@@ -95,6 +95,8 @@ function M.fakeCatalog(opts)
     local collectionSets = opts.collectionSets or {}
     local createdCollections = {}
     local createdKeywords = {}
+    local readAccessCount = 0
+    local writeAccessCount = 0
 
     local function photoMatches(photo, criterion)
         local crit = criterion.criteria
@@ -149,8 +151,14 @@ function M.fakeCatalog(opts)
         end,
         getChildCollections = function() return collections end,
         getChildCollectionSets = function() return collectionSets end,
-        withReadAccessDo = function(_, fn) fn() end,
-        withWriteAccessDo = function(_, _, fn) fn() end,
+        withReadAccessDo = function(_, fn)
+            readAccessCount = readAccessCount + 1
+            fn()
+        end,
+        withWriteAccessDo = function(_, _, fn)
+            writeAccessCount = writeAccessCount + 1
+            fn()
+        end,
         findPhotoByLocalIdentifier = function(_, id)
             local target = tostring(id)
             for _, p in ipairs(photos) do
@@ -176,6 +184,8 @@ function M.fakeCatalog(opts)
         end,
         getCreatedCollections = function() return createdCollections end,
         getCreatedKeywords = function() return createdKeywords end,
+        getReadAccessCount = function() return readAccessCount end,
+        getWriteAccessCount = function() return writeAccessCount end,
     }
 end
 

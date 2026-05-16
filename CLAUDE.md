@@ -63,5 +63,5 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 
 - TS strict mode on. ESM imports must include `.js` extension (NodeNext).
 - New Lua handlers: add file under `plugin/LightroomMCP.lrplugin/Handler*.lua`, register in `DISPATCH` table in `PluginInfoProvider.lua`, declare any new LR globals in `.luacheckrc`.
-- New MCP tool: add schema in `server/src/index.ts` `ListToolsRequestSchema` handler **and** add a `DISPATCH` entry in `PluginInfoProvider.lua`.
+- New MCP tool: add contract in `server/src/tool-contracts.ts` **and** add a `DISPATCH` entry in `PluginInfoProvider.lua`.
 - Default ports `58763` (request) / `58764` (response). Server overrides via env vars `LIGHTROOM_MCP_REQUEST_PORT` / `LIGHTROOM_MCP_RESPONSE_PORT` (parsed in `server/src/ports.ts`); plugin overrides via Plug-in Manager fields stored in `LrPrefs` (`requestPort` / `responsePort`). Both sides must agree — change in lockstep.

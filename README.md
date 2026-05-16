@@ -231,7 +231,7 @@ Repo layout:
 
 1. Add a new `Handler*.lua` under `plugin/LightroomMCP.lrplugin/`.
 2. Register it in the `DISPATCH` table in `PluginInfoProvider.lua`.
-3. Add a schema entry in `server/src/list-tools-handler.ts`.
+3. Add a contract entry in `server/src/tool-contracts.ts`.
 4. Declare any new LR globals in `.luacheckrc`.
 
 ## Troubleshooting

@@ -91,10 +91,12 @@ describe("HandlerDevelop.applyDevelopPreset", function()
     end)
 
     it("requires photo_ids and preset_name", function()
-        local _, Handler = setup({ folders = { fakeFolder("U", { fakePreset("X") }) } })
+        local catalog, Handler = setup({ folders = { fakeFolder("U", { fakePreset("X") }) } })
         assert.has_error(function() Handler.applyDevelopPreset({ preset_name = "X" }) end)
         assert.has_error(function() Handler.applyDevelopPreset({ photo_ids = { "1" } }) end)
         assert.has_error(function() Handler.applyDevelopPreset({ photo_ids = {}, preset_name = "X" }) end)
+        assert.has_error(function() Handler.applyDevelopPreset({ photo_ids = { "" }, preset_name = "X" }) end)
+        assert.are.equal(0, catalog.getWriteAccessCount())
     end)
 end)
 
@@ -150,10 +152,32 @@ describe("HandlerDevelop.copyDevelopSettings", function()
     end)
 
     it("requires source_id and target_ids", function()
-        local _, Handler = setup({})
+        local catalog, Handler = setup({})
         assert.has_error(function() Handler.copyDevelopSettings({ target_ids = { "t" } }) end)
         assert.has_error(function() Handler.copyDevelopSettings({ source_id = "s" }) end)
         assert.has_error(function() Handler.copyDevelopSettings({ source_id = "s", target_ids = {} }) end)
+        assert.has_error(function() Handler.copyDevelopSettings({ source_id = "s", target_ids = { "" } }) end)
+        assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+
+    it("rejects invalid settings whitelist before catalog access", function()
+        local source = helper.fakePhoto({
+            id = "20", path = "/s.jpg",
+            developSettings = { Exposure2012 = 0.5 },
+        })
+        local target = helper.fakePhoto({ id = "21", path = "/t.jpg" })
+        local catalog, Handler = setup({ photos = { source, target } })
+
+        assert.has_error(function()
+            Handler.copyDevelopSettings({
+                source_id = "20",
+                target_ids = { "21" },
+                settings = { "UnsupportedSetting" },
+            })
+        end)
+
+        assert.are.equal(0, catalog.getReadAccessCount())
+        assert.are.equal(0, catalog.getWriteAccessCount())
     end)
 end)
 
@@ -182,9 +206,40 @@ describe("HandlerDevelop.setDevelopSettings", function()
     end)
 
     it("requires photo_id and settings table", function()
-        local _, Handler = setup({})
+        local catalog, Handler = setup({})
         assert.has_error(function() Handler.setDevelopSettings({ settings = {} }) end)
         assert.has_error(function() Handler.setDevelopSettings({ photo_id = "1" }) end)
         assert.has_error(function() Handler.setDevelopSettings({ photo_id = "1", settings = "not-a-table" }) end)
+        assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+
+    it("rejects unsupported setting keys before catalog write", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ photos = { p } })
+
+        assert.has_error(function()
+            Handler.setDevelopSettings({
+                photo_id = "1",
+                settings = { UnsupportedSetting = 1 },
+            })
+        end)
+
+        assert.are.equal(0, catalog.getWriteAccessCount())
+        assert.is_nil(p.getRawMetadata(p, "__appliedSettings"))
+    end)
+
+    it("rejects unsupported setting values before catalog write", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ photos = { p } })
+
+        assert.has_error(function()
+            Handler.setDevelopSettings({
+                photo_id = "1",
+                settings = { Exposure2012 = { nested = true } },
+            })
+        end)
+
+        assert.are.equal(0, catalog.getWriteAccessCount())
+        assert.is_nil(p.getRawMetadata(p, "__appliedSettings"))
     end)
 end)
