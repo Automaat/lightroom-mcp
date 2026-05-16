@@ -209,13 +209,14 @@ The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Sta
 ## Develop
 
 ```bash
-mise install                        # tools (node, bun)
+mise install                        # tools (node, bun, lua + luarocks)
 mise run install                    # npm ci
 mise run build                      # tsc
 mise run test                       # jest
 mise run mcpb                       # build .mcpb bundle
 mise run binary                     # build single-file binaries via Bun
-luacheck plugin --no-color --codes  # lint Lua plugin
+mise run lua:lint                   # luacheck the Lua plugin
+mise run lua:test                   # busted specs for the Lua plugin
 ```
 
 Repo layout:
