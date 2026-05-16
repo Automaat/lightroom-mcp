@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { Dispatcher } from '../src/dispatcher.js';
 
+interface SentRequest {
+  id: string;
+  action: string;
+  params: unknown;
+}
+
+const parseSent = (line: string): SentRequest => JSON.parse(line) as SentRequest;
+
 describe('Dispatcher', () => {
   let sent: string[];
   let canSend: boolean;
@@ -26,7 +34,7 @@ describe('Dispatcher', () => {
   it('serializes the call as line-delimited JSON with id, action, params', async () => {
     const promise = dispatcher.call('list_collections', { foo: 'bar' });
     expect(sent).toHaveLength(1);
-    const sentObj = JSON.parse(sent[0]);
+    const sentObj = parseSent(sent[0]);
     expect(sentObj.action).toBe('list_collections');
     expect(sentObj.params).toEqual({ foo: 'bar' });
     expect(typeof sentObj.id).toBe('string');
@@ -39,8 +47,8 @@ describe('Dispatcher', () => {
   it('routes responses to the correct caller by id', async () => {
     const p1 = dispatcher.call('a', {});
     const p2 = dispatcher.call('b', {});
-    const id1 = JSON.parse(sent[0]).id;
-    const id2 = JSON.parse(sent[1]).id;
+    const id1 = parseSent(sent[0]).id;
+    const id2 = parseSent(sent[1]).id;
     expect(id1).not.toBe(id2);
 
     // Resolve in reverse order
@@ -53,7 +61,7 @@ describe('Dispatcher', () => {
 
   it('propagates plugin errors through the response', async () => {
     const promise = dispatcher.call('bogus', {});
-    const id = JSON.parse(sent[0]).id;
+    const id = parseSent(sent[0]).id;
     dispatcher.handleResponseLine(JSON.stringify({ id, error: 'Unknown action' }));
     const resp = await promise;
     expect(resp.error).toBe('Unknown action');
@@ -91,7 +99,7 @@ describe('Dispatcher', () => {
 
   it('cleans up pending map after response received', async () => {
     const p = dispatcher.call('x', {});
-    const id = JSON.parse(sent[0]).id;
+    const id = parseSent(sent[0]).id;
     expect(dispatcher.pendingCount()).toBe(1);
     dispatcher.handleResponseLine(JSON.stringify({ id, result: 'ok' }));
     await p;
@@ -100,7 +108,7 @@ describe('Dispatcher', () => {
 
   it('defaults params to empty object when undefined', async () => {
     const p = dispatcher.call('x', undefined);
-    const sentObj = JSON.parse(sent[0]);
+    const sentObj = parseSent(sent[0]);
     expect(sentObj.params).toEqual({});
     await p.catch(() => {});
   });
