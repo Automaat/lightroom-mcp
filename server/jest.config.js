@@ -10,6 +10,9 @@ export default {
       'ts-jest',
       {
         useESM: true,
+        // 151002 recommends `isolatedModules: true`, which is incompatible
+        // with ts-jest's ESM transform (breaks `import` emit). tsconfig.test.json
+        // is the real type gate for tests; this warning is noise here.
         diagnostics: { ignoreCodes: [151002] },
       },
     ],

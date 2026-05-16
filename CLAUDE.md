@@ -38,13 +38,13 @@ Lua tooling: `mise install` provisions `lua` + `luarocks`; `lua:lint`/`lua:test`
 
 - `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows, Node 22.
 - `.github/workflows/lua-lint.yml` — luacheck on plugin changes.
-- Type check uses `tsc --noEmit`; do not break it.
+- Type check runs `npm run check` (`tsc --noEmit` on src + `tsconfig.test.json` on tests); do not break it.
 
 ## Pre-commit checklist
 
 Run before every commit (CI runs the same):
 
-- `cd server && npx tsc --noEmit` — type check must pass
+- `cd server && npm run check` — type check (src + tests) must pass
 - `mise run build` — `tsc` compile must succeed
 - `mise run test` — Jest suite must pass
 - `mise run lua:lint` — only if Lua changed
