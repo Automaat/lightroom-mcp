@@ -1,7 +1,7 @@
 [tools]
 node = "24"
 bun = "1.3.14"
-lua = "5.4"
+lua = "5.5.0"
 
 [env]
 # Project-local LuaRocks tree (busted, luacheck) installed by `lua:deps`.
