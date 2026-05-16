@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "check": "tsc --noEmit && tsc -p tsconfig.test.json",
     "watch": "tsc --watch",
     "test": "jest",
     "test:watch": "jest --watch",
