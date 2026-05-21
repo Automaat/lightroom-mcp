@@ -151,10 +151,23 @@ local DISPATCH = {
 -- send-side outage still surfaces as a server-side timeout, not silent
 -- success.
 local SEND_WAIT_SECONDS = 25
+-- After this many seconds of waiting for sendConnected, request a fresh
+-- response-side rebind. Recovers from states where the response listener
+-- ended up bound-but-clientless without responseNeedsRebind being set —
+-- observed on Windows in issue #110, where the post-rebind onConnected
+-- fires but sendConnected is later false by the time sendResponse runs
+-- and no event sets the rebind flag again.
+local SEND_REBIND_TRIGGER_SECONDS = 5
 
 local function sendResponse(response)
     local waited = 0
+    local selfHealRequested = false
     while not pluginState.sendConnected and waited < SEND_WAIT_SECONDS do
+        if not selfHealRequested and waited >= SEND_REBIND_TRIGGER_SECONDS then
+            addLog("sendResponse stalled " .. SEND_REBIND_TRIGGER_SECONDS .. "s, requesting rebind id=" .. tostring(response.id))
+            pluginState.responseNeedsRebind = true
+            selfHealRequested = true
+        end
         LrTasks.sleep(0.1)
         waited = waited + 0.1
     end
@@ -286,6 +299,7 @@ local function startServer()
                 onClosed = function()
                     pluginState.receiveConnected = false
                     pluginState.requestNeedsReconnect = true
+                    addLog("REQUEST socket closed (client disconnected)")
                 end,
                 onError = function(_, err)
                     local errStr = tostring(err)
@@ -309,9 +323,13 @@ local function startServer()
         -- finished rebinding, looping us out of the new client.
         pluginState.responseGen = 0
 
-        local function bindResponse()
-            pluginState.responseGen = pluginState.responseGen + 1
-            local myGen = pluginState.responseGen
+        -- bindResponse takes myGen explicitly so callers can pre-bump the
+        -- generation BEFORE calling :close() on the prior listener. On
+        -- platforms where LrSocket invokes onClosed synchronously during
+        -- close (suspected on Windows, per issue #110), a stale callback
+        -- would otherwise see isLive()==true and re-set responseNeedsRebind
+        -- after we just cleared it.
+        local function bindResponse(myGen)
             local function isLive() return pluginState.responseGen == myGen end
             return LrSocket.bind {
                 functionContext = context,
@@ -327,6 +345,7 @@ local function startServer()
                     if not isLive() then return end
                     pluginState.sendConnected = false
                     pluginState.responseNeedsRebind = true
+                    addLog("RESPONSE socket closed (gen=" .. myGen .. ")")
                 end,
                 onError = function(_, err)
                     if not isLive() then return end
@@ -344,10 +363,14 @@ local function startServer()
             }
         end
 
+        -- Bump first, then bind, so the initial listener owns gen=1 (any
+        -- pre-existing stale callbacks from a Reload Plug-in cycle were
+        -- bound against gen=0 and stay ignored).
+        pluginState.responseGen = pluginState.responseGen + 1
         pluginState.requestSocket = bindRequest()
         addLog("REQUEST bound on " .. requestPort)
-        pluginState.responseSocket = bindResponse()
-        addLog("RESPONSE bound on " .. responsePort)
+        pluginState.responseSocket = bindResponse(pluginState.responseGen)
+        addLog("RESPONSE bound on " .. responsePort .. " gen=" .. pluginState.responseGen)
 
         while pluginState.running do
             if pluginState.requestNeedsReconnect and pluginState.requestSocket then
@@ -358,13 +381,27 @@ local function startServer()
             -- - rebind: full close+rebind for true client disconnect
             -- - reconnect: cheap reconnect for listen-side timeouts
             if pluginState.responseNeedsRebind then
+                -- Pre-bump gen BEFORE close so any synchronous onClosed
+                -- callback fired during close() sees isLive()==false and
+                -- ignores itself. Without this, the OLD listener's close
+                -- callback re-sets responseNeedsRebind after we clear it
+                -- below, looping the rebind on the next tick. Issue #110
+                -- suspected Windows trigger.
+                pluginState.responseGen = pluginState.responseGen + 1
+                local newGen = pluginState.responseGen
                 if pluginState.responseSocket then
                     pcall(function() pluginState.responseSocket:close() end)
                 end
-                pluginState.responseSocket = bindResponse()
+                pluginState.sendConnected = false
+                -- Brief yield so any kernel cleanup of the just-closed
+                -- listener completes before we try to bind the same port
+                -- again. The actual server-side reconnect takes ~1s, so
+                -- 100ms here doesn't meaningfully delay recovery.
+                LrTasks.sleep(0.1)
+                pluginState.responseSocket = bindResponse(newGen)
                 pluginState.responseNeedsRebind = false
                 pluginState.responseNeedsReconnect = false
-                addLog("RESPONSE rebound on " .. responsePort)
+                addLog("RESPONSE rebound on " .. responsePort .. " gen=" .. newGen)
             elseif pluginState.responseNeedsReconnect and pluginState.responseSocket then
                 pluginState.responseNeedsReconnect = false
                 pluginState.responseSocket:reconnect()
