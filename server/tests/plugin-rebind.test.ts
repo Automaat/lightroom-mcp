@@ -37,6 +37,7 @@ async function waitFor(
 
 async function startHarness(options?: {
   rebindDelayMs?: number;
+  exclusivePort?: boolean;
   handler?: (action: string, params: unknown) => unknown | Promise<unknown>;
   dispatcherTimeoutMs?: number;
 }): Promise<Harness> {
@@ -46,6 +47,7 @@ async function startHarness(options?: {
     responsePort,
     token: TOKEN,
     rebindDelayMs: options?.rebindDelayMs ?? 0,
+    exclusivePort: options?.exclusivePort ?? false,
     handler:
       options?.handler ??
       ((action: string) => ({ echoed: action, count: 0, has_more: false })),
@@ -142,5 +144,55 @@ describe("plugin rebind cycle (issue #110)", () => {
       expect(resp.error).toBeUndefined();
     },
     20_000,
+  );
+
+  it(
+    "survives close/rebind on the same port with SO_REUSEADDR disabled",
+    async () => {
+      // Listening with `exclusive: true` turns off SO_REUSEADDR. On Windows
+      // this is the closest match for SO_EXCLUSIVEADDRUSE — a closed listener's
+      // port can stay in TIME_WAIT and reject an immediate rebind. If LrSocket
+      // on Windows behaves this way, the response port would intermittently
+      // fail to rebind and sendConnected would stay false. We test that the
+      // rebind+reconnect cycle still delivers a response even in this mode.
+      harness = await startHarness({ exclusivePort: true });
+      const resp = await harness.dispatcher.call("list_collections", {});
+      expect(resp.error).toBeUndefined();
+    },
+    20_000,
+  );
+
+  it(
+    "delivers responses across 50 sequential rebind cycles",
+    async () => {
+      // Stress: each iteration triggers a response-port rebind, then issues
+      // a dispatch. Any timing race in the close+rebind+reconnect cycle has
+      // 50 chances to fire. Mirrors what happens under sustained churn (e.g.
+      // MCP client restart loops the reporter described in issue #110).
+      harness = await startHarness();
+      for (let i = 0; i < 50; i++) {
+        await harness.plugin.triggerRebind();
+        const resp = await harness.dispatcher.call("stress", { i });
+        expect(resp.error).toBeUndefined();
+        expect((resp.result as { echoed: string }).echoed).toBe("stress");
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "delivers responses across 50 rebind cycles with SO_REUSEADDR disabled",
+    async () => {
+      // Same stress as above but with `exclusive: true`. On Windows, repeated
+      // rapid bind/close on the same port without SO_REUSEADDR is the
+      // pathological case for TIME_WAIT collisions.
+      harness = await startHarness({ exclusivePort: true });
+      for (let i = 0; i < 50; i++) {
+        await harness.plugin.triggerRebind();
+        const resp = await harness.dispatcher.call("stress_excl", { i });
+        expect(resp.error).toBeUndefined();
+      }
+    },
+    60_000,
   );
 });

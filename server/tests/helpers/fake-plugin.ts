@@ -24,6 +24,11 @@ export interface FakePluginOptions {
   rebindDelayMs?: number;
   // Max wait inside "sendResponse" for sendConnected to become true.
   sendWaitMs?: number;
+  // If true, listen() runs with `exclusive: true` which disables SO_REUSEADDR.
+  // On Windows this surfaces TIME_WAIT collisions during close+rebind on the
+  // same port — closest Node knob we have to LrSocket's Win32 socket
+  // semantics. Default false (Node's normal behavior).
+  exclusivePort?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -35,8 +40,9 @@ export interface FakePluginEvent {
 
 export class FakePlugin {
   private readonly host = "127.0.0.1";
-  private readonly opts: Required<Omit<FakePluginOptions, "log">> & {
+  private readonly opts: Required<Omit<FakePluginOptions, "log" | "exclusivePort">> & {
     log: (msg: string) => void;
+    exclusivePort: boolean;
   };
 
   private requestServer: net.Server | null = null;
@@ -60,6 +66,7 @@ export class FakePlugin {
       handler: opts.handler,
       rebindDelayMs: opts.rebindDelayMs ?? 0,
       sendWaitMs: opts.sendWaitMs ?? 25_000,
+      exclusivePort: opts.exclusivePort ?? false,
       log: opts.log ?? (() => {}),
     };
   }
@@ -102,12 +109,26 @@ export class FakePlugin {
     });
     return new Promise((resolve, reject) => {
       srv.once("error", reject);
-      srv.listen(this.opts.responsePort, this.host, () => {
-        srv.off("error", reject);
-        this.event("response_bound", `gen=${myGen}`);
-        resolve(srv);
-      });
+      srv.listen(
+        {
+          port: this.opts.responsePort,
+          host: this.host,
+          exclusive: this.opts.exclusivePort,
+        },
+        () => {
+          srv.off("error", reject);
+          this.event("response_bound", `gen=${myGen}`);
+          resolve(srv);
+        },
+      );
     });
+  }
+
+  // Externally-triggered rebind for stress tests. Mirrors what happens
+  // internally when a new request-side client connects, but lets a test
+  // drive many rebind cycles against the same long-lived connection.
+  async triggerRebind(): Promise<void> {
+    await this.rebindResponse();
   }
 
   private async rebindResponse(): Promise<void> {
@@ -166,11 +187,18 @@ export class FakePlugin {
     });
     return new Promise((resolve, reject) => {
       srv.once("error", reject);
-      srv.listen(this.opts.requestPort, this.host, () => {
-        srv.off("error", reject);
-        this.event("request_bound");
-        resolve(srv);
-      });
+      srv.listen(
+        {
+          port: this.opts.requestPort,
+          host: this.host,
+          exclusive: this.opts.exclusivePort,
+        },
+        () => {
+          srv.off("error", reject);
+          this.event("request_bound");
+          resolve(srv);
+        },
+      );
     });
   }
 
