@@ -53,11 +53,19 @@ end
 -- load, otherwise we end up with two pluginState tables, two LrSocket
 -- binds, two tokens, and connections land on whichever listener the
 -- kernel hands the accept to — usually the wrong one.
+local needsRestartAfterReload = false
+
 if _G.LightroomMCP_State and _G.LightroomMCP_State.running then
     -- True Reload Plug-in of a running server: tear down the old loop.
     local old = _G.LightroomMCP_State
     logger:info("Reload detected - stopping previous server instance")
     old.running = false
+    -- PluginInit.lua's autostart only fires on the plugin's initial load,
+    -- not on this InfoProvider reload path (e.g. Plug-in Manager dialog
+    -- re-requiring the module). Without self-restarting here, a server
+    -- that was running before the reload stays dead until the user
+    -- manually clicks "Start Server" or relaunches Lightroom.
+    needsRestartAfterReload = true
     -- Close sockets immediately so ports are free before the new task binds.
     -- The old loop exits on its next 0.2 s tick; PluginInit sleeps 0.5 s
     -- before calling startServer() to ensure the old context has flushed.
@@ -424,6 +432,13 @@ local function stopServer()
 end
 
 addLog("PluginInfoProvider loaded")
+
+if needsRestartAfterReload then
+    LrTasks.startAsyncTask(function()
+        LrTasks.sleep(0.5)
+        startServer()
+    end)
+end
 
 local PluginInfoProvider = {
     startServer = startServer,
