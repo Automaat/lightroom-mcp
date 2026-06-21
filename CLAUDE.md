@@ -64,6 +64,8 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 
 **Reload behaviour**: "Reload Plug-in" cancels the old task's `LrFunctionContext` (freeing its LrSocket ports) and starts fresh. PluginInit sleeps 0.5 s before binding so the context cancel can flush. Server is ready in ~1 s.
 
+The InfoProvider module's top-level reload-detected branch (`PluginInfoProvider.lua`, guarded by `_G.LightroomMCP_State.running`) can also tear down a running server on its own, on a reload path that doesn't re-run `PluginInit.lua`'s one-time autostart. That branch now self-restarts via `LrTasks.startAsyncTask` once `startServer` is defined — don't remove that without re-checking this path stays covered.
+
 ## Conventions
 
 - TS strict mode on. ESM imports must include `.js` extension (NodeNext).

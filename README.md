@@ -238,7 +238,7 @@ Repo layout:
 ## Troubleshooting
 
 - **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port. Quit Lightroom (Cmd+Q on macOS / Alt+F4 on Windows) and reopen.
-- **Plugin not connected** — click **Start Server** in Plug-in Manager; the server reconnects within ~1s.
+- **Plugin not connected** — the server now self-restarts after a Reload Plug-in that tore down a running instance. If it's still stopped, click **Start Server** in Plug-in Manager; it reconnects within ~1s.
 - **Timeout errors** — handler may be scanning a large catalog without filters; add `rating`, `filename`, `keywords`, or date filters to narrow.
 - **macOS "cannot be opened because the developer cannot be verified"** (binary path) — `xattr -d com.apple.quarantine /path/to/binary`. Or right-click → Open the first time.
 - **Windows SmartScreen blocks the .exe** — More info → Run anyway.
