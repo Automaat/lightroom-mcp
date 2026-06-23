@@ -54,12 +54,18 @@ end
 -- binds, two tokens, and connections land on whichever listener the
 -- kernel hands the accept to — usually the wrong one.
 if _G.LightroomMCP_State and _G.LightroomMCP_State.running then
-    -- Lightroom loads this InfoProvider module every time the Plug-in Manager
-    -- panel opens (to render the UI), not only on a true "Reload Plug-in".
-    -- Tearing down the server here kills a healthy MCP session whenever the
-    -- user merely inspects the plugin status.  Preserve the running instance
-    -- so that opening the Plug-in Manager is a read-only operation.
-    logger:info("InfoProvider loaded while server is running; preserving server instance")
+    if _G.LightroomMCP_State.requestSocket or _G.LightroomMCP_State.responseSocket then
+        -- Sockets still alive → this is just the Plug-in Manager opening to
+        -- render the UI, not a true "Reload Plug-in".  Preserve the instance.
+        logger:info("InfoProvider loaded while server is running; preserving server instance")
+    else
+        -- running == true but sockets are gone → cleanup handler from a true
+        -- "Reload Plug-in" already closed them.  Reset the flag so that
+        -- startServer() and the UI Start button work again.
+        logger:info("Reload detected - stale state (running with no sockets); resetting")
+        _G.LightroomMCP_State.running = false
+        _G.LightroomMCP_State.token = nil
+    end
 end
 
 if not _G.LightroomMCP_State then
