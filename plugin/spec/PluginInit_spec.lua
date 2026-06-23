@@ -8,12 +8,18 @@ local function loadInit(opts)
         started = false,
         usedPostAsyncTaskWithContext = false,
         usedStartAsyncTask = false,
+        loggedError = nil,
     }
 
     local prefs = { autoStartServer = opts.autoStartServer }
 
     package.loaded.PluginInfoProvider = {
-        startServer = function() observed.started = true end,
+        startServer = function()
+            if opts.startServerError then
+                error(opts.startServerError)
+            end
+            observed.started = true
+        end,
     }
 
     helper.installImport({
@@ -26,6 +32,7 @@ local function loadInit(opts)
                 fn()
             end,
             sleep = function() end,
+            pcall = function(fn, ...) return pcall(fn, ...) end,
         },
         LrFunctionContext = {
             postAsyncTaskWithContext = function(_, fn)
@@ -33,6 +40,16 @@ local function loadInit(opts)
                 fn()
             end,
         },
+        LrLogger = setmetatable({}, {
+            __call = function()
+                return {
+                    info = function() end,
+                    warn = function() end,
+                    error = function(_, msg) observed.loggedError = msg end,
+                    enable = function() end,
+                }
+            end,
+        }),
     })
 
     package.loaded.PluginInit = nil
@@ -61,5 +78,15 @@ describe("PluginInit auto-start", function()
         local o = loadInit({ autoStartServer = nil })
         assert.is_true(o.prefs.autoStartServer)
         assert.is_true(o.started)
+    end)
+
+    it("logs the failure instead of dying silently when startServer throws", function()
+        -- The auto-start task owns its own context with no cleanup handler, so
+        -- an unhandled throw would tear it down with nothing logged -- the
+        -- invisible-failure mode of issue #128. It must be surfaced.
+        local o = loadInit({ autoStartServer = true, startServerError = "bind failed" })
+        assert.is_false(o.started)
+        assert.is_not_nil(o.loggedError)
+        assert.is_truthy(o.loggedError:find("bind failed", 1, true))
     end)
 end)
