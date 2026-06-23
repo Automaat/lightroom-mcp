@@ -14,6 +14,13 @@ export interface DispatcherOptions {
   send: (line: string) => boolean;
   getToken: () => string;
   timeoutMs?: number;
+  /**
+   * Per-action timeout overrides (ms), keyed by action name. Long-running
+   * actions like batch export/import need far more than the default before a
+   * healthy plugin can reply; a flat timeout reports a spurious failure and
+   * leaves a stale pending entry. Actions absent here use `timeoutMs`.
+   */
+  actionTimeoutsMs?: Record<string, number>;
   log?: (msg: string) => void;
 }
 
@@ -21,6 +28,7 @@ export class Dispatcher {
   private pending = new Map<string, PendingResponse>();
   private idCounter = 0;
   private readonly timeoutMs: number;
+  private readonly actionTimeoutsMs: Record<string, number>;
   private readonly send: (line: string) => boolean;
   private readonly getToken: () => string;
   private readonly log: (msg: string) => void;
@@ -29,6 +37,7 @@ export class Dispatcher {
     this.send = opts.send;
     this.getToken = opts.getToken;
     this.timeoutMs = opts.timeoutMs ?? 30_000;
+    this.actionTimeoutsMs = opts.actionTimeoutsMs ?? {};
     this.log = opts.log ?? ((msg: string) => console.error(msg));
   }
 
@@ -53,12 +62,13 @@ export class Dispatcher {
 
   async call(action: string, params: unknown): Promise<PluginResponse> {
     const id = `req_${Date.now()}_${this.idCounter++}`;
+    const timeoutMs = this.actionTimeoutsMs[action] ?? this.timeoutMs;
 
     const responsePromise = new Promise<PluginResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Plugin response timeout (${this.timeoutMs / 1000}s)`));
-      }, this.timeoutMs);
+        reject(new Error(`Plugin response timeout (${timeoutMs / 1000}s)`));
+      }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
 
