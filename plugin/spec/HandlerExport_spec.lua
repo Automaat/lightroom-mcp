@@ -64,4 +64,41 @@ describe("HandlerExport.exportPhotos", function()
             Handler.exportPhotos({ photo_ids = { "missing" }, destination = "/out" })
         end)
     end)
+
+    it("runs the export after releasing catalog read access", function()
+        -- Holding read access for the whole export wedged the bridge on
+        -- macOS (issue #128). The lock must be released before
+        -- doExportOnCurrentTask runs.
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local insideReadAccess = false
+        local exportRanInsideReadAccess = nil
+        local catalog = helper.fakeCatalog({ photos = { p } })
+        local realWithRead = catalog.withReadAccessDo
+        catalog.withReadAccessDo = function(self, fn)
+            insideReadAccess = true
+            realWithRead(self, fn)
+            insideReadAccess = false
+        end
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrLogger = helper.defaultLrLogger(),
+            LrFileUtils = {},
+            LrPathUtils = {},
+            LrExportSession = function()
+                return {
+                    doExportOnCurrentTask = function()
+                        exportRanInsideReadAccess = insideReadAccess
+                    end,
+                }
+            end,
+        })
+        package.loaded.HandlerExport = nil
+        local Handler = require 'HandlerExport'
+
+        local r = Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" })
+
+        assert.is_true(r.success)
+        assert.are.equal(1, r.exported)
+        assert.is_false(exportRanInsideReadAccess)
+    end)
 end)

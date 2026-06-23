@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
 import { Dispatcher } from '../src/dispatcher.js';
 
 interface SentRequest {
@@ -111,5 +111,78 @@ describe('Dispatcher', () => {
     const sentObj = parseSent(sent[0]);
     expect(sentObj.params).toEqual({});
     await p.catch(() => {});
+  });
+
+  describe('per-action timeout overrides', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('honors a longer timeout for the configured action', async () => {
+      jest.useFakeTimers();
+      const d = new Dispatcher({
+        send: (line) => {
+          sent.push(line);
+          return true;
+        },
+        getToken: () => 'test-token',
+        timeoutMs: 1000,
+        actionTimeoutsMs: { export_photos: 60_000 },
+      });
+
+      const p = d.call('export_photos', {});
+      let settled = false;
+      void p.catch(() => {
+        settled = true;
+      });
+
+      // Past the default timeout, but the override keeps it pending.
+      jest.advanceTimersByTime(1000);
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(d.pendingCount()).toBe(1);
+
+      // Past the override: now it rejects, reporting the override duration.
+      jest.advanceTimersByTime(59_000);
+      await expect(p).rejects.toThrow(/timeout \(60s\)/);
+      expect(d.pendingCount()).toBe(0);
+    });
+
+    it('falls back to the default timeout for unlisted actions', async () => {
+      jest.useFakeTimers();
+      const d = new Dispatcher({
+        send: (line) => {
+          sent.push(line);
+          return true;
+        },
+        getToken: () => 'test-token',
+        timeoutMs: 1000,
+        actionTimeoutsMs: { export_photos: 60_000 },
+      });
+
+      const p = d.call('list_collections', {});
+      jest.advanceTimersByTime(1000);
+      await expect(p).rejects.toThrow(/timeout \(1s\)/);
+      expect(d.pendingCount()).toBe(0);
+    });
+
+    it('falls back to the default when an override is non-positive', async () => {
+      jest.useFakeTimers();
+      const d = new Dispatcher({
+        send: (line) => {
+          sent.push(line);
+          return true;
+        },
+        getToken: () => 'test-token',
+        timeoutMs: 1000,
+        // 0 must mean "no override", not a 0 ms timer that rejects immediately.
+        actionTimeoutsMs: { export_photos: 0 },
+      });
+
+      const p = d.call('export_photos', {});
+      jest.advanceTimersByTime(1000);
+      await expect(p).rejects.toThrow(/timeout \(1s\)/);
+      expect(d.pendingCount()).toBe(0);
+    });
   });
 });

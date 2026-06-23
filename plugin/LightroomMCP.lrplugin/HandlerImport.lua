@@ -19,41 +19,52 @@ function ImportHandler.importPhotos(args)
     local catalog = LrApplication.activeCatalog()
     local importedCount = 0
 
-    -- Import photos
-    catalog:withWriteAccessDo("Import Photos", function()
-        local photosToImport = {}
-
-        if LrFileUtils.isDirectory(args.source_path) then
-            -- Import all photos from directory
-            for file in LrFileUtils.files(args.source_path) do
-                local ext = LrFileUtils.extension(file):lower()
-                if ext == 'jpg' or ext == 'jpeg' or ext == 'png' or
-                   ext == 'tif' or ext == 'tiff' or ext == 'dng' or
-                   ext == 'cr2' or ext == 'nef' or ext == 'arw' then
-                    table.insert(photosToImport, file)
-                end
+    -- Enumerate source files OUTSIDE any catalog lock; the filesystem walk
+    -- needs no catalog access.
+    local photosToImport = {}
+    if LrFileUtils.isDirectory(args.source_path) then
+        -- Import all photos from directory
+        for file in LrFileUtils.files(args.source_path) do
+            local ext = LrFileUtils.extension(file):lower()
+            if ext == 'jpg' or ext == 'jpeg' or ext == 'png' or
+               ext == 'tif' or ext == 'tiff' or ext == 'dng' or
+               ext == 'cr2' or ext == 'nef' or ext == 'arw' then
+                table.insert(photosToImport, file)
             end
-        else
-            -- Import single photo
-            table.insert(photosToImport, args.source_path)
         end
+    else
+        -- Import single photo
+        table.insert(photosToImport, args.source_path)
+    end
 
-        if #photosToImport == 0 then
-            error("No photos found to import")
-        end
+    if #photosToImport == 0 then
+        error("No photos found to import")
+    end
 
-        -- Use catalog:addPhoto for each file
-        local addedPhotos = {}
-        for _, filePath in ipairs(photosToImport) do
+    -- Add each photo in its OWN write transaction rather than holding the
+    -- exclusive catalog write lock across the whole batch. A large import
+    -- runs for minutes, and one batch-wide withWriteAccessDo would block
+    -- every other handler (reads included) for that entire span -- the same
+    -- bridge wedge the export handler was restructured to avoid (issue #128),
+    -- and now longer-lived since import_photos was given a 5-minute server
+    -- timeout. addPhoto cannot acquire its own isolated access the way
+    -- LrExportSession does, so a per-photo lock is the bounded-hold
+    -- equivalent: the lock is released between photos, letting queued
+    -- handlers interleave.
+    local addedPhotos = {}
+    for _, filePath in ipairs(photosToImport) do
+        catalog:withWriteAccessDo("Import Photo", function()
             local photo = catalog:addPhoto(filePath)
             if photo then
                 table.insert(addedPhotos, photo)
                 importedCount = importedCount + 1
             end
-        end
+        end)
+    end
 
-        -- Add to collection if specified
-        if args.collection_name and #addedPhotos > 0 then
+    -- Add to collection if specified, in its own short write transaction.
+    if args.collection_name and #addedPhotos > 0 then
+        catalog:withWriteAccessDo("Add Imported Photos to Collection", function()
             local targetCollection = nil
             local collections = catalog:getChildCollections()
 
@@ -71,8 +82,8 @@ function ImportHandler.importPhotos(args)
             else
                 logger:warn("Collection not found: " .. args.collection_name)
             end
-        end
-    end)
+        end)
+    end
 
     logger:info(string.format("Imported %d photos from: %s", importedCount, args.source_path))
 
