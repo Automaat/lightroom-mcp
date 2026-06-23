@@ -64,4 +64,22 @@ describe("HandlerImport.importPhotos", function()
         local r = Handler.importPhotos({ source_path = "/dir" })
         assert.are.equal(3, r.imported)
     end)
+
+    it("acquires catalog write access per photo, not once for the batch", function()
+        -- A batch-wide write lock wedges the bridge for the whole multi-minute
+        -- import (issue #128); each photo must get its own short transaction so
+        -- the exclusive lock is released between photos.
+        local catalog, Handler = setup({
+            fs = {
+                exists = { ["/dir"] = true },
+                directories = { ["/dir"] = true },
+                dirContents = { "/dir/a.jpg", "/dir/b.png", "/dir/c.dng" },
+            },
+        })
+
+        local r = Handler.importPhotos({ source_path = "/dir" })
+
+        assert.are.equal(3, r.imported)
+        assert.are.equal(3, catalog:getWriteAccessCount())
+    end)
 end)
