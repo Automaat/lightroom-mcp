@@ -1,9 +1,8 @@
 local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
-local LrLogger = import 'LrLogger'
 local LrFileUtils = import 'LrFileUtils'
 
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local ImportHandler = {}
 
@@ -77,15 +76,15 @@ function ImportHandler.importPhotos(args)
 
             if targetCollection then
                 targetCollection:addPhotos(addedPhotos)
-                logger:info(string.format("Added %d imported photos to collection: %s",
+                Log.info(string.format("Added %d imported photos to collection: %s",
                     #addedPhotos, args.collection_name))
             else
-                logger:warn("Collection not found: " .. args.collection_name)
+                Log.warn("Collection not found: " .. args.collection_name)
             end
         end)
     end
 
-    logger:info(string.format("Imported %d photos from: %s", importedCount, args.source_path))
+    Log.info(string.format("Imported %d photos from: %s", importedCount, args.source_path))
 
     return {
         success = true,

@@ -1,5 +1,4 @@
 local LrTasks = import 'LrTasks'
-local LrLogger = import 'LrLogger'
 local LrDialogs = import 'LrDialogs'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrSocket = import 'LrSocket'
@@ -18,9 +17,7 @@ local HandlerImport = require 'HandlerImport'
 local HandlerExport = require 'HandlerExport'
 local HandlerSelection = require 'HandlerSelection'
 local HandlerDevelop = require 'HandlerDevelop'
-
-local logger = LrLogger('LightroomMCP')
-logger:enable("logfile")
+local Log = require 'Log'
 
 local DEFAULT_REQUEST_PORT = 58763
 local DEFAULT_RESPONSE_PORT = 58764
@@ -85,7 +82,7 @@ local function addLog(msg)
     if #pluginState.log > 100 then
         table.remove(pluginState.log, 1)
     end
-    logger:info(msg)
+    Log.info(msg)
 end
 
 local function generateToken()
@@ -512,6 +509,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
     statusText = statusText .. "Requests processed: " .. pluginState.requestsProcessed .. "\n"
     statusText = statusText .. "Request port: " .. activeRequest .. " (mode=receive)\n"
     statusText = statusText .. "Response port: " .. activeResponse .. " (mode=send)\n"
+    statusText = statusText .. "Log file: " .. (Log.filePath() or "(unavailable)") .. "\n"
     statusText = statusText .. "\nRecent logs:\n"
     local startIdx = math.max(1, #pluginState.log - 15)
     for i = startIdx, #pluginState.log do
@@ -579,6 +577,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                             "Response socket connected: " .. tostring(pluginState.sendConnected),
                             "Last event: " .. (pluginState.lastEvent or "Never"),
                             "Requests processed: " .. pluginState.requestsProcessed,
+                            "Log file: " .. (Log.filePath() or "(unavailable)"),
                             "",
                             "Recent logs:",
                         }

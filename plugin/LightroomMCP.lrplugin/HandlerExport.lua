@@ -1,12 +1,10 @@
 local LrApplication = import 'LrApplication'
 local LrExportSession = import 'LrExportSession'
-local LrLogger = import 'LrLogger'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 
 local PhotoLookup = require 'PhotoLookup'
-
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local ExportHandler = {}
 
@@ -84,7 +82,7 @@ function ExportHandler.exportPhotos(args)
     exportSession:doExportOnCurrentTask()
     local exportedCount = #photosToExport
 
-    logger:info(string.format("Exported %d photos to: %s", exportedCount, args.destination))
+    Log.info(string.format("Exported %d photos to: %s", exportedCount, args.destination))
 
     return {
         success = true,

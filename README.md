@@ -250,6 +250,11 @@ Logs:
 | Plugin | `~/Documents/LrClassicLogs/LightroomMCP.log` | `%USERPROFILE%\Documents\LrClassicLogs\LightroomMCP.log` |
 | Claude Desktop | `~/Library/Logs/Claude/mcp*.log` | `%APPDATA%\Claude\Logs\mcp*.log` |
 
+The plugin resolves its log path via the OS (`LrPathUtils`), so on Windows with
+OneDrive-redirected Documents the file follows the redirect. The exact resolved
+path is shown as **Log file:** in Plug-in Manager → **Show Status** — use that if
+the table path above is empty.
+
 ## License
 
 MIT
