@@ -29,15 +29,15 @@ Use mise tasks from repo root:
 - `mise run build` — `tsc` (outputs `server/dist/`)
 - `mise run test` — Jest (ESM via ts-jest)
 - `mise run dev` — `tsc --watch`
-- `mise run lua:lint` — `luacheck plugin --no-color --codes`
+- `mise run lua:lint` — `selene plugin/LightroomMCP.lrplugin`
 - `mise run lua:test` — `busted` specs for the plugin
 
-Lua tooling: `mise install` provisions `lua` + `luarocks`; `lua:lint`/`lua:test` auto-install `luacheck`/`busted` into `lua_modules/` (gitignored) via the `lua:deps` task. `.luacheckrc` declares LR SDK globals, excludes `JSON.lua`.
+Lua tooling: `mise install` provisions `lua` + `luarocks` + `selene`. `lua:test` auto-installs `busted` into `lua_modules/` (gitignored) via the `lua:deps` task. `selene` is a mise tool (`aqua:Kampfkarren/selene`), a native binary that does not run on `lua` — so unlike luacheck it is immune to Lua-version breakage. `selene.toml` configures it; `lightroom.yml` is the custom std declaring LR SDK globals; `JSON.lua` is excluded.
 
 ## CI
 
 - `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows, Node 22.
-- `.github/workflows/lua-lint.yml` — luacheck on plugin changes.
+- `.github/workflows/lua-lint.yml` — selene (via mise-action) on plugin changes.
 - Type check runs `npm run check` (`tsc --noEmit` on src + `tsconfig.test.json` on tests); do not break it.
 - Lint runs `npm run lint` (ESLint flat config, type-aware rules over src + tests); do not break it.
 
@@ -67,6 +67,6 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 ## Conventions
 
 - TS strict mode on. ESM imports must include `.js` extension (NodeNext).
-- New Lua handlers: add file under `plugin/LightroomMCP.lrplugin/Handler*.lua`, register in `DISPATCH` table in `PluginInfoProvider.lua`, declare any new LR globals in `.luacheckrc`.
+- New Lua handlers: add file under `plugin/LightroomMCP.lrplugin/Handler*.lua`, register in `DISPATCH` table in `PluginInfoProvider.lua`, declare any new LR globals in `lightroom.yml`.
 - New MCP tool: add contract in `server/src/tool-contracts.ts` **and** add a `DISPATCH` entry in `PluginInfoProvider.lua`.
 - Default ports `58763` (request) / `58764` (response). Server overrides via env vars `LIGHTROOM_MCP_REQUEST_PORT` / `LIGHTROOM_MCP_RESPONSE_PORT` (parsed in `server/src/ports.ts`); plugin overrides via Plug-in Manager fields stored in `LrPrefs` (`requestPort` / `responsePort`). Both sides must agree — change in lockstep.
