@@ -10,7 +10,14 @@ local HANDLER_MODULES = {
     'HandlerSelection', 'HandlerDevelop',
 }
 
-local function installStubs(prefs, asyncTasks)
+-- opts (all optional) let a test drive the otherwise-async server task:
+--   runTask        -- actually execute the postAsyncTaskWithContext body
+--   cleanups       -- array; each registered cleanup handler is appended
+--   socketOps      -- array; "close"/"reconnect" calls on bound sockets land here
+--   stopLoopOnSleep -- flip running=false on the first LrTasks.sleep so the
+--                      monitor loop exits after a single tick
+local function installStubs(prefs, asyncTasks, opts)
+    opts = opts or {}
     helper.installImport({
         LrTasks = {
             startAsyncTask = function(fn)
@@ -20,13 +27,39 @@ local function installStubs(prefs, asyncTasks)
                     fn()
                 end
             end,
-            sleep = function() end,
+            sleep = function()
+                if opts.stopLoopOnSleep and _G.LightroomMCP_State then
+                    _G.LightroomMCP_State.running = false
+                end
+            end,
             pcall = pcall,
         },
         LrLogger = helper.defaultLrLogger(),
         LrDialogs = { message = function() end },
-        LrFunctionContext = { postAsyncTaskWithContext = function() end },
-        LrSocket = { bind = function() return {} end },
+        LrFunctionContext = {
+            postAsyncTaskWithContext = function(_, fn)
+                if not opts.runTask then return end
+                local context = {
+                    addCleanupHandler = function(_, handler)
+                        if opts.cleanups then table.insert(opts.cleanups, handler) end
+                    end,
+                }
+                fn(context)
+            end,
+        },
+        LrSocket = {
+            bind = function()
+                return {
+                    close = function()
+                        if opts.socketOps then table.insert(opts.socketOps, "close") end
+                    end,
+                    reconnect = function()
+                        if opts.socketOps then table.insert(opts.socketOps, "reconnect") end
+                    end,
+                    send = function() end,
+                }
+            end,
+        },
         LrPrefs = { prefsForPlugin = function() return prefs or {} end },
         LrView = { bind = function() end },
         LrUUID = { generateUUID = function() return "0000-0000" end },
@@ -154,5 +187,83 @@ describe("PluginInit", function()
         loadPluginInit()
 
         assert.are.equal(0, #tasks)
+    end)
+end)
+
+-- Drives the real startServer task body (binds, cleanup handler, monitor
+-- loop) to cover the concurrency-sensitive teardown that the in-place
+-- resetForReload refactor put at risk.
+describe("PluginInfoProvider server task", function()
+    local realOpen
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        -- startServer writes a token file; keep it off disk and hermetic.
+        realOpen = io.open
+        io.open = function() return { write = function() end, close = function() end } end
+    end)
+    after_each(function()
+        io.open = realOpen
+    end)
+
+    it("bumps instanceId on every start", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        assert.are.equal(1, _G.LightroomMCP_State.instanceId)
+        mod.startServer()
+        assert.are.equal(2, _G.LightroomMCP_State.instanceId)
+    end)
+
+    it("ignores a superseded instance's cleanup handler", function()
+        local cleanups = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = cleanups })
+        local mod = loadInfoProvider()
+
+        mod.startServer() -- instance 1: binds, loop exits (stopLoopOnSleep)
+        local staleCleanup = cleanups[1]
+
+        mod.startServer() -- instance 2 supersedes
+        local liveReq = _G.LightroomMCP_State.requestSocket
+        local liveResp = _G.LightroomMCP_State.responseSocket
+        local liveToken = _G.LightroomMCP_State.token
+
+        -- Old context cleanup fires late (after the new instance rebound).
+        staleCleanup()
+
+        assert.are.equal(liveReq, _G.LightroomMCP_State.requestSocket)
+        assert.are.equal(liveResp, _G.LightroomMCP_State.responseSocket)
+        assert.are.equal(liveToken, _G.LightroomMCP_State.token)
+    end)
+
+    it("tears down its own sockets when not superseded", function()
+        local cleanups = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = cleanups })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        cleanups[1]()
+
+        assert.is_nil(_G.LightroomMCP_State.requestSocket)
+        assert.is_nil(_G.LightroomMCP_State.responseSocket)
+        assert.is_nil(_G.LightroomMCP_State.token)
+    end)
+
+    it("does not churn freshly bound sockets when recovery flags are stale", function()
+        local ops = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
+        local mod = loadInfoProvider()
+
+        -- Simulate flags left true by a client disconnect just before reload.
+        _G.LightroomMCP_State.requestNeedsReconnect = true
+        _G.LightroomMCP_State.responseNeedsRebind = true
+        _G.LightroomMCP_State.responseNeedsReconnect = true
+
+        mod.startServer()
+
+        assert.are.equal(0, #ops)
+        assert.is_false(_G.LightroomMCP_State.requestNeedsReconnect)
+        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
+        assert.is_false(_G.LightroomMCP_State.responseNeedsReconnect)
     end)
 end)

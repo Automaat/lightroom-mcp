@@ -238,10 +238,27 @@ local function startServer()
     pluginState.responsePort = responsePort
 
     pluginState.running = true
+    -- Tag this invocation. resetForReload reuses the same _G state table in
+    -- place, so a prior instance's async context-cleanup handler (registered
+    -- below) and this fresh start share one table. If that old cleanup fires
+    -- AFTER we rebind here it would close the new sockets and wipe the new
+    -- token, leaving a dead-but-running server (issues #121, #137). The
+    -- handler captures this id and skips teardown once superseded (mirrors
+    -- responseGen). Bumped in the synchronous prologue so the id is live
+    -- before the old cleanup can interleave with the new binds.
+    pluginState.instanceId = (pluginState.instanceId or 0) + 1
+    local instanceId = pluginState.instanceId
     addLog("Starting LrSocket servers")
 
     LrFunctionContext.postAsyncTaskWithContext("LightroomMCPServer", function(context)
         context:addCleanupHandler(function()
+            if pluginState.instanceId ~= instanceId then
+                -- A newer startServer superseded this instance; its sockets
+                -- and token now own the shared state table. Tearing them down
+                -- here would kill the live server, so leave them be.
+                addLog("Stale cleanup skipped (instance " .. instanceId .. " superseded)")
+                return
+            end
             addLog("Server task context cleanup")
             if pluginState.requestSocket then
                 pcall(function() pluginState.requestSocket:close() end)
@@ -308,6 +325,13 @@ local function startServer()
         -- listener can flag rebind AGAIN immediately after we just
         -- finished rebinding, looping us out of the new client.
         pluginState.responseGen = 0
+        -- Clear loop-control flags so a reused state table (in-place
+        -- resetForReload, or a panel Stop->Start) doesn't enter the monitor
+        -- loop with a stale reconnect/rebind pending and churn the sockets we
+        -- just bound on the first tick.
+        pluginState.requestNeedsReconnect = false
+        pluginState.responseNeedsRebind = false
+        pluginState.responseNeedsReconnect = false
 
         -- bindResponse takes myGen explicitly so callers can pre-bump the
         -- generation BEFORE calling :close() on the prior listener. On
