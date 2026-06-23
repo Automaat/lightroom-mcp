@@ -17,8 +17,10 @@ export interface DispatcherOptions {
   /**
    * Per-action timeout overrides (ms), keyed by action name. Long-running
    * actions like batch export/import need far more than the default before a
-   * healthy plugin can reply; a flat timeout reports a spurious failure and
-   * leaves a stale pending entry. Actions absent here use `timeoutMs`.
+   * healthy plugin can reply; with too short a timeout the call reports a
+   * false failure, and the plugin's eventual (correct) response arrives after
+   * the pending entry is gone, so it is dropped as an unknown id. Actions
+   * absent here use `timeoutMs`.
    */
   actionTimeoutsMs?: Record<string, number>;
   log?: (msg: string) => void;
