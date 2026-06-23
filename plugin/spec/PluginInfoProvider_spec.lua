@@ -189,9 +189,17 @@ describe("PluginInfoProvider server task", function()
     local realOpen
     before_each(function()
         _G.LightroomMCP_State = nil
-        -- startServer writes a token file; keep it off disk and hermetic.
+        -- startServer writes a token file; stub ONLY the write so it never
+        -- touches disk. Delegate every other open to the real io.open --
+        -- under CI's luarocks `require` loader, manifest reads call
+        -- io.open(path):read(), and a fake handle there breaks module loading.
         realOpen = io.open
-        io.open = function() return { write = function() end, close = function() end } end
+        io.open = function(path, mode, ...)
+            if mode and mode:find("w", 1, true) then
+                return { write = function() end, close = function() end }
+            end
+            return realOpen(path, mode, ...)
+        end
     end)
     after_each(function()
         io.open = realOpen
