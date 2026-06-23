@@ -165,5 +165,24 @@ describe('Dispatcher', () => {
       await expect(p).rejects.toThrow(/timeout \(1s\)/);
       expect(d.pendingCount()).toBe(0);
     });
+
+    it('falls back to the default when an override is non-positive', async () => {
+      jest.useFakeTimers();
+      const d = new Dispatcher({
+        send: (line) => {
+          sent.push(line);
+          return true;
+        },
+        getToken: () => 'test-token',
+        timeoutMs: 1000,
+        // 0 must mean "no override", not a 0 ms timer that rejects immediately.
+        actionTimeoutsMs: { export_photos: 0 },
+      });
+
+      const p = d.call('export_photos', {});
+      jest.advanceTimersByTime(1000);
+      await expect(p).rejects.toThrow(/timeout \(1s\)/);
+      expect(d.pendingCount()).toBe(0);
+    });
   });
 });
