@@ -5,7 +5,7 @@ function JSON:encode(obj)
     local function encode_value(v)
         local t = type(v)
         if t == "string" then
-            return '"' .. v:gsub('"', '\\"'):gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t') .. '"'
+            return '"' .. v:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t') .. '"'
         elseif t == "number" or t == "boolean" then
             return tostring(v)
         elseif t == "table" then
@@ -48,18 +48,36 @@ function JSON:decode(str)
         if char == '"' then
             -- String
             pos = pos + 1
-            local start = pos
-            while pos <= #str and str:sub(pos, pos) ~= '"' do
-                if str:sub(pos, pos) == '\\' then
+            local chars = {}
+            while pos <= #str do
+                local current = str:sub(pos, pos)
+                if current == '"' then
+                    pos = pos + 1
+                    return table.concat(chars)
+                elseif current == '\\' then
+                    local escaped = str:sub(pos + 1, pos + 1)
+                    if escaped == '"' or escaped == '\\' or escaped == '/' then
+                        table.insert(chars, escaped)
+                    elseif escaped == 'n' then
+                        table.insert(chars, '\n')
+                    elseif escaped == 'r' then
+                        table.insert(chars, '\r')
+                    elseif escaped == 't' then
+                        table.insert(chars, '\t')
+                    elseif escaped == 'b' then
+                        table.insert(chars, string.char(8))
+                    elseif escaped == 'f' then
+                        table.insert(chars, string.char(12))
+                    else
+                        error("Invalid escape sequence: \\" .. tostring(escaped))
+                    end
                     pos = pos + 2
                 else
+                    table.insert(chars, current)
                     pos = pos + 1
                 end
             end
-            local value = str:sub(start, pos - 1)
-            value = value:gsub('\\n', '\n'):gsub('\\r', '\r'):gsub('\\t', '\t'):gsub('\\"', '"')
-            pos = pos + 1
-            return value
+            error("Unterminated string")
         elseif char == '{' then
             -- Object
             pos = pos + 1

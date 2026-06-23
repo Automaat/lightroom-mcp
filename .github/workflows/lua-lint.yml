@@ -6,13 +6,17 @@ on:
     paths:
       - 'plugin/**'
       - '.github/workflows/lua-lint.yml'
-      - '.luacheckrc'
+      - 'selene.toml'
+      - 'lightroom.yml'
+      - '.mise.toml'
   pull_request:
     branches: [main]
     paths:
       - 'plugin/**'
       - '.github/workflows/lua-lint.yml'
-      - '.luacheckrc'
+      - 'selene.toml'
+      - 'lightroom.yml'
+      - '.mise.toml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,17 +26,16 @@ permissions:
   contents: read
 
 jobs:
-  luacheck:
+  selene:
     name: Lint Lightroom plugin (Lua)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install luacheck
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y luarocks
-          sudo luarocks install luacheck
+      - name: Set up mise
+        uses: jdx/mise-action@e6a8b3978addb5a52f2b4cd9d91eafa7f0ab959d # v4.2.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run luacheck
-        run: luacheck plugin --no-color --codes
+      - name: Run selene
+        run: mise run lua:lint

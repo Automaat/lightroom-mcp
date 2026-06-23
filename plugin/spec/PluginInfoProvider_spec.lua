@@ -145,7 +145,9 @@ describe("PluginInfoProvider lifecycle", function()
     end)
 end)
 
-describe("PluginInit", function()
+-- Auto-start scheduling itself is covered by PluginInit_spec.lua; here we
+-- only assert that PluginInit wires the reload teardown into the real module.
+describe("PluginInit reload reset", function()
     before_each(function()
         _G.LightroomMCP_State = nil
     end)
@@ -159,7 +161,10 @@ describe("PluginInit", function()
             responseSocket = nil,
             sendConnected = true,
             receiveConnected = false,
-            requestsProcessed = 0,
+            requestsProcessed = 7,
+            lastEvent = "12:00:00",
+            requestPort = 12345,
+            responseNeedsRebind = true,
             log = {},
             token = "tok",
         }
@@ -169,24 +174,11 @@ describe("PluginInit", function()
         assert.is_false(_G.LightroomMCP_State.running)
         assert.is_nil(_G.LightroomMCP_State.requestSocket)
         assert.is_true(closed)
-    end)
-
-    it("schedules auto-start when enabled", function()
-        local tasks = {}
-        installStubs({ autoStartServer = true }, tasks)
-
-        loadPluginInit()
-
-        assert.are.equal(1, #tasks)
-    end)
-
-    it("does not schedule auto-start when disabled", function()
-        local tasks = {}
-        installStubs({ autoStartServer = false }, tasks)
-
-        loadPluginInit()
-
-        assert.are.equal(0, #tasks)
+        -- Transient state returns to fresh-state defaults (Copilot #141).
+        assert.are.equal(0, _G.LightroomMCP_State.requestsProcessed)
+        assert.is_nil(_G.LightroomMCP_State.lastEvent)
+        assert.is_nil(_G.LightroomMCP_State.requestPort)
+        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
     end)
 end)
 

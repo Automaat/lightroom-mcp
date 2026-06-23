@@ -209,13 +209,13 @@ The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Sta
 ## Develop
 
 ```bash
-mise install                        # tools (node, bun, lua + luarocks)
+mise install                        # tools (node, bun, lua + luarocks, selene)
 mise run install                    # npm ci
 mise run build                      # tsc
 mise run test                       # jest
 mise run mcpb                       # build .mcpb bundle
 mise run binary                     # build single-file binaries via Bun
-mise run lua:lint                   # luacheck the Lua plugin
+mise run lua:lint                   # selene-lint the Lua plugin
 mise run lua:test                   # busted specs for the Lua plugin
 ```
 
@@ -233,7 +233,7 @@ Repo layout:
 1. Add a new `Handler*.lua` under `plugin/LightroomMCP.lrplugin/`.
 2. Register it in the `DISPATCH` table in `PluginInfoProvider.lua`.
 3. Add a contract entry in `server/src/tool-contracts.ts`.
-4. Declare any new LR globals in `.luacheckrc`.
+4. Declare any new LR globals in `lightroom.yml` (selene std).
 
 ## Troubleshooting
 

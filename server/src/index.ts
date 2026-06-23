@@ -18,6 +18,13 @@ import {
 } from "./install-plugin.js";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+// Batch export/import render files and can run for minutes; the default
+// timeout would report a spurious failure mid-export. See issue #128.
+const LONG_RUNNING_TIMEOUT_MS = 300_000;
+const ACTION_TIMEOUTS_MS: Record<string, number> = {
+  export_photos: LONG_RUNNING_TIMEOUT_MS,
+  import_photos: LONG_RUNNING_TIMEOUT_MS,
+};
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -60,6 +67,7 @@ async function main() {
     send: (line) => requestSocket.send(line),
     getToken: () => readToken(),
     timeoutMs: REQUEST_TIMEOUT_MS,
+    actionTimeoutsMs: ACTION_TIMEOUTS_MS,
   });
   const responseSocket = new PluginSocket({
     port: RESPONSE_PORT,

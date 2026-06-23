@@ -456,6 +456,19 @@ local function resetForReload()
     pluginState.sendConnected = false
     pluginState.receiveConnected = false
     pluginState.token = nil
+    -- Return the rest of the transient runtime state to fresh-state defaults
+    -- so the Plug-in Manager reports honest status after a reload (no
+    -- carried-over lastEvent / counters / ports) and the next startServer
+    -- can't inherit a stale reconnect/rebind request. instanceId is
+    -- deliberately NOT reset -- it must keep advancing so a superseded
+    -- instance's cleanup handler stays a no-op (see startServer).
+    pluginState.requestNeedsReconnect = false
+    pluginState.responseNeedsRebind = false
+    pluginState.responseNeedsReconnect = false
+    pluginState.lastEvent = nil
+    pluginState.requestsProcessed = 0
+    pluginState.requestPort = nil
+    pluginState.responsePort = nil
 end
 
 addLog("PluginInfoProvider loaded")
