@@ -71,7 +71,7 @@ function CollectionsHandler.createCollection(args)
     local collectionName = args.name
 
     catalog:withWriteAccessDo("Create Collection", function()
-        local collection = catalog:createCollection(collectionName)
+        catalog:createCollection(collectionName)
         logger:info("Created collection: " .. collectionName)
     end)
 

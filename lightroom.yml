@@ -1,0 +1,100 @@
+---
+# Custom selene standard library for the Lightroom Classic SDK.
+# Mirrors the LR SDK globals previously declared in .luacheckrc. Built on the
+# Lua 5.1 base, which is the Lua version Lightroom Classic actually runs.
+base: lua51
+
+globals:
+  # `import 'LrFoo'` pulls in an SDK namespace.
+  import:
+    args:
+      - type: string
+
+  # Plugin context + environment flags injected by Lightroom.
+  _PLUGIN:
+    property: read-only
+  MAC_ENV:
+    property: read-only
+  WIN_ENV:
+    property: read-only
+
+  # LR SDK namespaces. Read-only: the plugin reads fields and calls methods on
+  # them but never reassigns or extends the namespace itself.
+  LrApplication:
+    property: read-only
+  LrApplicationView:
+    property: read-only
+  LrBinding:
+    property: read-only
+  LrCatalog:
+    property: read-only
+  LrColor:
+    property: read-only
+  LrControlBar:
+    property: read-only
+  LrDate:
+    property: read-only
+  LrDevelopController:
+    property: read-only
+  LrDevelopAdjustment:
+    property: read-only
+  LrDialogs:
+    property: read-only
+  LrErrors:
+    property: read-only
+  LrExportSession:
+    property: read-only
+  LrExportSettings:
+    property: read-only
+  LrFileUtils:
+    property: read-only
+  LrFtp:
+    property: read-only
+  LrFunctionContext:
+    property: read-only
+  LrFunctionInfo:
+    property: read-only
+  LrHttp:
+    property: read-only
+  LrLogger:
+    property: read-only
+  LrMath:
+    property: read-only
+  LrMD5:
+    property: read-only
+  LrPasswords:
+    property: read-only
+  LrPathUtils:
+    property: read-only
+  LrPhoto:
+    property: read-only
+  LrPluginInfo:
+    property: read-only
+  LrPrefs:
+    property: read-only
+  LrProgressScope:
+    property: read-only
+  LrPublishService:
+    property: read-only
+  LrRecursionGuard:
+    property: read-only
+  LrRequire:
+    property: read-only
+  LrSelection:
+    property: read-only
+  LrShell:
+    property: read-only
+  LrSocket:
+    property: read-only
+  LrStringUtils:
+    property: read-only
+  LrSystemInfo:
+    property: read-only
+  LrTasks:
+    property: read-only
+  LrUUID:
+    property: read-only
+  LrView:
+    property: read-only
+  LrXml:
+    property: read-only
