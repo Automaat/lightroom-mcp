@@ -18,9 +18,12 @@ function SelectionHandler.getSelectedPhotos(args)
     args = args or {}
     local catalog = LrApplication.activeCatalog()
 
-    local limit = tonumber(args.limit) or 100
+    -- floor: the tool schema permits any number, and a fractional offset would
+    -- make the page loop index matches[i] with a non-integer key (always nil)
+    -- and crash buildResult(nil).
+    local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
-    local offset = tonumber(args.offset) or 0
+    local offset = math.floor(tonumber(args.offset) or 0)
     if offset < 0 then offset = 0 end
 
     -- Acquire the target set OUTSIDE withReadAccessDo. getTargetPhotos() reads

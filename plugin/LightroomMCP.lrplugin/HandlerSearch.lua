@@ -53,9 +53,12 @@ function SearchHandler.searchPhotos(args)
     local searchDesc = buildSearchDesc(args)
     local hasFilters = #searchDesc > 0
 
-    local limit = tonumber(args.limit) or 100
+    -- floor: the tool schema permits any number, and a fractional offset would
+    -- make the page loop index matches[i] with a non-integer key (always nil)
+    -- and crash buildResult(nil).
+    local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
-    local offset = tonumber(args.offset) or 0
+    local offset = math.floor(tonumber(args.offset) or 0)
     if offset < 0 then offset = 0 end
 
     -- Run the catalog query OUTSIDE withReadAccessDo. findPhotos() runs an
@@ -68,9 +71,9 @@ function SearchHandler.searchPhotos(args)
     Log.info(string.format("searchPhotos: querying (hasFilters=%s)", tostring(hasFilters)))
     -- Unrated photos have nil rating; rating>=0 excludes them, so getAllPhotos()
     -- must be used when no filters are specified.
-    local matches = hasFilters
+    local matches = (hasFilters
         and catalog:findPhotos{ searchDesc = searchDesc }
-        or catalog:getAllPhotos()
+        or catalog:getAllPhotos()) or {}
 
     local total = #matches
     Log.info(string.format("searchPhotos: query returned %d", total))

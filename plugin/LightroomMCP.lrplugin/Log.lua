@@ -47,6 +47,23 @@ end
 
 Log.filePath = filePath
 
+-- Single-file rotation cap. Without it the append-only file grows unbounded
+-- (e.g. if the server reconnect loop ever floods requests) on the same
+-- OneDrive-synced Windows path the file sink exists to reach.
+local MAX_LOG_BYTES = 5 * 1024 * 1024
+
+-- Best-effort: when the log passes the cap, move it aside to <path>.1
+-- (replacing any prior roll) and start fresh. Wrapped so a failed rotation
+-- never disrupts logging; skipped in tests where LrFileUtils is absent.
+local function rotateIfLarge(path, size)
+    if not size or size <= MAX_LOG_BYTES or not LrFileUtils then return end
+    pcall(function()
+        local rolled = path .. ".1"
+        if LrFileUtils.exists(rolled) then LrFileUtils.delete(rolled) end
+        LrFileUtils.move(path, rolled)
+    end)
+end
+
 local function write(level, msg)
     msg = tostring(msg)
     if lrLogger then
@@ -63,7 +80,9 @@ local function write(level, msg)
     local fh = io.open(path, "a")
     if not fh then return end
     fh:write(os.date("%Y-%m-%d %H:%M:%S") .. " [" .. level .. "] " .. msg .. "\n")
+    local size = fh:seek("end")
     fh:close()
+    rotateIfLarge(path, size)
 end
 
 function Log.info(msg) write("info", msg) end
