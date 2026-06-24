@@ -54,6 +54,16 @@ describe("HandlerSearch.searchPhotos", function()
         assert.are.same({}, result.photos)
         assert.is_false(result.has_more)
     end)
+
+    it("runs findPhotos OUTSIDE the read-access gate (#124 deadlock guard)", function()
+        Handler.searchPhotos({ filename = "sunset" })
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("runs getAllPhotos OUTSIDE the read-access gate when no filters", function()
+        Handler.searchPhotos({})
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
 end)
 
 describe("HandlerSearch.searchPhotos pagination", function()

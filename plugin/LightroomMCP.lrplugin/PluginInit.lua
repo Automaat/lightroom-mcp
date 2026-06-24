@@ -1,11 +1,9 @@
 local LrPrefs = import 'LrPrefs'
 local LrTasks = import 'LrTasks'
 local LrFunctionContext = import 'LrFunctionContext'
-local LrLogger = import 'LrLogger'
 
 local PluginInfoProvider = require 'PluginInfoProvider'
-
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 -- LrInitPlugin runs on plugin load AND on "Reload Plug-in", but NOT when
 -- Lightroom merely renders the Plug-in Manager panel. On reload a prior
@@ -41,7 +39,10 @@ if autoStart then
         -- failure #128 was about. Surface it instead.
         local ok, err = LrTasks.pcall(PluginInfoProvider.startServer)
         if not ok then
-            logger:error("Auto-start failed: " .. tostring(err))
+            -- Route through Log (not raw LrLogger) so this lands in the
+            -- OS-resolved file sink the user is told to check; the #128
+            -- "server died with nothing in the log" failure mode lived here.
+            Log.error("Auto-start failed: " .. tostring(err))
         end
     end)
 end

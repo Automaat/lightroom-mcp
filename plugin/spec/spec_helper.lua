@@ -97,6 +97,15 @@ function M.fakeCatalog(opts)
     local createdKeywords = {}
     local readAccessCount = 0
     local writeAccessCount = 0
+    -- Tracks whether a catalog query (getTargetPhotos/findPhotos/getAllPhotos)
+    -- was invoked while a withReadAccessDo gate was open. The Windows deadlock
+    -- (#134/#124) is exactly that nesting, so handlers must keep their query
+    -- OUTSIDE the gate; specs assert getQueriedInsideReadAccess() == false.
+    local insideReadAccess = false
+    local queriedInsideReadAccess = false
+    local function markQuery()
+        if insideReadAccess then queriedInsideReadAccess = true end
+    end
 
     local function photoMatches(photo, criterion)
         local crit = criterion.criteria
@@ -132,9 +141,10 @@ function M.fakeCatalog(opts)
     end
 
     return {
-        getAllPhotos = function() return photos end,
-        getTargetPhotos = function() return opts.targetPhotos or photos end,
+        getAllPhotos = function() markQuery() return photos end,
+        getTargetPhotos = function() markQuery() return opts.targetPhotos or photos end,
         findPhotos = function(_, opts)
+            markQuery()
             local desc = opts and opts.searchDesc or {}
             local out = {}
             for _, photo in ipairs(photos) do
@@ -153,8 +163,12 @@ function M.fakeCatalog(opts)
         getChildCollectionSets = function() return collectionSets end,
         withReadAccessDo = function(_, fn)
             readAccessCount = readAccessCount + 1
-            fn()
+            insideReadAccess = true
+            local ok, err = pcall(fn)
+            insideReadAccess = false
+            if not ok then error(err, 0) end
         end,
+        getQueriedInsideReadAccess = function() return queriedInsideReadAccess end,
         withWriteAccessDo = function(_, _, fn)
             writeAccessCount = writeAccessCount + 1
             fn()

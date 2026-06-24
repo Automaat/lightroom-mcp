@@ -3,8 +3,11 @@ local helper = require 'spec_helper'
 describe("HandlerSelection.getSelectedPhotos", function()
     local Handler
 
+    local lastCatalog
+
     local function setup(opts)
         local catalog = helper.fakeCatalog(opts)
+        lastCatalog = catalog
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
             LrLogger = helper.defaultLrLogger(),
@@ -87,5 +90,12 @@ describe("HandlerSelection.getSelectedPhotos", function()
         assert.are.equal(0, r.count)
         assert.are.same({}, r.photos)
         assert.is_false(r.has_more)
+    end)
+
+    it("calls getTargetPhotos OUTSIDE the read-access gate (#134 deadlock guard)", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", fileName = "a.jpg", rating = 5 })
+        setup({ photos = { p1 }, targetPhotos = { p1 } })
+        Handler.getSelectedPhotos({})
+        assert.is_false(lastCatalog.getQueriedInsideReadAccess())
     end)
 end)

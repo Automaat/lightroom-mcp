@@ -1,9 +1,7 @@
 local LrApplication = import 'LrApplication'
-local LrLogger = import 'LrLogger'
 
 local PhotoLookup = require 'PhotoLookup'
-
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local OrganizationHandler = {}
 local MAX_KEYWORDS_PER_REQUEST = 1000
@@ -73,7 +71,7 @@ function OrganizationHandler.setKeywords(args)
         end
     end)
 
-    logger:info(string.format("Updated keywords for %d photos", updatedCount))
+    Log.info(string.format("Updated keywords for %d photos", updatedCount))
 
     return {
         success = true,
@@ -112,7 +110,7 @@ function OrganizationHandler.setRating(args)
         end
     end)
 
-    logger:info(string.format("Set rating to %d for %d photos", args.rating, updatedCount))
+    Log.info(string.format("Set rating to %d for %d photos", args.rating, updatedCount))
 
     return {
         success = true,

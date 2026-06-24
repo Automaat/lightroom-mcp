@@ -1,9 +1,7 @@
 local LrApplication = import 'LrApplication'
-local LrLogger = import 'LrLogger'
 
 local PhotoLookup = require 'PhotoLookup'
-
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local MetadataHandler = {}
 
@@ -68,7 +66,7 @@ function MetadataHandler.getPhotoMetadata(args)
         }
     end)
 
-    logger:info("Retrieved metadata for photo: " .. args.photo_id)
+    Log.info("Retrieved metadata for photo: " .. args.photo_id)
 
     return photoData
 end

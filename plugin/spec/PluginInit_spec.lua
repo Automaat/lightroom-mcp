@@ -45,17 +45,17 @@ local function loadInit(opts)
                 fn()
             end,
         },
-        LrLogger = setmetatable({}, {
-            __call = function()
-                return {
-                    info = function() end,
-                    warn = function() end,
-                    error = function(_, msg) observed.loggedError = msg end,
-                    enable = function() end,
-                }
-            end,
-        }),
     })
+
+    -- PluginInit now routes logging through the Log module so the auto-start
+    -- failure lands in the OS-resolved file sink, not the unreliable LrLogger
+    -- channel (issue #128). Stub Log to observe what it would log.
+    package.loaded.Log = {
+        info = function() end,
+        warn = function() end,
+        error = function(msg) observed.loggedError = msg end,
+        filePath = function() return nil end,
+    }
 
     package.loaded.PluginInit = nil
     require 'PluginInit'

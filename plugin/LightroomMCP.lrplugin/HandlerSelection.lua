@@ -1,7 +1,6 @@
 local LrApplication = import 'LrApplication'
-local LrLogger = import 'LrLogger'
 
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local SelectionHandler = {}
 
@@ -19,25 +18,36 @@ function SelectionHandler.getSelectedPhotos(args)
     args = args or {}
     local catalog = LrApplication.activeCatalog()
 
-    local limit = tonumber(args.limit) or 100
+    -- floor: the tool schema permits any number, and a fractional offset would
+    -- make the page loop index matches[i] with a non-integer key (always nil)
+    -- and crash buildResult(nil).
+    local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
-    local offset = tonumber(args.offset) or 0
+    local offset = math.floor(tonumber(args.offset) or 0)
     if offset < 0 then offset = 0 end
 
-    local results = {}
-    local total = 0
+    -- Acquire the target set OUTSIDE withReadAccessDo. getTargetPhotos() reads
+    -- the live view selection, which yields to the UI thread; called from
+    -- inside the read gate on Windows it deadlocks -- the task never returns
+    -- and never releases the gate, so the whole bridge wedges until the 30s
+    -- server timeout (issues #134, #124). Only the per-photo metadata reads
+    -- need the gate; getTargetPhotos() does not. This mirrors get_photo_metadata,
+    -- which works because it only does a non-yielding getAllPhotos() pass.
+    Log.info("getSelectedPhotos: requesting target photos")
+    local matches = catalog:getTargetPhotos() or {}
+    local total = #matches
+    Log.info(string.format("getSelectedPhotos: getTargetPhotos returned %d", total))
 
+    local last = math.min(offset + limit, total)
+    local results = {}
     catalog:withReadAccessDo(function()
-        local matches = catalog:getTargetPhotos() or {}
-        total = #matches
-        local last = math.min(offset + limit, total)
         for i = offset + 1, last do
             table.insert(results, buildResult(matches[i]))
         end
     end)
 
-    logger:info(string.format("getTargetPhotos returned %d, paged %d (offset=%d, limit=%d)",
-        total, #results, offset, limit))
+    Log.info(string.format("getSelectedPhotos: returning %d (offset=%d, limit=%d)",
+        #results, offset, limit))
 
     return {
         count = total,

@@ -1,9 +1,7 @@
 local LrApplication = import 'LrApplication'
-local LrLogger = import 'LrLogger'
 
 local PhotoLookup = require 'PhotoLookup'
-
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local DevelopHandler = {}
 
@@ -168,7 +166,7 @@ function DevelopHandler.listDevelopPresets(_)
         end
     end
 
-    logger:info(string.format("Listed %d develop presets", #out))
+    Log.info(string.format("Listed %d develop presets", #out))
 
     return {
         success = true,
@@ -199,7 +197,7 @@ function DevelopHandler.applyDevelopPreset(args)
         end
     end)
 
-    logger:info(string.format("Applied preset %s to %d photos", args.preset_name, appliedCount))
+    Log.info(string.format("Applied preset %s to %d photos", args.preset_name, appliedCount))
 
     return {
         success = true,
@@ -246,7 +244,7 @@ function DevelopHandler.copyDevelopSettings(args)
         end
     end)
 
-    logger:info(string.format("Copied develop settings from %s to %d photos", args.source_id, copiedCount))
+    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_id, copiedCount))
 
     return {
         success = true,
@@ -272,7 +270,7 @@ function DevelopHandler.setDevelopSettings(args)
         applied = true
     end)
 
-    logger:info(string.format("Set develop settings on photo %s", args.photo_id))
+    Log.info(string.format("Set develop settings on photo %s", args.photo_id))
 
     return {
         success = applied,
