@@ -1,0 +1,23 @@
+# Auto-merge PRs labeled "automerge" once all required checks pass.
+# Uses GitHub native auto-merge; requires repo setting allow_auto_merge=true.
+name: Auto-merge
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: contains(github.event.pull_request.labels.*.name, 'automerge')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge on green
+        run: gh pr merge --auto --squash "${PR}"
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
