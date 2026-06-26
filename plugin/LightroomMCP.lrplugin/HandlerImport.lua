@@ -1,9 +1,8 @@
 local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
-local LrLogger = import 'LrLogger'
 local LrFileUtils = import 'LrFileUtils'
 
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local ImportHandler = {}
 
@@ -12,48 +11,64 @@ function ImportHandler.importPhotos(args)
         error("source_path is required")
     end
 
-    if not LrFileUtils.exists(args.source_path) then
+    -- LrFileUtils.exists returns 'file' / 'directory' / false. Use it for the
+    -- directory check too: LrFileUtils.isDirectory is absent on some Lightroom
+    -- Classic runtimes (nil there, e.g. 15.3.1 -- issue #129), whereas exists
+    -- is stable across supported versions.
+    local sourceKind = LrFileUtils.exists(args.source_path)
+    if not sourceKind then
         error("Source path does not exist: " .. args.source_path)
     end
 
     local catalog = LrApplication.activeCatalog()
     local importedCount = 0
 
-    -- Import photos
-    catalog:withWriteAccessDo("Import Photos", function()
-        local photosToImport = {}
-
-        if LrFileUtils.isDirectory(args.source_path) then
-            -- Import all photos from directory
-            for file in LrFileUtils.files(args.source_path) do
-                local ext = LrFileUtils.extension(file):lower()
-                if ext == 'jpg' or ext == 'jpeg' or ext == 'png' or
-                   ext == 'tif' or ext == 'tiff' or ext == 'dng' or
-                   ext == 'cr2' or ext == 'nef' or ext == 'arw' then
-                    table.insert(photosToImport, file)
-                end
+    -- Enumerate source files OUTSIDE any catalog lock; the filesystem walk
+    -- needs no catalog access.
+    local photosToImport = {}
+    if sourceKind == 'directory' then
+        -- Import all photos from directory
+        for file in LrFileUtils.files(args.source_path) do
+            local ext = LrFileUtils.extension(file):lower()
+            if ext == 'jpg' or ext == 'jpeg' or ext == 'png' or
+               ext == 'tif' or ext == 'tiff' or ext == 'dng' or
+               ext == 'cr2' or ext == 'nef' or ext == 'arw' then
+                table.insert(photosToImport, file)
             end
-        else
-            -- Import single photo
-            table.insert(photosToImport, args.source_path)
         end
+    else
+        -- Import single photo
+        table.insert(photosToImport, args.source_path)
+    end
 
-        if #photosToImport == 0 then
-            error("No photos found to import")
-        end
+    if #photosToImport == 0 then
+        error("No photos found to import")
+    end
 
-        -- Use catalog:addPhoto for each file
-        local addedPhotos = {}
-        for _, filePath in ipairs(photosToImport) do
+    -- Add each photo in its OWN write transaction rather than holding the
+    -- exclusive catalog write lock across the whole batch. A large import
+    -- runs for minutes, and one batch-wide withWriteAccessDo would block
+    -- every other handler (reads included) for that entire span -- the same
+    -- bridge wedge the export handler was restructured to avoid (issue #128),
+    -- and now longer-lived since import_photos was given a 5-minute server
+    -- timeout. addPhoto cannot acquire its own isolated access the way
+    -- LrExportSession does, so a per-photo lock is the bounded-hold
+    -- equivalent: the lock is released between photos, letting queued
+    -- handlers interleave.
+    local addedPhotos = {}
+    for _, filePath in ipairs(photosToImport) do
+        catalog:withWriteAccessDo("Import Photo", function()
             local photo = catalog:addPhoto(filePath)
             if photo then
                 table.insert(addedPhotos, photo)
                 importedCount = importedCount + 1
             end
-        end
+        end)
+    end
 
-        -- Add to collection if specified
-        if args.collection_name and #addedPhotos > 0 then
+    -- Add to collection if specified, in its own short write transaction.
+    if args.collection_name and #addedPhotos > 0 then
+        catalog:withWriteAccessDo("Add Imported Photos to Collection", function()
             local targetCollection = nil
             local collections = catalog:getChildCollections()
 
@@ -66,15 +81,15 @@ function ImportHandler.importPhotos(args)
 
             if targetCollection then
                 targetCollection:addPhotos(addedPhotos)
-                logger:info(string.format("Added %d imported photos to collection: %s",
+                Log.info(string.format("Added %d imported photos to collection: %s",
                     #addedPhotos, args.collection_name))
             else
-                logger:warn("Collection not found: " .. args.collection_name)
+                Log.warn("Collection not found: " .. args.collection_name)
             end
-        end
-    end)
+        end)
+    end
 
-    logger:info(string.format("Imported %d photos from: %s", importedCount, args.source_path))
+    Log.info(string.format("Imported %d photos from: %s", importedCount, args.source_path))
 
     return {
         success = true,

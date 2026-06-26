@@ -1,0 +1,20 @@
+# selene config for the Lightroom plugin (Lua). Replaces luacheck: selene is a
+# Rust binary, so it does not execute on mise's Lua runtime and is immune to the
+# Lua 5.5 breakage that crashed luacheck. LR SDK globals live in lightroom.yml.
+std = "lightroom"
+
+exclude = [
+  # Vendored third-party JSON codec; not ours to lint.
+  "plugin/LightroomMCP.lrplugin/JSON.lua",
+]
+
+[lints]
+# `if cond then return end` guards and `pcall(function() ... end)` wrappers are
+# idiomatic Lua and pervasive here; luacheck never flagged them.
+multiple_statements = "allow"
+# State is parked on `_G.LightroomMCP_State` on purpose so it survives "Reload
+# Plug-in" within one Lua state — see the comment in PluginInfoProvider.lua.
+global_usage = "allow"
+# LrView builds UI from declarative tables that mix an array of widgets with
+# named props; the mixed shape is required by the SDK, not a mistake.
+mixed_table = "allow"

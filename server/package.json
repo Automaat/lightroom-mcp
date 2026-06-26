@@ -1,6 +1,6 @@
 {
   "name": "@mskalski/lightroom-mcp",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "MCP server bridging Claude/Codex/ChatGPT to Adobe Lightroom Classic via a Lua plugin.",
   "type": "module",
   "main": "dist/index.js",

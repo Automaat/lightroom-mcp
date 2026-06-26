@@ -1,9 +1,7 @@
 local LrApplication = import 'LrApplication'
-local LrLogger = import 'LrLogger'
 
 local PhotoLookup = require 'PhotoLookup'
-
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local CollectionsHandler = {}
 
@@ -52,7 +50,7 @@ function CollectionsHandler.listCollections(args)
         table.insert(slice, all[i])
     end
 
-    logger:info(string.format("Found %d collections, returning %d (offset=%d, limit=%d)",
+    Log.info(string.format("Found %d collections, returning %d (offset=%d, limit=%d)",
         total, #slice, offset, limit))
 
     return {
@@ -71,8 +69,8 @@ function CollectionsHandler.createCollection(args)
     local collectionName = args.name
 
     catalog:withWriteAccessDo("Create Collection", function()
-        local collection = catalog:createCollection(collectionName)
-        logger:info("Created collection: " .. collectionName)
+        catalog:createCollection(collectionName)
+        Log.info("Created collection: " .. collectionName)
     end)
 
     return {
@@ -154,7 +152,7 @@ function CollectionsHandler.addToCollection(args)
         end
     end)
 
-    logger:info(string.format("Added %d photos to collection: %s", addedCount, args.collection_name))
+    Log.info(string.format("Added %d photos to collection: %s", addedCount, args.collection_name))
 
     return {
         success = true,

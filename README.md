@@ -155,7 +155,7 @@ If you'd rather drop the plugin in by hand:
 | --- | --- |
 | `search_photos` | Search by filename / keywords / rating / date range. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | EXIF + develop settings for one photo. |
+| `get_photo_metadata` | EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |
 | `add_to_collection` | Add photos to a named collection. |
@@ -209,13 +209,13 @@ The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Sta
 ## Develop
 
 ```bash
-mise install                        # tools (node, bun, lua + luarocks)
+mise install                        # tools (node, bun, lua + luarocks, selene)
 mise run install                    # npm ci
 mise run build                      # tsc
 mise run test                       # jest
 mise run mcpb                       # build .mcpb bundle
 mise run binary                     # build single-file binaries via Bun
-mise run lua:lint                   # luacheck the Lua plugin
+mise run lua:lint                   # selene-lint the Lua plugin
 mise run lua:test                   # busted specs for the Lua plugin
 ```
 
@@ -233,7 +233,7 @@ Repo layout:
 1. Add a new `Handler*.lua` under `plugin/LightroomMCP.lrplugin/`.
 2. Register it in the `DISPATCH` table in `PluginInfoProvider.lua`.
 3. Add a contract entry in `server/src/tool-contracts.ts`.
-4. Declare any new LR globals in `.luacheckrc`.
+4. Declare any new LR globals in `lightroom.yml` (selene std).
 
 ## Troubleshooting
 
@@ -249,6 +249,11 @@ Logs:
 | --- | --- | --- |
 | Plugin | `~/Documents/LrClassicLogs/LightroomMCP.log` | `%USERPROFILE%\Documents\LrClassicLogs\LightroomMCP.log` |
 | Claude Desktop | `~/Library/Logs/Claude/mcp*.log` | `%APPDATA%\Claude\Logs\mcp*.log` |
+
+The plugin resolves its log path via the OS (`LrPathUtils`), so on Windows with
+OneDrive-redirected Documents the file follows the redirect. The exact resolved
+path is shown as **Log file:** in Plug-in Manager → **Show Status** — use that if
+the table path above is empty.
 
 ## License
 

@@ -1,7 +1,6 @@
 local LrApplication = import 'LrApplication'
-local LrLogger = import 'LrLogger'
 
-local logger = LrLogger('LightroomMCP')
+local Log = require 'Log'
 
 local SearchHandler = {}
 
@@ -54,28 +53,39 @@ function SearchHandler.searchPhotos(args)
     local searchDesc = buildSearchDesc(args)
     local hasFilters = #searchDesc > 0
 
-    local limit = tonumber(args.limit) or 100
+    -- floor: the tool schema permits any number, and a fractional offset would
+    -- make the page loop index matches[i] with a non-integer key (always nil)
+    -- and crash buildResult(nil).
+    local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
-    local offset = tonumber(args.offset) or 0
+    local offset = math.floor(tonumber(args.offset) or 0)
     if offset < 0 then offset = 0 end
 
-    local total = 0
+    -- Run the catalog query OUTSIDE withReadAccessDo. findPhotos() runs an
+    -- async catalog search that yields; called from inside the read gate on
+    -- Windows it deadlocks -- the task never returns and never releases the
+    -- gate, wedging the whole bridge until the 30s server timeout (issue #124,
+    -- same root cause as #134's getTargetPhotos). Only the per-photo metadata
+    -- reads need the gate. getAllPhotos() (no-filter path) is a non-yielding
+    -- enumeration, but is hoisted out too for a single, consistent structure.
+    Log.info(string.format("searchPhotos: querying (hasFilters=%s)", tostring(hasFilters)))
+    -- Unrated photos have nil rating; rating>=0 excludes them, so getAllPhotos()
+    -- must be used when no filters are specified.
+    local matches = (hasFilters
+        and catalog:findPhotos{ searchDesc = searchDesc }
+        or catalog:getAllPhotos()) or {}
 
+    local total = #matches
+    Log.info(string.format("searchPhotos: query returned %d", total))
+
+    local last = math.min(offset + limit, total)
     catalog:withReadAccessDo(function()
-        -- Unrated photos have nil rating; rating>=0 excludes them, so getAllPhotos()
-        -- must be used when no filters are specified.
-        local matches = hasFilters
-            and catalog:findPhotos{ searchDesc = searchDesc }
-            or catalog:getAllPhotos()
-
-        total = #matches
-        local last = math.min(offset + limit, total)
         for i = offset + 1, last do
             table.insert(results, buildResult(matches[i]))
         end
     end)
 
-    logger:info(string.format("Search matched %d photos, returning %d (offset=%d, limit=%d)",
+    Log.info(string.format("Search matched %d photos, returning %d (offset=%d, limit=%d)",
         total, #results, offset, limit))
 
     local response = {
