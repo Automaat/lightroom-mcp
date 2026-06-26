@@ -129,7 +129,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "get_photo_metadata",
     luaHandler: "HandlerMetadata.getPhotoMetadata",
-    description: "Get detailed metadata for a specific photo",
+    description:
+      "Get detailed metadata for a specific photo: EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,

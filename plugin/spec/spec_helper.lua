@@ -40,13 +40,48 @@ function M.defaultLrLogger()
     })
 end
 
+-- Valid Lightroom SDK metadata keys. The real getRawMetadata/getFormattedMetadata
+-- THROW on an unsupported key, taking down the enclosing withReadAccessDo. The
+-- non-validating mock used to return a value for any key, so a typo'd/invalid key
+-- (e.g. `copyrightStatus` for `copyrightState`) shipped green. Validate against
+-- this allowlist so specs catch it. Add genuinely-new SDK keys here.
+local VALID_METADATA_KEYS = {}
+for _, key in ipairs({
+    -- File / catalog
+    "fileName", "fileSize", "fileFormat", "path", "dimensions",
+    "rating", "colorNameForLabel", "pickStatus", "keywords",
+    -- EXIF
+    "dateTimeOriginal", "dateTimeDigitized", "cameraMake", "cameraModel",
+    "cameraSerialNumber", "lens", "isoSpeedRating", "focalLength",
+    "focalLength35mm", "aperture", "shutterSpeed", "exposureBias",
+    "exposureProgram", "meteringMode", "flash", "artist", "software",
+    "gps", "gpsAltitude",
+    -- IPTC content / location / rights
+    "title", "caption", "headline", "location", "city", "stateProvince",
+    "country", "isoCountryCode", "creator", "copyright", "copyrightState",
+    "rightsUsageTerms",
+}) do
+    VALID_METADATA_KEYS[key] = true
+end
+M.VALID_METADATA_KEYS = VALID_METADATA_KEYS
+
+local function readMetadata(meta, key)
+    -- `__`-prefixed keys are test-internal sentinels (e.g. __appliedSettings)
+    -- that specs read back to assert what a handler wrote; never SDK keys.
+    if key:sub(1, 2) ~= "__" and not VALID_METADATA_KEYS[key] then
+        error("unsupported metadata key '" .. tostring(key)
+            .. "' (add it to spec_helper VALID_METADATA_KEYS if it is a real SDK key)", 2)
+    end
+    return meta[key]
+end
+
 -- Build a fake photo with the given metadata table.
 -- meta keys correspond to keys passed to getRawMetadata / getFormattedMetadata / localIdentifier.
 function M.fakePhoto(meta)
     return {
         localIdentifier = meta.localIdentifier or meta.id or "photo-id",
-        getRawMetadata = function(_, key) return meta[key] end,
-        getFormattedMetadata = function(_, key) return meta[key] end,
+        getRawMetadata = function(_, key) return readMetadata(meta, key) end,
+        getFormattedMetadata = function(_, key) return readMetadata(meta, key) end,
         getDevelopSettings = function() return meta.developSettings or {} end,
         addKeyword = function(_, kw)
             meta.__addedKeywords = meta.__addedKeywords or {}
