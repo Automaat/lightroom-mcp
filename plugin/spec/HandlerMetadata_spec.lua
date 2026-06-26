@@ -38,6 +38,60 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.same({ "summer", "beach" }, r.keywords)
     end)
 
+    it("exposes IPTC location, GPS, and copyright metadata", function()
+        local photo = helper.fakePhoto({
+            id = "7",
+            path = "/p/street.jpg",
+            fileName = "street.jpg",
+            title = "Main Street",
+            caption = "Downtown at dusk",
+            headline = "Evening commute",
+            location = "5th Avenue",
+            city = "New York",
+            stateProvince = "NY",
+            country = "USA",
+            isoCountryCode = "US",
+            gps = { latitude = 40.7128, longitude = -74.006 },
+            gpsAltitude = 10.5,
+            creator = "Jane Doe",
+            copyright = "© Jane Doe",
+            copyrightState = "Copyrighted",
+            rightsUsageTerms = "All rights reserved",
+        })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "7" })
+
+        assert.are.equal("Main Street", r.title)
+        assert.are.equal("Downtown at dusk", r.caption)
+        assert.are.equal("5th Avenue", r.location.sublocation)
+        assert.are.equal("New York", r.location.city)
+        assert.are.equal("US", r.location.isoCountryCode)
+        assert.are.equal(40.7128, r.gps.latitude)
+        assert.are.equal(-74.006, r.gps.longitude)
+        assert.are.equal(10.5, r.gps.altitude)
+        assert.are.equal("Jane Doe", r.copyright.creator)
+        assert.are.equal("Copyrighted", r.copyright.status)
+    end)
+
+    it("omits gps, location, and copyright groups when empty", function()
+        local photo = helper.fakePhoto({ id = "8", path = "/p/no-gps.jpg", fileName = "no-gps.jpg" })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "8" })
+        assert.is_nil(r.gps)
+        assert.is_nil(r.location)
+        assert.is_nil(r.copyright)
+    end)
+
+    it("reads only valid SDK metadata keys (mock rejects typos)", function()
+        -- Guards against a typo'd key that would throw inside withReadAccessDo
+        -- in real Lightroom. The mock errors on keys absent from the SDK allowlist.
+        local photo = helper.fakePhoto({ id = "9", fileName = "f.jpg" })
+        assert.has_error(function() photo:getFormattedMetadata("copyrightStatus") end)
+        assert.has_no.errors(function() photo:getFormattedMetadata("copyrightState") end)
+    end)
+
     it("falls back to lookup by path when local id misses", function()
         local photo = helper.fakePhoto({
             id = "99",
