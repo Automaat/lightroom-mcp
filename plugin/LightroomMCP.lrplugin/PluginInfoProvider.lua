@@ -224,6 +224,12 @@ local function startServer()
         addLog("Already running")
         return
     end
+    -- Set running immediately after the guard so check-and-set is atomic.
+    -- generateToken/writeTokenFile/readPortPrefs below can yield the
+    -- cooperative LrTasks scheduler (token file I/O), and a second caller
+    -- waking in that window would otherwise pass the guard too and bind a
+    -- second pair of LrSocket listeners on the same ports.
+    pluginState.running = true
 
     pluginState.token = generateToken()
     if writeTokenFile(pluginState.token) then
@@ -234,7 +240,6 @@ local function startServer()
     pluginState.requestPort = requestPort
     pluginState.responsePort = responsePort
 
-    pluginState.running = true
     -- Tag this invocation. resetForReload reuses the same _G state table in
     -- place, so a prior instance's async context-cleanup handler (registered
     -- below) and this fresh start share one table. If that old cleanup fires
