@@ -84,6 +84,14 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(r.copyright)
     end)
 
+    it("omits the gps group when the raw table carries no coordinates", function()
+        local photo = helper.fakePhoto({ id = "10", fileName = "empty-gps.jpg", gps = {} })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "10" })
+        assert.is_nil(r.gps)
+    end)
+
     it("reads only valid SDK metadata keys (mock rejects typos)", function()
         -- Guards against a typo'd key that would throw inside withReadAccessDo
         -- in real Lightroom. The mock errors on keys absent from the SDK allowlist.

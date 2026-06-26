@@ -42,15 +42,16 @@ function MetadataHandler.getPhotoMetadata(args)
         -- Get develop settings
         local developSettings = photo:getDevelopSettings()
 
-        -- GPS is a raw {latitude, longitude} table; omit the group when absent.
+        -- GPS is a raw {latitude, longitude} table; omit the group when absent
+        -- or when present but carrying no coordinates.
         local gps = photo:getRawMetadata('gps')
         local gpsData = nil
         if gps then
-            gpsData = {
+            gpsData = nonEmptyGroup({
                 latitude = gps.latitude,
                 longitude = gps.longitude,
                 altitude = photo:getRawMetadata('gpsAltitude'),
-            }
+            })
         end
 
         photoData = {

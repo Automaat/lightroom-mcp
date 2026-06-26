@@ -42,7 +42,7 @@ end
 
 -- Valid Lightroom SDK metadata keys. The real getRawMetadata/getFormattedMetadata
 -- THROW on an unsupported key, taking down the enclosing withReadAccessDo. The
--- unvalidating mock used to return a value for any key, so a typo'd/invalid key
+-- non-validating mock used to return a value for any key, so a typo'd/invalid key
 -- (e.g. `copyrightStatus` for `copyrightState`) shipped green. Validate against
 -- this allowlist so specs catch it. Add genuinely-new SDK keys here.
 local VALID_METADATA_KEYS = {}
