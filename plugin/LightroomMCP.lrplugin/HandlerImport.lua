@@ -11,7 +11,12 @@ function ImportHandler.importPhotos(args)
         error("source_path is required")
     end
 
-    if not LrFileUtils.exists(args.source_path) then
+    -- LrFileUtils.exists returns 'file' / 'directory' / false. Use it for the
+    -- directory check too: LrFileUtils.isDirectory is absent on some Lightroom
+    -- Classic runtimes (nil there, e.g. 15.3.1 -- issue #129), whereas exists
+    -- is stable across supported versions.
+    local sourceKind = LrFileUtils.exists(args.source_path)
+    if not sourceKind then
         error("Source path does not exist: " .. args.source_path)
     end
 
@@ -21,7 +26,7 @@ function ImportHandler.importPhotos(args)
     -- Enumerate source files OUTSIDE any catalog lock; the filesystem walk
     -- needs no catalog access.
     local photosToImport = {}
-    if LrFileUtils.isDirectory(args.source_path) then
+    if sourceKind == 'directory' then
         -- Import all photos from directory
         for file in LrFileUtils.files(args.source_path) do
             local ext = LrFileUtils.extension(file):lower()

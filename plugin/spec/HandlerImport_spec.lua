@@ -1,9 +1,15 @@
 local helper = require 'spec_helper'
 
+-- Mirrors the real SDK: LrFileUtils.exists returns 'file' / 'directory' / false,
+-- and LrFileUtils.isDirectory is intentionally absent (nil on some Lightroom
+-- Classic runtimes -- issue #129).
 local function fakeFileUtils(opts)
     return {
-        exists = function(p) return opts.exists and opts.exists[p] end,
-        isDirectory = function(p) return opts.directories and opts.directories[p] end,
+        exists = function(p)
+            if opts.directories and opts.directories[p] then return 'directory' end
+            if opts.exists and opts.exists[p] then return 'file' end
+            return false
+        end,
         files = function(_)
             local i = 0
             local list = opts.dirContents or {}
