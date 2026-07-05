@@ -47,11 +47,11 @@ end
 -- within the same Lua state. This body runs BOTH when PluginInit requires
 -- it AND every time Lightroom loads it as the InfoProvider to render the
 -- Plug-in Manager panel. A render must NOT disturb a running server, so we
--- only ever CREATE state here (when absent) — never tear it down. Teardown
+-- only ever CREATE state here (when absent) â€” never tear it down. Teardown
 -- of a stale prior instance on Reload Plug-in is handled by resetForReload,
 -- which PluginInit calls (PluginInit's LrInitPlugin runs on load/reload but
--- NOT on a plain panel render). Tearing down from this body — as earlier
--- versions did when running == true — killed the live server every time the
+-- NOT on a plain panel render). Tearing down from this body â€” as earlier
+-- versions did when running == true â€” killed the live server every time the
 -- Plug-in Manager was opened (issues #121, #137).
 if not _G.LightroomMCP_State then
     _G.LightroomMCP_State = {
@@ -64,6 +64,10 @@ if not _G.LightroomMCP_State then
         lastEvent = nil,
         log = {},
         token = nil,
+        lastRequestTime = nil,
+        lastConnectedTime = nil,
+        needsFullRestart = false,
+        freshRestart = false,
     }
 end
 
@@ -86,7 +90,7 @@ local function addLog(msg)
 end
 
 local function generateToken()
-    -- Two UUIDs (32 hex chars each after stripping dashes) → 256 bits of entropy.
+    -- Two UUIDs (32 hex chars each after stripping dashes) â†’ 256 bits of entropy.
     local u1 = LrUUID.generateUUID():gsub("-", "")
     local u2 = LrUUID.generateUUID():gsub("-", "")
     return (u1 .. u2):lower()
@@ -136,11 +140,15 @@ local DISPATCH = {
 local SEND_WAIT_SECONDS = 25
 -- After this many seconds of waiting for sendConnected, request a fresh
 -- response-side rebind. Recovers from states where the response listener
--- ended up bound-but-clientless without responseNeedsRebind being set —
+-- ended up bound-but-clientless without responseNeedsRebind being set â€”
 -- observed on Windows in issue #110, where the post-rebind onConnected
 -- fires but sendConnected is later false by the time sendResponse runs
 -- and no event sets the rebind flag again.
 local SEND_REBIND_TRIGGER_SECONDS = 5
+-- After this many idle seconds while receiveConnected is true, assume the
+-- connection is stale (Windows onClosed unreliability, issue #134) and
+-- force a requestSocket:reconnect() so the new MCP server can be accepted.
+local STALE_RECONNECT_SECONDS = 300
 
 local function sendResponse(response)
     local waited = 0
@@ -201,6 +209,7 @@ end
 -- live token.
 local function consumeMessage(message)
     pluginState.lastEvent = os.date("%H:%M:%S")
+    pluginState.lastRequestTime = os.time()  -- track for stale connection detection
 
     local parsedOk, request = pcall(function() return JSON:decode(message) end)
     if not parsedOk or type(request) ~= "table" then
@@ -283,15 +292,25 @@ local function startServer()
                 mode = "receive",
                 onConnected = function()
                     pluginState.receiveConnected = true
-                    -- New request client = new MCP session. Force a
-                    -- response-side rebind so the freshly-bound listener
-                    -- accepts THIS client's response-port TCP. LrSocket
-                    -- send-mode doesn't reliably notice client disconnect,
-                    -- so without this `sendConnected` stays true pointing
-                    -- at the prior client and :send() writes to the void.
-                    pluginState.sendConnected = false
-                    pluginState.responseNeedsRebind = true
-                    addLog("REQUEST socket connected")
+                    pluginState.lastConnectedTime = os.time()
+                    if pluginState.freshRestart then
+                        -- Sockets were fully closed and rebound by the stale-detection
+                        -- restart (issue #134 Windows workaround). The response listener
+                        -- already accepted a fresh MCP client; no stale send-side
+                        -- connection to flush. Skipping the rebind prevents the
+                        -- request->response->request cycling that delays the first
+                        -- post-restart response past the 30 s MCP timeout.
+                        pluginState.freshRestart = false
+                        addLog("REQUEST socket connected (post-restart)")
+                    else
+                        -- New request client on a live server = new MCP session. Force
+                        -- a response-side rebind: LrSocket send-mode does not reliably
+                        -- notice client disconnect on Windows, so sendConnected can stay
+                        -- true pointing at a dead socket and :send() writes to the void.
+                        pluginState.sendConnected = false
+                        pluginState.responseNeedsRebind = true
+                        addLog("REQUEST socket connected")
+                    end
                 end,
                 onMessage = function(_, message)
                     local request = consumeMessage(message)
@@ -418,6 +437,36 @@ local function startServer()
                 pluginState.responseNeedsReconnect = false
                 pluginState.responseSocket:reconnect()
             end
+            -- Full restart requested by stale detection
+            if pluginState.needsFullRestart then
+                pluginState.needsFullRestart = false
+                LrTasks.startAsyncTask(function()
+                    addLog("Restarting server (stale connection recovery)")
+                    -- stopServer() is declared after startServer() in this file
+                    -- and is not an upvalue here; inline its effect directly.
+                    pluginState.running = false
+                    LrTasks.sleep(0.5)
+                    startServer()
+                end)
+            end
+            -- Stale connection detection: Windows LrSocket does not reliably
+            -- fire onClosed when the remote MCP server process exits (issue #134).
+            -- If receiveConnected is true but no message has arrived for
+            -- STALE_RECONNECT_SECONDS, force a reconnect so the already-connected
+            -- MCP server can be properly accepted by a fresh listener.
+            if pluginState.receiveConnected then
+                local ref = pluginState.lastRequestTime or pluginState.lastConnectedTime
+                if ref then
+                    local idle = os.time() - ref
+                    if idle > STALE_RECONNECT_SECONDS then
+                        addLog("Stale connection: " .. idle .. "s idle, scheduling restart")
+                        pluginState.lastRequestTime = nil
+                        pluginState.lastConnectedTime = nil
+                        pluginState.needsFullRestart = true
+                        pluginState.freshRestart = true
+                    end
+                end
+            end
             LrTasks.sleep(0.2)
         end
 
@@ -442,7 +491,7 @@ end
 -- subsequent startServer() isn't blocked by its "Already running" guard,
 -- and signal any surviving monitor loop to exit. Reset IN PLACE (not a new
 -- table) so this module's pluginState and the old loop's closure keep
--- pointing at the same table — flipping running here is what stops it.
+-- pointing at the same table â€” flipping running here is what stops it.
 local function resetForReload()
     if not pluginState.running then return end
     addLog("Reload detected - resetting previous server instance")
@@ -471,6 +520,10 @@ local function resetForReload()
     pluginState.requestsProcessed = 0
     pluginState.requestPort = nil
     pluginState.responsePort = nil
+    pluginState.lastRequestTime = nil
+    pluginState.lastConnectedTime = nil
+    pluginState.needsFullRestart = false
+    pluginState.freshRestart = false
 end
 
 addLog("PluginInfoProvider loaded")
@@ -599,3 +652,5 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
 end
 
 return PluginInfoProvider
+
+
