@@ -21,9 +21,20 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // Batch export/import render files and can run for minutes; the default
 // timeout would report a spurious failure mid-export. See issue #128.
 const LONG_RUNNING_TIMEOUT_MS = 300_000;
+// Heartbeat: ping the plugin on this interval so it can tell a healthy-but-
+// idle session apart from a genuinely dead connection (issue #134 follow-up,
+// PR #151 review) instead of relying on a long fixed idle timer. The plugin
+// derives liveness from any inbound message -- ping included -- via its
+// existing lastRequestTime tracking, so this side doesn't need to react to a
+// missed pong itself; a failed/timed-out ping is only logged for visibility.
+// Keep this interval in sync with HEARTBEAT_INTERVAL_SECONDS in
+// PluginInfoProvider.lua.
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const PING_TIMEOUT_MS = 10_000;
 const ACTION_TIMEOUTS_MS: Record<string, number> = {
   export_photos: LONG_RUNNING_TIMEOUT_MS,
   import_photos: LONG_RUNNING_TIMEOUT_MS,
+  ping: PING_TIMEOUT_MS,
 };
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -76,6 +87,15 @@ async function main() {
   });
   requestSocket.connect();
   responseSocket.connect();
+
+  // Fire-and-forget heartbeat. dispatcher.call() rejects on its own if the
+  // request socket is currently disconnected, so this is safe to run
+  // unconditionally regardless of connection state.
+  setInterval(() => {
+    dispatcher.call("ping", {}).catch((err: Error) => {
+      console.error(`[heartbeat] ping failed: ${err.message}`);
+    });
+  }, HEARTBEAT_INTERVAL_MS);
 
   const server = createMcpServer({
     dispatcher,

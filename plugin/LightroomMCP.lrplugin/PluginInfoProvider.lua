@@ -47,11 +47,11 @@ end
 -- within the same Lua state. This body runs BOTH when PluginInit requires
 -- it AND every time Lightroom loads it as the InfoProvider to render the
 -- Plug-in Manager panel. A render must NOT disturb a running server, so we
--- only ever CREATE state here (when absent) â€” never tear it down. Teardown
+-- only ever CREATE state here (when absent) — never tear it down. Teardown
 -- of a stale prior instance on Reload Plug-in is handled by resetForReload,
 -- which PluginInit calls (PluginInit's LrInitPlugin runs on load/reload but
--- NOT on a plain panel render). Tearing down from this body â€” as earlier
--- versions did when running == true â€” killed the live server every time the
+-- NOT on a plain panel render). Tearing down from this body — as earlier
+-- versions did when running == true — killed the live server every time the
 -- Plug-in Manager was opened (issues #121, #137).
 if not _G.LightroomMCP_State then
     _G.LightroomMCP_State = {
@@ -68,6 +68,7 @@ if not _G.LightroomMCP_State then
         lastConnectedTime = nil,
         needsFullRestart = false,
         freshRestart = false,
+        inFlightRequests = 0,
     }
 end
 
@@ -90,7 +91,7 @@ local function addLog(msg)
 end
 
 local function generateToken()
-    -- Two UUIDs (32 hex chars each after stripping dashes) â†’ 256 bits of entropy.
+    -- Two UUIDs (32 hex chars each after stripping dashes) → 256 bits of entropy.
     local u1 = LrUUID.generateUUID():gsub("-", "")
     local u2 = LrUUID.generateUUID():gsub("-", "")
     return (u1 .. u2):lower()
@@ -116,6 +117,14 @@ local function writeTokenFile(token)
 end
 
 local DISPATCH = {
+    -- Heartbeat no-op. The MCP server pings on this action every
+    -- HEARTBEAT_INTERVAL_SECONDS (server/src/index.ts) so the plugin can
+    -- tell a healthy-but-idle session apart from a genuinely dead one
+    -- without waiting out a long fixed timer. It travels through the same
+    -- auth + dispatch path as any other action, so consumeMessage's
+    -- lastRequestTime update (below) already treats it as liveness — no
+    -- separate heartbeat bookkeeping needed. See STALE_RECONNECT_SECONDS.
+    ping = function(_params) return { pong = true } end,
     search_photos = HandlerSearch.searchPhotos,
     list_collections = HandlerCollections.listCollections,
     create_collection = HandlerCollections.createCollection,
@@ -140,15 +149,28 @@ local DISPATCH = {
 local SEND_WAIT_SECONDS = 25
 -- After this many seconds of waiting for sendConnected, request a fresh
 -- response-side rebind. Recovers from states where the response listener
--- ended up bound-but-clientless without responseNeedsRebind being set â€”
+-- ended up bound-but-clientless without responseNeedsRebind being set —
 -- observed on Windows in issue #110, where the post-rebind onConnected
 -- fires but sendConnected is later false by the time sendResponse runs
 -- and no event sets the rebind flag again.
 local SEND_REBIND_TRIGGER_SECONDS = 5
--- After this many idle seconds while receiveConnected is true, assume the
--- connection is stale (Windows onClosed unreliability, issue #134) and
--- force a requestSocket:reconnect() so the new MCP server can be accepted.
-local STALE_RECONNECT_SECONDS = 300
+-- The MCP server pings every HEARTBEAT_INTERVAL_SECONDS (server/src/index.ts).
+-- Treat the connection as stale only after missing roughly three pings in a
+-- row, rather than the old fixed 300s idle window. This is what lets a
+-- healthy-but-quiet interactive session run indefinitely without tripping a
+-- full restart (Automaat review, PR #151: "idle and stale connections are
+-- indistinguishable") while still detecting a genuinely dead peer (Windows
+-- onClosed unreliability, issue #134) in under two minutes.
+local HEARTBEAT_INTERVAL_SECONDS = 30
+local STALE_RECONNECT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
+-- If a request is in flight when the soft threshold above is hit, give it a
+-- chance to finish rather than yanking the socket out from under it — but
+-- only up to this hard cap past the soft threshold. If the peer is truly
+-- dead the in-flight request was already unrecoverable, so the hard cap
+-- guarantees we still restart instead of waiting forever on a hung handler.
+-- Bounds the blast radius of a stale-triggered restart (Automaat review,
+-- PR #151: "a tool call landing in the restart window loses its response").
+local STALE_RESTART_HARD_CAP_SECONDS = STALE_RECONNECT_SECONDS + 30
 
 local function sendResponse(response)
     local waited = 0
@@ -180,10 +202,22 @@ local function dispatchAction(request)
     local action = request.action
     local params = request.params or {}
 
-    addLog("Request id=" .. tostring(id) .. " action=" .. tostring(action))
+    -- Heartbeat pings arrive every 30s and are pure liveness noise once the
+    -- connection is healthy; skip them here so they don't dominate the
+    -- 100-line ring buffer used by the status panel and drown out real
+    -- request activity.
+    local isHeartbeat = (action == "ping")
+    if not isHeartbeat then
+        addLog("Request id=" .. tostring(id) .. " action=" .. tostring(action))
+    end
+
+    -- Tracked so the stale-connection monitor can defer a restart while a
+    -- real request is in flight (see STALE_RESTART_HARD_CAP_SECONDS).
+    pluginState.inFlightRequests = (pluginState.inFlightRequests or 0) + 1
 
     local handler = DISPATCH[action]
     if not handler then
+        pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
         sendResponse({ id = id, error = "Unknown action: " .. tostring(action) })
         return
     end
@@ -195,6 +229,7 @@ local function dispatchAction(request)
     local execOk, resultOrErr = LrTasks.pcall(function()
         return handler(params)
     end)
+    pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
     if execOk then
         sendResponse({ id = id, result = resultOrErr })
     else
@@ -209,7 +244,9 @@ end
 -- live token.
 local function consumeMessage(message)
     pluginState.lastEvent = os.date("%H:%M:%S")
-    pluginState.lastRequestTime = os.time()  -- track for stale connection detection
+    pluginState.lastRequestTime = os.time()  -- track for stale connection detection; a
+                                              -- heartbeat ping counts as activity same as
+                                              -- any other message.
 
     local parsedOk, request = pcall(function() return JSON:decode(message) end)
     if not parsedOk or type(request) ~= "table" then
@@ -451,15 +488,24 @@ local function startServer()
             end
             -- Stale connection detection: Windows LrSocket does not reliably
             -- fire onClosed when the remote MCP server process exits (issue #134).
-            -- If receiveConnected is true but no message has arrived for
-            -- STALE_RECONNECT_SECONDS, force a reconnect so the already-connected
-            -- MCP server can be properly accepted by a fresh listener.
+            -- The MCP server pings every HEARTBEAT_INTERVAL_SECONDS, so as long as
+            -- the connection is genuinely alive, lastRequestTime keeps advancing
+            -- even with no real tool calls in flight. If receiveConnected is true
+            -- but nothing (including a heartbeat) has arrived for
+            -- STALE_RECONNECT_SECONDS, the peer is actually gone, not just idle.
+            -- Defer past that soft threshold while a real request is in flight,
+            -- up to STALE_RESTART_HARD_CAP_SECONDS, so we don't yank the socket
+            -- out from under a response that's about to be sent.
             if pluginState.receiveConnected then
                 local ref = pluginState.lastRequestTime or pluginState.lastConnectedTime
                 if ref then
                     local idle = os.time() - ref
-                    if idle > STALE_RECONNECT_SECONDS then
-                        addLog("Stale connection: " .. idle .. "s idle, scheduling restart")
+                    local inFlight = (pluginState.inFlightRequests or 0) > 0
+                    local pastSoft = idle > STALE_RECONNECT_SECONDS
+                    local pastHard = idle > STALE_RESTART_HARD_CAP_SECONDS
+                    if pastSoft and (not inFlight or pastHard) then
+                        local suffix = (inFlight and pastHard) and " [hard cap, request still in flight]" or ""
+                        addLog("Stale connection: " .. idle .. "s since last heartbeat, scheduling restart" .. suffix)
                         pluginState.lastRequestTime = nil
                         pluginState.lastConnectedTime = nil
                         pluginState.needsFullRestart = true
@@ -491,7 +537,7 @@ end
 -- subsequent startServer() isn't blocked by its "Already running" guard,
 -- and signal any surviving monitor loop to exit. Reset IN PLACE (not a new
 -- table) so this module's pluginState and the old loop's closure keep
--- pointing at the same table â€” flipping running here is what stops it.
+-- pointing at the same table — flipping running here is what stops it.
 local function resetForReload()
     if not pluginState.running then return end
     addLog("Reload detected - resetting previous server instance")
@@ -524,6 +570,7 @@ local function resetForReload()
     pluginState.lastConnectedTime = nil
     pluginState.needsFullRestart = false
     pluginState.freshRestart = false
+    pluginState.inFlightRequests = 0
 end
 
 addLog("PluginInfoProvider loaded")
@@ -652,5 +699,3 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
 end
 
 return PluginInfoProvider
-
-
