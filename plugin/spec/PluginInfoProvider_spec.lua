@@ -267,3 +267,64 @@ describe("PluginInfoProvider server task", function()
         assert.is_false(_G.LightroomMCP_State.responseNeedsReconnect)
     end)
 end)
+
+
+describe("heartbeat / stale-connection blast radius (PR #151 review)", function()
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        installStubs()
+    end)
+
+    it("ping handler is a pure liveness no-op returning pong=true", function()
+        local mod = loadInfoProvider()
+        assert.are.same({ pong = true }, mod.handlePing({}))
+    end)
+
+    it("derives the soft/hard thresholds from the heartbeat interval", function()
+        local mod = loadInfoProvider()
+        assert.are.equal(30, mod.HEARTBEAT_INTERVAL_SECONDS)
+        assert.are.equal(90, mod.STALE_RECONNECT_SECONDS)
+        assert.are.equal(120, mod.STALE_RESTART_HARD_CAP_SECONDS)
+    end)
+
+    describe("shouldRestartForStaleConnection", function()
+        it("does not restart while idle is within the soft threshold", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                89, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_false(restart)
+            assert.are.equal("", suffix)
+        end)
+
+        it("restarts once idle passes the soft threshold with nothing in flight", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                91, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_true(restart)
+            assert.are.equal("", suffix)
+        end)
+
+        it("defers the restart past the soft threshold while a request is genuinely in flight (blast radius fix)", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                91, 1, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_false(restart)
+            assert.are.equal("", suffix)
+        end)
+
+        it("still restarts past the hard cap even if a request is in flight, to bound the wait", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                121, 1, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_true(restart)
+            assert.are.equal(" [hard cap, request still in flight]", suffix)
+        end)
+
+        it("treats exactly-at-threshold idle as not yet past it (strict greater-than)", function()
+            local mod = loadInfoProvider()
+            local restart = mod.shouldRestartForStaleConnection(
+                90, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_false(restart)
+        end)
+    end)
+end)

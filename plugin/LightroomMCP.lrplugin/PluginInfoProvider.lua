@@ -172,6 +172,19 @@ local STALE_RECONNECT_SECONDS = HEARTBEAT_INTERVAL_SECONDS * 3
 -- PR #151: "a tool call landing in the restart window loses its response").
 local STALE_RESTART_HARD_CAP_SECONDS = STALE_RECONNECT_SECONDS + 30
 
+-- Pure decision extracted from the monitor loop so it can be unit tested
+-- without driving the full async LrTasks loop (see PluginInfoProvider_spec.lua).
+-- Returns whether to restart and, if so, a log-suffix noting whether the
+-- hard cap (not just the soft threshold) is what triggered it.
+local function shouldRestartForStaleConnection(idle, inFlightRequests, softSeconds, hardCapSeconds)
+    local inFlight = (inFlightRequests or 0) > 0
+    local pastSoft = idle > softSeconds
+    local pastHard = idle > hardCapSeconds
+    local restart = pastSoft and (not inFlight or pastHard)
+    local suffix = (inFlight and pastHard) and " [hard cap, request still in flight]" or ""
+    return restart, suffix
+end
+
 local function sendResponse(response)
     local waited = 0
     local selfHealRequested = false
@@ -500,11 +513,9 @@ local function startServer()
                 local ref = pluginState.lastRequestTime or pluginState.lastConnectedTime
                 if ref then
                     local idle = os.time() - ref
-                    local inFlight = (pluginState.inFlightRequests or 0) > 0
-                    local pastSoft = idle > STALE_RECONNECT_SECONDS
-                    local pastHard = idle > STALE_RESTART_HARD_CAP_SECONDS
-                    if pastSoft and (not inFlight or pastHard) then
-                        local suffix = (inFlight and pastHard) and " [hard cap, request still in flight]" or ""
+                    local restart, suffix = shouldRestartForStaleConnection(
+                        idle, pluginState.inFlightRequests, STALE_RECONNECT_SECONDS, STALE_RESTART_HARD_CAP_SECONDS)
+                    if restart then
                         addLog("Stale connection: " .. idle .. "s since last heartbeat, scheduling restart" .. suffix)
                         pluginState.lastRequestTime = nil
                         pluginState.lastConnectedTime = nil
@@ -579,6 +590,12 @@ local PluginInfoProvider = {
     startServer = startServer,
     stopServer = stopServer,
     resetForReload = resetForReload,
+    -- Exposed for PluginInfoProvider_spec.lua only; not used elsewhere in the plugin.
+    shouldRestartForStaleConnection = shouldRestartForStaleConnection,
+    handlePing = DISPATCH.ping,
+    HEARTBEAT_INTERVAL_SECONDS = HEARTBEAT_INTERVAL_SECONDS,
+    STALE_RECONNECT_SECONDS = STALE_RECONNECT_SECONDS,
+    STALE_RESTART_HARD_CAP_SECONDS = STALE_RESTART_HARD_CAP_SECONDS,
 }
 
 function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
