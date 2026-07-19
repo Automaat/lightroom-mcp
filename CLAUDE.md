@@ -37,7 +37,7 @@ Lua tooling: `mise install` provisions `lua` + `luarocks` + `selene`. `lua:test`
 
 ## CI
 
-- `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows, Node 22.
+- `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows, Node 24.15.0.
 - `.github/workflows/lua-lint.yml` — selene (via mise-action) on plugin changes.
 - Type check runs `npm run check` (`tsc --noEmit` on src + `tsconfig.test.json` on tests); do not break it.
 - Lint runs `npm run lint` (ESLint flat config, type-aware rules over src + tests); do not break it.
