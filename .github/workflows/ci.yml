@@ -30,7 +30,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24.15.0'
+          node-version: '24.18.0'
           cache: npm
           cache-dependency-path: server/package-lock.json
 
@@ -66,7 +66,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24.15.0'
+          node-version: '24.18.0'
 
       - name: Assert all version sources agree
         run: node scripts/bump-version.mjs --check
