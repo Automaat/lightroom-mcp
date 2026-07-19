@@ -46,6 +46,28 @@ describe("instance lock", () => {
     expect(fs.readFileSync(lockFile, "utf8")).toBe(`${process.pid}\n`);
   });
 
+  it("replaces a malformed stale lock", () => {
+    const dir = baseDir();
+    const lockFile = path.join(dir, "bridge-58763-58764.lock");
+    fs.writeFileSync(lockFile, "not-a-pid\n");
+
+    locks.push(acquireInstanceLock(58763, 58764, dir));
+
+    expect(fs.readFileSync(lockFile, "utf8")).toBe(`${process.pid}\n`);
+  });
+
+  it("allows release after the lock file is already gone", () => {
+    const dir = baseDir();
+    const lockFile = path.join(dir, "bridge-58763-58764.lock");
+    const lock = acquireInstanceLock(58763, 58764, dir);
+    fs.unlinkSync(lockFile);
+
+    lock.release();
+    lock.release();
+
+    expect(fs.existsSync(lockFile)).toBe(false);
+  });
+
   it("removes process handlers when released", () => {
     const beforeExit = process.listenerCount("exit");
     const beforeSigint = process.listenerCount("SIGINT");
