@@ -38,12 +38,28 @@ describe("instance lock", () => {
 
   it("replaces a stale lock with a fully written live lock", () => {
     const dir = baseDir();
-    const lockDir = path.join(dir, "lightroom-mcp-58763-58764.lock");
-    fs.mkdirSync(lockDir);
-    fs.writeFileSync(path.join(lockDir, "pid"), "999999999\n");
+    const lockFile = path.join(dir, "bridge-58763-58764.lock");
+    fs.writeFileSync(lockFile, "999999999\n");
 
     locks.push(acquireInstanceLock(58763, 58764, dir));
 
-    expect(fs.readFileSync(path.join(lockDir, "pid"), "utf8")).toBe(`${process.pid}\n`);
+    expect(fs.readFileSync(lockFile, "utf8")).toBe(`${process.pid}\n`);
+  });
+
+  it("removes process handlers when released", () => {
+    const beforeExit = process.listenerCount("exit");
+    const beforeSigint = process.listenerCount("SIGINT");
+    const beforeSigterm = process.listenerCount("SIGTERM");
+
+    const lock = acquireInstanceLock(58763, 58764, baseDir());
+    expect(process.listenerCount("exit")).toBe(beforeExit + 1);
+    expect(process.listenerCount("SIGINT")).toBe(beforeSigint + 1);
+    expect(process.listenerCount("SIGTERM")).toBe(beforeSigterm + 1);
+
+    lock.release();
+
+    expect(process.listenerCount("exit")).toBe(beforeExit);
+    expect(process.listenerCount("SIGINT")).toBe(beforeSigint);
+    expect(process.listenerCount("SIGTERM")).toBe(beforeSigterm);
   });
 });

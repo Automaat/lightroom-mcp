@@ -28,70 +28,60 @@ function readPid(pidFile: string): number | null {
 export function acquireInstanceLock(
   requestPort: number,
   responsePort: number,
-  baseDir = os.tmpdir(),
+  baseDir = path.join(os.homedir(), ".config", "lightroom-mcp"),
 ): InstanceLock {
-  const lockDir = path.join(baseDir, `lightroom-mcp-${requestPort}-${responsePort}.lock`);
-  const pidFile = path.join(lockDir, "pid");
-  const candidateDir = `${lockDir}.${process.pid}.${Date.now()}.${Math.random()
-    .toString(16)
-    .slice(2)}.new`;
+  fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
+  const lockFile = path.join(baseDir, `bridge-${requestPort}-${responsePort}.lock`);
 
-  fs.mkdirSync(candidateDir);
-  fs.writeFileSync(path.join(candidateDir, "pid"), `${process.pid}\n`, { encoding: "utf8" });
-
-  let acquired = false;
-  while (!acquired) {
+  while (true) {
+    let fd: number | null = null;
     try {
-      fs.renameSync(candidateDir, lockDir);
-      acquired = true;
+      fd = fs.openSync(lockFile, "wx", 0o600);
+      fs.writeFileSync(fd, `${process.pid}\n`, { encoding: "utf8" });
       break;
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST" && code !== "ENOTEMPTY") {
-        fs.rmSync(candidateDir, { recursive: true, force: true });
+      if (code !== "EEXIST") {
         throw err;
       }
-    }
 
-    const existingPid = readPid(pidFile);
-    if (existingPid && pidIsAlive(existingPid)) {
-      fs.rmSync(candidateDir, { recursive: true, force: true });
-      throw new Error(
-        `Another Lightroom MCP bridge is already running for ports ${requestPort}/${responsePort} (pid ${existingPid})`,
-      );
-    }
-
-    const staleDir = `${lockDir}.stale.${process.pid}.${Date.now()}.${Math.random()
-      .toString(16)
-      .slice(2)}`;
-    try {
-      fs.renameSync(lockDir, staleDir);
-      fs.rmSync(staleDir, { recursive: true, force: true });
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "EEXIST") {
-        fs.rmSync(candidateDir, { recursive: true, force: true });
-        throw err;
+      const existingPid = readPid(lockFile);
+      if (existingPid && pidIsAlive(existingPid)) {
+        throw new Error(
+          `Another Lightroom MCP bridge is already running for ports ${requestPort}/${responsePort} (pid ${existingPid})`,
+        );
       }
+
+      try {
+        fs.unlinkSync(lockFile);
+      } catch (unlinkErr) {
+        if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") throw unlinkErr;
+      }
+    } finally {
+      if (fd !== null) fs.closeSync(fd);
     }
   }
 
   let released = false;
+  const exitHandler = () => release();
+  const signalHandler = () => {
+    release();
+    process.exit(0);
+  };
   const release = () => {
     if (released) return;
     released = true;
-    if (readPid(pidFile) === process.pid) {
-      fs.rmSync(lockDir, { recursive: true, force: true });
+    process.off("exit", exitHandler);
+    process.off("SIGINT", signalHandler);
+    process.off("SIGTERM", signalHandler);
+    if (readPid(lockFile) === process.pid) {
+      fs.unlinkSync(lockFile);
     }
   };
 
-  process.once("exit", release);
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      release();
-      process.exit(0);
-    });
-  }
+  process.once("exit", exitHandler);
+  process.once("SIGINT", signalHandler);
+  process.once("SIGTERM", signalHandler);
 
   return { release };
 }
