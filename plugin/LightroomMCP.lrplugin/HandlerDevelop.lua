@@ -6,6 +6,14 @@ local Log = require 'Log'
 local DevelopHandler = {}
 
 local MAX_BULK_PHOTO_IDS = 1000
+local MAX_POINT_CURVE_VALUES = 64
+
+local POINT_CURVE_SETTING_KEYS = {
+    "ToneCurvePV2012",
+    "ToneCurvePV2012Red",
+    "ToneCurvePV2012Green",
+    "ToneCurvePV2012Blue",
+}
 
 local ALLOWED_DEVELOP_SETTING_KEYS = {
     "WhiteBalance",
@@ -29,6 +37,10 @@ local ALLOWED_DEVELOP_SETTING_KEYS = {
     "ParametricShadowSplit",
     "ParametricMidtoneSplit",
     "ParametricHighlightSplit",
+    "ToneCurvePV2012",
+    "ToneCurvePV2012Red",
+    "ToneCurvePV2012Green",
+    "ToneCurvePV2012Blue",
     "ToneCurveName2012",
     "ConvertToGrayscale",
     "Sharpness",
@@ -67,6 +79,11 @@ local ALLOWED_DEVELOP_SETTING_KEYS = {
 local ALLOWED_DEVELOP_SETTING_LOOKUP = {}
 for _, key in ipairs(ALLOWED_DEVELOP_SETTING_KEYS) do
     ALLOWED_DEVELOP_SETTING_LOOKUP[key] = true
+end
+
+local POINT_CURVE_SETTING_LOOKUP = {}
+for _, key in ipairs(POINT_CURVE_SETTING_KEYS) do
+    POINT_CURVE_SETTING_LOOKUP[key] = true
 end
 
 local function requireString(value, name)
@@ -108,7 +125,48 @@ local function requireAllowedDevelopSettingKey(key)
     end
 end
 
+local function requirePointCurve(value, name)
+    if type(value) ~= "table" then
+        error(name .. " must be an array of input/output number pairs")
+    end
+
+    local count = 0
+    for index, item in pairs(value) do
+        if type(index) ~= "number" or index < 1 or index ~= math.floor(index) then
+            error(name .. " must be an array")
+        end
+        if type(item) ~= "number" or item < 0 or item > 255 then
+            error(name .. "[" .. tostring(index) .. "] must be a number from 0 to 255")
+        end
+        count = count + 1
+    end
+
+    if count ~= #value then
+        error(name .. " must be an array")
+    end
+    if count < 4 or count > MAX_POINT_CURVE_VALUES or count % 2 ~= 0 then
+        error(name .. " must contain 2 to 32 input/output pairs")
+    end
+    if value[1] ~= 0 or value[count - 1] ~= 255 then
+        error(name .. " must start at input 0 and end at input 255")
+    end
+
+    local previousInput = nil
+    for index = 1, count, 2 do
+        local input = value[index]
+        if previousInput ~= nil and input <= previousInput then
+            error(name .. " input values must be strictly increasing")
+        end
+        previousInput = input
+    end
+end
+
 local function requireDevelopSettingValue(key, value)
+    if POINT_CURVE_SETTING_LOOKUP[key] then
+        requirePointCurve(value, key)
+        return
+    end
+
     local valueType = type(value)
     if valueType ~= "number" and valueType ~= "string" and valueType ~= "boolean" then
         error("Unsupported value for develop setting key: " .. tostring(key))
