@@ -16,6 +16,9 @@ local HANDLER_MODULES = {
 --   socketOps      -- array; "close"/"reconnect" calls on bound sockets land here
 --   stopLoopOnSleep -- flip running=false on the first LrTasks.sleep so the
 --                      monitor loop exits after a single tick
+--   capturedBinds  -- array; each LrSocket.bind opts table is appended, in
+--                      bind order (request socket first, then response), so
+--                      a test can invoke onConnected/onMessage/etc directly
 local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
@@ -48,7 +51,8 @@ local function installStubs(prefs, asyncTasks, opts)
             end,
         },
         LrSocket = {
-            bind = function()
+            bind = function(bindOpts)
+                if opts.capturedBinds then table.insert(opts.capturedBinds, bindOpts) end
                 return {
                     close = function()
                         if opts.socketOps then table.insert(opts.socketOps, "close") end
@@ -268,6 +272,64 @@ describe("PluginInfoProvider server task", function()
     end)
 end)
 
+
+describe("stale-connection follow-up fixes (PR #151 re-review)", function()
+    local realOpen
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        realOpen = io.open
+        io.open = function(path, mode, ...)
+            if mode and mode:find("w", 1, true) then
+                return { write = function() end, close = function() end }
+            end
+            return realOpen(path, mode, ...)
+        end
+    end)
+    after_each(function()
+        io.open = realOpen
+    end)
+
+    it("clears a stale lastRequestTime on a fresh REQUEST connect so it doesn't leak into the new idle clock", function()
+        local binds = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        -- Simulate a prior session's activity timestamp surviving past a
+        -- manual Stop/Start (or any reconnect) that happens long after it
+        -- sat idle. Without clearing it here, the monitor loop's very next
+        -- tick would see a huge idle value and restart immediately.
+        _G.LightroomMCP_State.lastRequestTime = os.time() - 999
+        binds[1].onConnected()
+
+        assert.is_nil(_G.LightroomMCP_State.lastRequestTime)
+        assert.is_not_nil(_G.LightroomMCP_State.lastConnectedTime)
+    end)
+
+    it("keeps a request counted in-flight until sendResponse actually completes, not just until the handler returns", function()
+        package.loaded.JSON = nil -- exercise the real encoder/decoder, not the empty stub
+        local binds = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        state.sendConnected = true
+        state.responseSocket = {
+            send = function()
+                -- If inFlightRequests were decremented right after the
+                -- handler returns (the pre-fix behavior), the monitor loop
+                -- could see 0 in-flight and restart the server while this
+                -- send is still happening — defeating the blast-radius fix.
+                assert.are.equal(1, state.inFlightRequests)
+            end,
+        }
+
+        binds[1].onMessage(nil, '{"id":1,"action":"ping","hello":"' .. state.token .. '"}')
+
+        assert.are.equal(0, state.inFlightRequests)
+    end)
+end)
 
 describe("heartbeat / stale-connection blast radius (PR #151 review)", function()
     before_each(function()

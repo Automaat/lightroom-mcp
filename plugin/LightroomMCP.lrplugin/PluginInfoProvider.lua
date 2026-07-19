@@ -225,13 +225,15 @@ local function dispatchAction(request)
     end
 
     -- Tracked so the stale-connection monitor can defer a restart while a
-    -- real request is in flight (see STALE_RESTART_HARD_CAP_SECONDS).
+    -- real request is in flight. Held through sendResponse (not just the
+    -- handler call) so the monitor can't yank the socket while a response
+    -- is still queued waiting on sendConnected (see STALE_RESTART_HARD_CAP_SECONDS).
     pluginState.inFlightRequests = (pluginState.inFlightRequests or 0) + 1
 
     local handler = DISPATCH[action]
     if not handler then
-        pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
         sendResponse({ id = id, error = "Unknown action: " .. tostring(action) })
+        pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
         return
     end
 
@@ -242,13 +244,13 @@ local function dispatchAction(request)
     local execOk, resultOrErr = LrTasks.pcall(function()
         return handler(params)
     end)
-    pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
     if execOk then
         sendResponse({ id = id, result = resultOrErr })
     else
         addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
         sendResponse({ id = id, error = tostring(resultOrErr) })
     end
+    pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
 end
 
 -- Runs SYNCHRONOUSLY in onMessage. Every request must carry the current
@@ -343,6 +345,13 @@ local function startServer()
                 onConnected = function()
                     pluginState.receiveConnected = true
                     pluginState.lastConnectedTime = os.time()
+                    -- A stale lastRequestTime from a prior session (e.g. user
+                    -- Stop/Start after the connection sat idle >90s) must not
+                    -- leak into this connection's idle clock, or the monitor
+                    -- loop sees a huge idle value on the very first tick and
+                    -- restarts immediately. Idle now starts from
+                    -- lastConnectedTime until the first real message arrives.
+                    pluginState.lastRequestTime = nil
                     if pluginState.freshRestart then
                         -- Sockets were fully closed and rebound by the stale-detection
                         -- restart (issue #134 Windows workaround). The response listener
