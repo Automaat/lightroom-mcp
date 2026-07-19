@@ -11,6 +11,7 @@ import { createMcpServer } from "./create-server.js";
 import { parseCli, helpText } from "./cli.js";
 import { VERSION } from "./version.js";
 import { startHeartbeat } from "./heartbeat.js";
+import { acquireInstanceLock } from "./instance-lock.js";
 import {
   ensurePluginInstalled,
   findBundledPlugin,
@@ -26,6 +27,7 @@ const LONG_RUNNING_TIMEOUT_MS = 300_000;
 // PluginInfoProvider.lua. See heartbeat.ts for what this drives.
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const PING_TIMEOUT_MS = 10_000;
+const RESPONSE_CONNECT_SETTLE_MS = 200;
 const ACTION_TIMEOUTS_MS: Record<string, number> = {
   export_photos: LONG_RUNNING_TIMEOUT_MS,
   import_photos: LONG_RUNNING_TIMEOUT_MS,
@@ -66,28 +68,62 @@ async function main() {
     process.exit(1);
   }
 
+  try {
+    acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT);
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exit(1);
+  }
+
   ensurePluginInstalled(here, (m) => console.error(m));
 
-  const requestSocket = new PluginSocket({ port: REQUEST_PORT, label: "request" });
+  let requestSocket: PluginSocket;
+  let responseSocket: PluginSocket | null = null;
+  let responseConnectTimer: NodeJS.Timeout | null = null;
   const dispatcher = new Dispatcher({
     send: (line) => requestSocket.send(line),
     getToken: () => readToken(),
     timeoutMs: REQUEST_TIMEOUT_MS,
     actionTimeoutsMs: ACTION_TIMEOUTS_MS,
   });
-  const responseSocket = new PluginSocket({
-    port: RESPONSE_PORT,
-    label: "response",
-    onLine: (line) => dispatcher.handleResponseLine(line),
+  const startResponseSocket = () => {
+    if (responseSocket || !requestSocket.isConnected()) return;
+    responseSocket = new PluginSocket({
+      port: RESPONSE_PORT,
+      label: "response",
+      onLine: (line) => dispatcher.handleResponseLine(line),
+    });
+    responseSocket.connect();
+  };
+  const stopResponseSocket = () => {
+    if (responseConnectTimer) {
+      clearTimeout(responseConnectTimer);
+      responseConnectTimer = null;
+    }
+    responseSocket?.stop();
+    responseSocket = null;
+  };
+  requestSocket = new PluginSocket({
+    port: REQUEST_PORT,
+    label: "request",
+    onConnect: () => {
+      if (responseConnectTimer) clearTimeout(responseConnectTimer);
+      responseConnectTimer = setTimeout(() => {
+        responseConnectTimer = null;
+        startResponseSocket();
+      }, RESPONSE_CONNECT_SETTLE_MS);
+    },
+    onDisconnect: () => {
+      stopResponseSocket();
+    },
   });
   requestSocket.connect();
-  responseSocket.connect();
 
   startHeartbeat(dispatcher, HEARTBEAT_INTERVAL_MS);
 
   const server = createMcpServer({
     dispatcher,
-    isReady: () => requestSocket.isConnected() && responseSocket.isConnected(),
+    isReady: () => requestSocket.isConnected() && (responseSocket?.isConnected() ?? false),
   });
 
   const transport = new StdioServerTransport();
