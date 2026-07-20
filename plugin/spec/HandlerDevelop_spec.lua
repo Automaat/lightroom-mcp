@@ -144,6 +144,32 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.is_nil(applied.Contrast2012)
     end)
 
+    it("copies HSL settings by whitelist", function()
+        local source = helper.fakePhoto({
+            id = "22", path = "/s.jpg",
+            developSettings = {
+                Exposure2012 = 0.5,
+                HueAdjustmentOrange = -12,
+                SaturationAdjustmentOrange = 18,
+                LuminanceAdjustmentOrange = 7,
+            },
+        })
+        local target = helper.fakePhoto({ id = "23", path = "/t.jpg" })
+        local _, Handler = setup({ photos = { source, target } })
+
+        Handler.copyDevelopSettings({
+            source_id = "22",
+            target_ids = { "23" },
+            settings = { "HueAdjustmentOrange", "SaturationAdjustmentOrange", "LuminanceAdjustmentOrange" },
+        })
+
+        assert.are.same({
+            HueAdjustmentOrange = -12,
+            SaturationAdjustmentOrange = 18,
+            LuminanceAdjustmentOrange = 7,
+        }, target.getRawMetadata(target, "__appliedSettings"))
+    end)
+
     it("errors when source missing", function()
         local _, Handler = setup({ photos = {} })
         assert.has_error(function()
@@ -196,6 +222,27 @@ describe("HandlerDevelop.setDevelopSettings", function()
             { Exposure2012 = 0.75, Contrast2012 = 15 },
             p.getRawMetadata(p, "__appliedSettings")
         )
+    end)
+
+    it("applies HSL settings to the photo", function()
+        local p = helper.fakePhoto({ id = "2", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+
+        local r = Handler.setDevelopSettings({
+            photo_id = "2",
+            settings = {
+                HueAdjustmentRed = -5,
+                SaturationAdjustmentOrange = -20,
+                LuminanceAdjustmentYellow = 12,
+            },
+        })
+
+        assert.is_true(r.success)
+        assert.are.same({
+            HueAdjustmentRed = -5,
+            SaturationAdjustmentOrange = -20,
+            LuminanceAdjustmentYellow = 12,
+        }, p.getRawMetadata(p, "__appliedSettings"))
     end)
 
     it("errors when photo not found", function()

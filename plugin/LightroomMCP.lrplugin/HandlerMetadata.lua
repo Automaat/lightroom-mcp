@@ -15,6 +15,35 @@ local function nonEmptyGroup(fields)
     return nil
 end
 
+local function hslDevelopSettings(developSettings)
+    return nonEmptyGroup({
+        SaturationAdjustmentRed = developSettings.SaturationAdjustmentRed,
+        SaturationAdjustmentOrange = developSettings.SaturationAdjustmentOrange,
+        SaturationAdjustmentYellow = developSettings.SaturationAdjustmentYellow,
+        SaturationAdjustmentGreen = developSettings.SaturationAdjustmentGreen,
+        SaturationAdjustmentAqua = developSettings.SaturationAdjustmentAqua,
+        SaturationAdjustmentBlue = developSettings.SaturationAdjustmentBlue,
+        SaturationAdjustmentPurple = developSettings.SaturationAdjustmentPurple,
+        SaturationAdjustmentMagenta = developSettings.SaturationAdjustmentMagenta,
+        HueAdjustmentRed = developSettings.HueAdjustmentRed,
+        HueAdjustmentOrange = developSettings.HueAdjustmentOrange,
+        HueAdjustmentYellow = developSettings.HueAdjustmentYellow,
+        HueAdjustmentGreen = developSettings.HueAdjustmentGreen,
+        HueAdjustmentAqua = developSettings.HueAdjustmentAqua,
+        HueAdjustmentBlue = developSettings.HueAdjustmentBlue,
+        HueAdjustmentPurple = developSettings.HueAdjustmentPurple,
+        HueAdjustmentMagenta = developSettings.HueAdjustmentMagenta,
+        LuminanceAdjustmentRed = developSettings.LuminanceAdjustmentRed,
+        LuminanceAdjustmentOrange = developSettings.LuminanceAdjustmentOrange,
+        LuminanceAdjustmentYellow = developSettings.LuminanceAdjustmentYellow,
+        LuminanceAdjustmentGreen = developSettings.LuminanceAdjustmentGreen,
+        LuminanceAdjustmentAqua = developSettings.LuminanceAdjustmentAqua,
+        LuminanceAdjustmentBlue = developSettings.LuminanceAdjustmentBlue,
+        LuminanceAdjustmentPurple = developSettings.LuminanceAdjustmentPurple,
+        LuminanceAdjustmentMagenta = developSettings.LuminanceAdjustmentMagenta,
+    })
+end
+
 function MetadataHandler.getPhotoMetadata(args)
     if not args.photo_id then
         error("photo_id is required")
@@ -117,6 +146,7 @@ function MetadataHandler.getPhotoMetadata(args)
                 dehaze = developSettings.Dehaze,
                 vibrance = developSettings.Vibrance,
                 saturation = developSettings.Saturation,
+                hsl = hslDevelopSettings(developSettings),
             }
         }
     end)
