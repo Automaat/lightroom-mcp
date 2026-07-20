@@ -80,6 +80,12 @@ const stringArray = (description: string, maxItems?: number) => ({
 const photoIdArray = (description: string) =>
   stringArray(description, MAX_BULK_PHOTO_IDS);
 
+const dateStringSchema = (description: string) => ({
+  type: "string",
+  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+  description,
+});
+
 const developSettingValueSchema = {
   oneOf: [{ type: "number" }, { type: "string" }, { type: "boolean" }],
 };
@@ -106,8 +112,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minimum: 0,
           maximum: 5,
         },
-        start_date: { type: "string", description: "Start date (YYYY-MM-DD)" },
-        end_date: { type: "string", description: "End date (YYYY-MM-DD)" },
+        start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
+        end_date: dateStringSchema("End date (YYYY-MM-DD)"),
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
