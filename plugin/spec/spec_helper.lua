@@ -164,12 +164,12 @@ function M.fakeCatalog(opts)
         elseif crit == "captureTime" then
             local t = photo:getRawMetadata('dateTimeOriginal')
             if not t then return false end
-            if op == "inRange" then
+            if op == "in" then
                 return t >= criterion.value and t <= criterion.value2
-            elseif op == ">=" then
-                return t >= criterion.value
-            elseif op == "<=" then
-                return t <= criterion.value
+            elseif op == ">" then
+                return t > criterion.value
+            elseif op == "<" then
+                return t < criterion.value
             end
         end
         error("fakeCatalog.findPhotos: unsupported criterion " .. tostring(crit) .. "/" .. tostring(op))
