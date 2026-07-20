@@ -38,6 +38,40 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.same({ "summer", "beach" }, r.keywords)
     end)
 
+    it("exposes HSL develop settings with SDK keys", function()
+        local photo = helper.fakePhoto({
+            id = "43",
+            path = "/p/portrait.jpg",
+            fileName = "portrait.jpg",
+            developSettings = {
+                HueAdjustmentRed = -8,
+                SaturationAdjustmentOrange = -15,
+                LuminanceAdjustmentYellow = 6,
+            },
+        })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "43" })
+
+        assert.are.equal(-8, r.developSettings.hsl.HueAdjustmentRed)
+        assert.are.equal(-15, r.developSettings.hsl.SaturationAdjustmentOrange)
+        assert.are.equal(6, r.developSettings.hsl.LuminanceAdjustmentYellow)
+    end)
+
+    it("omits HSL group when no HSL develop settings are present", function()
+        local photo = helper.fakePhoto({
+            id = "44",
+            path = "/p/no-hsl.jpg",
+            fileName = "no-hsl.jpg",
+            developSettings = { Exposure2012 = 0.25 },
+        })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "44" })
+
+        assert.is_nil(r.developSettings.hsl)
+    end)
+
     it("exposes IPTC location, GPS, and copyright metadata", function()
         local photo = helper.fakePhoto({
             id = "7",
