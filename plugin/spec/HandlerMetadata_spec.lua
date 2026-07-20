@@ -25,7 +25,14 @@ describe("HandlerMetadata.getPhotoMetadata", function()
             },
             cameraMake = "Canon",
             cameraModel = "R5",
-            developSettings = { Exposure2012 = 0.5, WhiteBalance = "Custom" },
+            developSettings = {
+                Exposure2012 = 0.5,
+                WhiteBalance = "Custom",
+                ConvertToGrayscale = true,
+                ToneCurveName2012 = "Custom",
+                ToneCurvePV2012 = { 0, 0, 64, 48, 255, 255 },
+                ToneCurvePV2012Red = { 0, 0, 255, 250 },
+            },
         })
         local _, Handler = setup({ photo })
 
@@ -35,6 +42,10 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.equal(5, r.rating)
         assert.are.equal("Canon", r.cameraMake)
         assert.are.equal(0.5, r.developSettings.exposure)
+        assert.is_true(r.developSettings.convertToGrayscale)
+        assert.are.equal("Custom", r.developSettings.toneCurveName)
+        assert.are.same({ 0, 0, 64, 48, 255, 255 }, r.developSettings.toneCurve)
+        assert.are.same({ 0, 0, 255, 250 }, r.developSettings.toneCurveRed)
         assert.are.same({ "summer", "beach" }, r.keywords)
     end)
 

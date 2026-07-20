@@ -2,7 +2,11 @@ import { describe, it, expect } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
-import { DEVELOP_SETTING_KEYS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import {
+  DEVELOP_SETTING_KEYS,
+  POINT_CURVE_SETTING_KEYS,
+  TOOL_CONTRACTS,
+} from '../src/tool-contracts.js';
 
 const EXPECTED_TOOL_NAMES = [
   'search_photos',
@@ -159,6 +163,37 @@ describe('develop setting schema', () => {
     expect(properties.settings.additionalProperties).toBe(false);
     expect(properties.settings.minProperties).toBe(1);
     expect(Object.keys(properties.settings.properties ?? {})).toEqual(DEVELOP_SETTING_KEYS);
+  });
+
+  it('uses numeric arrays for point curves and scalar values for ordinary settings', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
+    const properties = tool?.inputSchema.properties as Record<
+      string,
+      {
+        properties?: Record<
+          string,
+          {
+            type?: string;
+            minItems?: number;
+            maxItems?: number;
+            items?: { type?: string; minimum?: number; maximum?: number };
+            oneOf?: unknown[];
+          }
+        >;
+      }
+    >;
+    const settings = properties.settings.properties ?? {};
+
+    for (const key of POINT_CURVE_SETTING_KEYS) {
+      expect(settings[key]).toMatchObject({
+        type: 'array',
+        minItems: 4,
+        maxItems: 64,
+        items: { type: 'number', minimum: 0, maximum: 255 },
+      });
+    }
+    expect(settings.Exposure2012.oneOf).toBeDefined();
+    expect(settings.Exposure2012.type).toBeUndefined();
   });
 
   it('matches Lua develop setting allowlist', () => {

@@ -170,6 +170,25 @@ If you'd rather drop the plugin in by hand:
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
 
+### Point curves
+
+`set_develop_settings` accepts Lightroom's composite and per-channel point curve
+keys: `ToneCurvePV2012`, `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, and
+`ToneCurvePV2012Blue`. Each value is a flat list of input/output pairs from 0 to
+255. Inputs must be strictly increasing and each curve must include input 0 and
+input 255.
+
+```json
+{
+  "photo_id": "283615",
+  "settings": {
+    "ToneCurveName2012": "Custom",
+    "ToneCurvePV2012": [0, 0, 40, 25, 128, 132, 220, 240, 255, 250],
+    "ToneCurvePV2012Blue": [0, 0, 64, 58, 192, 198, 255, 255]
+  }
+}
+```
+
 ## How it works
 
 ```

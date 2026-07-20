@@ -12,6 +12,13 @@ export interface ToolContract {
 const MAX_BULK_PHOTO_IDS = 1000;
 const MAX_KEYWORDS = 1000;
 
+export const POINT_CURVE_SETTING_KEYS = [
+  "ToneCurvePV2012",
+  "ToneCurvePV2012Red",
+  "ToneCurvePV2012Green",
+  "ToneCurvePV2012Blue",
+] as const;
+
 export const DEVELOP_SETTING_KEYS = [
   "WhiteBalance",
   "Temperature",
@@ -34,6 +41,7 @@ export const DEVELOP_SETTING_KEYS = [
   "ParametricShadowSplit",
   "ParametricMidtoneSplit",
   "ParametricHighlightSplit",
+  ...POINT_CURVE_SETTING_KEYS,
   "ToneCurveName2012",
   "ConvertToGrayscale",
   "Sharpness",
@@ -80,12 +88,28 @@ const stringArray = (description: string, maxItems?: number) => ({
 const photoIdArray = (description: string) =>
   stringArray(description, MAX_BULK_PHOTO_IDS);
 
-const developSettingValueSchema = {
+const scalarDevelopSettingValueSchema = {
   oneOf: [{ type: "number" }, { type: "string" }, { type: "boolean" }],
 };
 
+const pointCurveDevelopSettingValueSchema = {
+  type: "array",
+  items: { type: "number", minimum: 0, maximum: 255 },
+  minItems: 4,
+  maxItems: 64,
+  description:
+    "Flat input/output pairs for a Lightroom point curve, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Inputs must be strictly increasing and the curve must start at input 0 and end at input 255.",
+};
+
+const pointCurveSettingKeySet = new Set<string>(POINT_CURVE_SETTING_KEYS);
+
 const developSettingsProperties = Object.fromEntries(
-  DEVELOP_SETTING_KEYS.map((key) => [key, developSettingValueSchema]),
+  DEVELOP_SETTING_KEYS.map((key) => [
+    key,
+    pointCurveSettingKeySet.has(key)
+      ? pointCurveDevelopSettingValueSchema
+      : scalarDevelopSettingValueSchema,
+  ]),
 );
 
 export const TOOL_CONTRACTS: ToolContract[] = [
@@ -322,7 +346,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "set_develop_settings",
     luaHandler: "HandlerDevelop.setDevelopSettings",
     description:
-      "Set Develop settings directly on a photo. Keys use allowlisted Lightroom SDK names (Exposure2012, WhiteBalance, Contrast2012, Highlights2012, Shadows2012, Whites2012, Blacks2012, Clarity2012, Vibrance, Saturation, etc.)",
+      "Set Develop settings directly on a photo. Supports allowlisted Lightroom SDK scalar settings plus RGB composite and per-channel point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green, and ToneCurvePV2012Blue.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

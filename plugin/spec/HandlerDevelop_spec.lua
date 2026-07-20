@@ -198,6 +198,27 @@ describe("HandlerDevelop.setDevelopSettings", function()
         )
     end)
 
+    it("applies RGB composite and per-channel point curves", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+        local composite = { 0, 0, 64, 48, 192, 210, 255, 255 }
+        local red = { 0, 4, 128, 132, 255, 250 }
+
+        local r = Handler.setDevelopSettings({
+            photo_id = "1",
+            settings = {
+                ToneCurveName2012 = "Custom",
+                ToneCurvePV2012 = composite,
+                ToneCurvePV2012Red = red,
+            },
+        })
+
+        assert.is_true(r.success)
+        local applied = p.getRawMetadata(p, "__appliedSettings")
+        assert.are.same(composite, applied.ToneCurvePV2012)
+        assert.are.same(red, applied.ToneCurvePV2012Red)
+    end)
+
     it("errors when photo not found", function()
         local _, Handler = setup({ photos = {} })
         assert.has_error(function()
@@ -241,5 +262,30 @@ describe("HandlerDevelop.setDevelopSettings", function()
 
         assert.are.equal(0, catalog.getWriteAccessCount())
         assert.is_nil(p.getRawMetadata(p, "__appliedSettings"))
+    end)
+
+    it("rejects malformed point curves before catalog write", function()
+        local invalidCurves = {
+            { 0, 0, 128, 120, 255 },
+            { 0, 0, 128, 120, 100, 150, 255, 255 },
+            { 0, 0, 255, 300 },
+            { 10, 0, 255, 255 },
+            { 0, 0, 240, 255 },
+        }
+
+        for _, curve in ipairs(invalidCurves) do
+            local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+            local catalog, Handler = setup({ photos = { p } })
+
+            assert.has_error(function()
+                Handler.setDevelopSettings({
+                    photo_id = "1",
+                    settings = { ToneCurvePV2012 = curve },
+                })
+            end)
+
+            assert.are.equal(0, catalog.getWriteAccessCount())
+            assert.is_nil(p.getRawMetadata(p, "__appliedSettings"))
+        end
     end)
 end)
