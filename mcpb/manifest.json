@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "lightroom-mcp",
   "display_name": "Lightroom Classic",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
   "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
   "author": {
