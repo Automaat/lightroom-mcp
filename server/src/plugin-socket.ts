@@ -7,6 +7,7 @@ export interface PluginSocketOptions {
   reconnectDelayMs?: number;
   onLine?: (line: string) => void;
   onConnect?: () => void;
+  onDisconnect?: () => void;
   log?: (msg: string) => void;
 }
 
@@ -23,6 +24,7 @@ export class PluginSocket {
   private readonly reconnectDelayMs: number;
   private readonly onLine?: (line: string) => void;
   private readonly onConnect?: () => void;
+  private readonly onDisconnect?: () => void;
   private readonly log: (msg: string) => void;
 
   constructor(opts: PluginSocketOptions) {
@@ -32,6 +34,7 @@ export class PluginSocket {
     this.reconnectDelayMs = opts.reconnectDelayMs ?? 1000;
     this.onLine = opts.onLine;
     this.onConnect = opts.onConnect;
+    this.onDisconnect = opts.onDisconnect;
     this.log = opts.log ?? ((msg: string) => console.error(msg));
   }
 
@@ -70,6 +73,7 @@ export class PluginSocket {
       this.socket = null;
       this.buffer = "";
       if (wasConnected) this.log(`[${this.label}] disconnected, reconnecting`);
+      if (wasConnected) this.onDisconnect?.();
       this.scheduleReconnect();
     });
 
