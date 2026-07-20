@@ -3,6 +3,13 @@ local helper = require 'spec_helper'
 -- Mirrors the real SDK: LrFileUtils.exists returns 'file' / 'directory' / false,
 -- and LrFileUtils.isDirectory is intentionally absent (nil on some Lightroom
 -- Classic runtimes -- issue #129).
+--
+-- Two omissions here are deliberate and load-bearing:
+--   * no `extension` -- that field lives on LrPathUtils, not LrFileUtils.
+--   * no `files`     -- the handler must walk nested subfolders via
+--                       recursiveFiles; a plain files() walk misses them.
+-- Providing either would let a regression to the wrong API pass green, which
+-- is precisely how both bugs shipped.
 local function fakeFileUtils(opts)
     return {
         exists = function(p)
@@ -10,7 +17,7 @@ local function fakeFileUtils(opts)
             if opts.exists and opts.exists[p] then return 'file' end
             return false
         end,
-        files = function(_)
+        recursiveFiles = function(_)
             local i = 0
             local list = opts.dirContents or {}
             return function()
@@ -18,6 +25,12 @@ local function fakeFileUtils(opts)
                 return list[i]
             end
         end,
+    }
+end
+
+-- extension() belongs to LrPathUtils in the real SDK.
+local function fakePathUtils()
+    return {
         extension = function(p) return p:match("%.([^.]+)$") or "" end,
     }
 end
@@ -29,6 +42,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
         LrTasks = {},
         LrFileUtils = fakeFileUtils(opts.fs or {}),
+        LrPathUtils = fakePathUtils(),
     })
     package.loaded.HandlerImport = nil
     return catalog, require 'HandlerImport'
@@ -68,6 +82,29 @@ describe("HandlerImport.importPhotos", function()
         })
 
         local r = Handler.importPhotos({ source_path = "/dir" })
+        assert.are.equal(3, r.imported)
+    end)
+
+    it("imports photos nested in subfolders", function()
+        -- Photo libraries are organized as shoot/roll subfolders, so the source
+        -- directory usually holds no photos itself. An immediate-directory walk
+        -- enumerated nothing and failed with "No photos found to import"; the
+        -- walk has to recurse.
+        local _, Handler = setup({
+            fs = {
+                exists = { ["/dir"] = true },
+                directories = { ["/dir"] = true },
+                dirContents = {
+                    "/dir/roll1/a.jpg",
+                    "/dir/roll1/scans/b.tif",
+                    "/dir/roll2/c.arw",
+                },
+            },
+        })
+
+        local r = Handler.importPhotos({ source_path = "/dir" })
+
+        assert.is_true(r.success)
         assert.are.equal(3, r.imported)
     end)
 

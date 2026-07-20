@@ -1,6 +1,7 @@
 local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 local LrFileUtils = import 'LrFileUtils'
+local LrPathUtils = import 'LrPathUtils'
 
 local Log = require 'Log'
 
@@ -27,9 +28,15 @@ function ImportHandler.importPhotos(args)
     -- needs no catalog access.
     local photosToImport = {}
     if sourceKind == 'directory' then
-        -- Import all photos from directory
-        for file in LrFileUtils.files(args.source_path) do
-            local ext = LrFileUtils.extension(file):lower()
+        -- Import all photos from directory, including nested subfolders.
+        -- LrFileUtils.files lists only the immediate directory, so a source
+        -- organized as shoot/roll subfolders (the common Lightroom layout)
+        -- enumerated nothing and failed with "No photos found to import".
+        for file in LrFileUtils.recursiveFiles(args.source_path) do
+            -- extension() is on LrPathUtils; LrFileUtils has no such field, so
+            -- the previous call was nil and raised "attempt to call field
+            -- 'extension' (a nil value)" on every directory import.
+            local ext = LrPathUtils.extension(file):lower()
             if ext == 'jpg' or ext == 'jpeg' or ext == 'png' or
                ext == 'tif' or ext == 'tiff' or ext == 'dng' or
                ext == 'cr2' or ext == 'nef' or ext == 'arw' then
