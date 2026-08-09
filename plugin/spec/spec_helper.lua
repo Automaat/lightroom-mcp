@@ -92,8 +92,9 @@ function M.fakePhoto(meta)
             table.insert(meta.__removedKeywords, kw)
         end,
         setRawMetadata = function(_, key, value) meta[key] = value end,
-        applyDevelopPreset = function(_, preset)
+        applyDevelopPreset = function(_, preset, plugin)
             meta.__appliedPreset = preset
+            meta.__appliedPresetPlugin = plugin
         end,
         applyDevelopSettings = function(_, settings)
             meta.__appliedSettings = settings

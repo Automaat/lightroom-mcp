@@ -1,0 +1,143 @@
+{
+  "schema_version": 2,
+  "tested_target": {
+    "mode": "SDR RAW fallback",
+    "lightroom_classic": "15.5 local runtime; XMP import remains manually unverified",
+    "process_version": "15.4"
+  },
+  "base_attrs": {
+    "PresetType": "Normal",
+    "SupportsAmount": "False",
+    "SupportsColor": "True",
+    "SupportsMonochrome": "False",
+    "SupportsHighDynamicRange": "False",
+    "SupportsNormalDynamicRange": "True",
+    "SupportsSceneReferred": "True",
+    "SupportsOutputReferred": "True",
+    "CameraModelRestriction": "",
+    "Copyright": "",
+    "ContactInfo": "",
+    "Version": "15.0",
+    "ProcessVersion": "15.4",
+    "ConvertToGrayscale": "False",
+    "Treatment": "Color"
+  },
+  "styles": {
+    "neutral-natural": {
+      "display_name": "Neutral Natural",
+      "intent": "Technically clean and restrained baseline.",
+      "settings": {
+        "Contrast2012": 0,
+        "Highlights2012": -15,
+        "Shadows2012": 10,
+        "Whites2012": 5,
+        "Blacks2012": -5,
+        "Vibrance": 5,
+        "Saturation": 0
+      }
+    },
+    "graduation-bright-natural": {
+      "display_name": "Graduation Bright Natural",
+      "intent": "Clean event delivery with gentle microcontrast and restrained foliage.",
+      "settings": {
+        "Contrast2012": 4,
+        "Highlights2012": -24,
+        "Shadows2012": 18,
+        "Whites2012": 8,
+        "Blacks2012": -6,
+        "Texture": 2,
+        "Clarity2012": -2,
+        "Vibrance": 6,
+        "Saturation": -2,
+        "HueAdjustmentYellow": -4,
+        "HueAdjustmentGreen": -8,
+        "SaturationAdjustmentYellow": -6,
+        "SaturationAdjustmentGreen": -10,
+        "LuminanceAdjustmentOrange": 4
+      }
+    },
+    "graduation-documentary": {
+      "display_name": "Graduation Documentary",
+      "intent": "Dimensional event coverage without harsh skin or crushed blacks.",
+      "settings": {
+        "Contrast2012": 12,
+        "Highlights2012": -20,
+        "Shadows2012": 8,
+        "Whites2012": 10,
+        "Blacks2012": -14,
+        "Texture": 8,
+        "Clarity2012": 4,
+        "Dehaze": 2,
+        "Vibrance": 5,
+        "HueAdjustmentYellow": -6,
+        "HueAdjustmentGreen": -10,
+        "SaturationAdjustmentYellow": -8,
+        "SaturationAdjustmentGreen": -12,
+        "LuminanceAdjustmentOrange": 3
+      }
+    },
+    "warm-cosplay-portrait": {
+      "display_name": "Warm Cosplay Portrait",
+      "intent": "Warm subject separation with restrained orange skin and foliage.",
+      "settings": {
+        "Contrast2012": 12,
+        "Highlights2012": -24,
+        "Shadows2012": 12,
+        "Whites2012": 5,
+        "Blacks2012": -16,
+        "Texture": 0,
+        "Clarity2012": 2,
+        "Dehaze": 2,
+        "Vibrance": 8,
+        "Saturation": -3,
+        "HueAdjustmentOrange": -3,
+        "HueAdjustmentYellow": -8,
+        "HueAdjustmentGreen": -12,
+        "SaturationAdjustmentOrange": -2,
+        "SaturationAdjustmentYellow": -10,
+        "SaturationAdjustmentGreen": -16,
+        "LuminanceAdjustmentOrange": 5
+      }
+    },
+    "dramatic-fine-art": {
+      "display_name": "Dramatic Fine Art",
+      "intent": "Deeper tonal structure and selective color emphasis.",
+      "settings": {
+        "Contrast2012": 18,
+        "Highlights2012": -30,
+        "Shadows2012": -2,
+        "Whites2012": 10,
+        "Blacks2012": -24,
+        "Texture": 10,
+        "Clarity2012": 8,
+        "Dehaze": 4,
+        "Vibrance": 12,
+        "Saturation": -4,
+        "SaturationAdjustmentRed": 4,
+        "SaturationAdjustmentYellow": -8,
+        "SaturationAdjustmentGreen": -14,
+        "SaturationAdjustmentBlue": -6,
+        "PostCropVignetteAmount": -8,
+        "GrainAmount": 5
+      }
+    }
+  },
+  "modifiers": {
+    "low-light-noise-controlled": {
+      "display_name": "Low Light Noise Controlled",
+      "intent": "Conservative detail and noise starting point for high ISO files.",
+      "settings": {
+        "Texture": -4,
+        "Clarity2012": -2,
+        "Sharpness": 35,
+        "SharpenRadius": 1.0,
+        "SharpenDetail": 15,
+        "SharpenEdgeMasking": 60,
+        "LuminanceSmoothing": 15,
+        "LuminanceNoiseReductionDetail": 45,
+        "LuminanceNoiseReductionContrast": 5,
+        "ColorNoiseReduction": 25
+      }
+    }
+  }
+}

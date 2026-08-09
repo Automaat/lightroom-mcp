@@ -2,6 +2,8 @@
 
 Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** photo catalog. Search photos, set ratings, edit develop settings, manage collections, import/export — all by chatting.
 
+> **Preset round-trip fork (v0.10.0):** this branch adds exact preset inspection, historical-preset comparison, versioned checkpoint creation, safe preset export, and the complete `raw-photo-lightroom-preset` v2 Codex skill for RAW culling and iterative editing. See the [Traditional Chinese v2 guide](README.zh-TW.md) or open the [bundled skill](skills/raw-photo-lightroom-preset/SKILL.md).
+
 [![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
 [![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
 
@@ -44,6 +46,8 @@ Some other things to try:
 - *"Find all my 5-star photos from last summer."*
 - *"Add the keyword 'portfolio' to the photos I have selected in Lightroom."*
 - *"Apply the 'Vivid' develop preset to these photos."*
+- *"Compare my approved 'John Warm v3' preset with the current candidate."*
+- *"Create a versioned preset checkpoint from this representative photo and export it."*
 - *"Export the selected photos to my Desktop as JPEGs at 2000px wide."*
 
 ---
@@ -163,12 +167,28 @@ If you'd rather drop the plugin in by hand:
 | `set_rating` | Set 0-5 star rating on photos. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
-| `list_develop_presets` | Discover available Develop presets. |
-| `apply_develop_preset` | Apply a named preset to photos. |
+| `list_develop_presets` | Discover Lightroom-visible presets and plugin checkpoints. |
+| `get_develop_preset` | Read settings and backing-file metadata for one exact preset. |
+| `compare_develop_presets` | Diff an approved historical preset against a candidate. |
+| `create_develop_preset` | Capture explicit settings from a photo as a versioned plugin checkpoint. |
+| `export_develop_preset` | Copy a custom/checkpoint preset backing file without overwriting. |
+| `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name. |
 | `copy_develop_settings` | Copy develop settings between photos. |
 | `set_develop_settings` | Write SDK setting key/values directly. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
+
+### Iterative preset workflow
+
+Use a representative photo or virtual copy rather than a master edit:
+
+1. Read an approved historical preset with `get_develop_preset`.
+2. Apply bounded setting changes to the representative and export a Lightroom-rendered JPEG.
+3. Create a uniquely named checkpoint such as `John Warm v4` with `create_develop_preset`.
+4. Compare it with the approved preset using `compare_develop_presets`.
+5. Repeat the render/inspect cycle; export the accepted checkpoint with `export_develop_preset`.
+
+`create_develop_preset` uses Adobe's plugin preset API. These checkpoints are intentionally hidden from the Develop panel and are listed with `scope: "plugin"`. They are versioned instead of overwritten. `export_develop_preset` refuses existing destinations and preserves the backing file format Lightroom supplies. Built-in presets without a backing file cannot be exported.
 
 ## How it works
 

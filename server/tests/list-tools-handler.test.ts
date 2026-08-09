@@ -2,7 +2,11 @@ import { describe, it, expect } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
-import { DEVELOP_SETTING_KEYS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import {
+  DEVELOP_CURVE_SETTING_KEYS,
+  DEVELOP_SETTING_KEYS,
+  TOOL_CONTRACTS,
+} from '../src/tool-contracts.js';
 
 const EXPECTED_TOOL_NAMES = [
   'search_photos',
@@ -16,14 +20,18 @@ const EXPECTED_TOOL_NAMES = [
   'import_photos',
   'export_photos',
   'list_develop_presets',
+  'get_develop_preset',
+  'compare_develop_presets',
+  'create_develop_preset',
+  'export_develop_preset',
   'apply_develop_preset',
   'copy_develop_settings',
   'set_develop_settings',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 14 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(14);
+  it('contains exactly 18 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(18);
   });
 
   it('tool names are unique', () => {
@@ -81,14 +89,23 @@ describe('tool required fields', () => {
     ['set_rating', ['photo_ids', 'rating']],
     ['import_photos', ['source_path']],
     ['export_photos', ['photo_ids', 'destination']],
-    ['apply_develop_preset', ['photo_ids', 'preset_name']],
+    ['compare_develop_presets', ['base', 'candidate']],
+    ['create_develop_preset', ['photo_id', 'preset_name', 'settings']],
+    ['export_develop_preset', ['destination_dir']],
+    ['apply_develop_preset', ['photo_ids']],
     ['copy_develop_settings', ['source_id', 'target_ids']],
     ['set_develop_settings', ['photo_id', 'settings']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
   });
 
-  it.each(['search_photos', 'get_selected_photos', 'list_collections', 'list_develop_presets'])(
+  it.each([
+    'search_photos',
+    'get_selected_photos',
+    'list_collections',
+    'list_develop_presets',
+    'get_develop_preset',
+  ])(
     '%s has no required fields',
     (name) => {
       expect(toolRequired(name)).toBeUndefined();
@@ -159,6 +176,34 @@ describe('develop setting schema', () => {
     expect(properties.settings.additionalProperties).toBe(false);
     expect(properties.settings.minProperties).toBe(1);
     expect(Object.keys(properties.settings.properties ?? {})).toEqual(DEVELOP_SETTING_KEYS);
+  });
+
+  it('uses numeric coordinate arrays for point-curve settings', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
+    const properties = tool?.inputSchema.properties as Record<
+      string,
+      { properties?: Record<string, { type?: string; minItems?: number; maxItems?: number }> }
+    >;
+
+    for (const key of DEVELOP_CURVE_SETTING_KEYS) {
+      expect(properties.settings.properties?.[key]).toMatchObject({
+        type: 'array',
+        minItems: 4,
+        maxItems: 512,
+      });
+    }
+  });
+
+  it('requires explicit allowlisted keys when creating a preset checkpoint', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'create_develop_preset');
+    const properties = tool?.inputSchema.properties as Record<
+      string,
+      { items?: { enum?: readonly string[] }; minItems?: number; uniqueItems?: boolean }
+    >;
+
+    expect(properties.settings.items?.enum).toEqual(DEVELOP_SETTING_KEYS);
+    expect(properties.settings.minItems).toBe(1);
+    expect(properties.settings.uniqueItems).toBe(true);
   });
 
   it('matches Lua develop setting allowlist', () => {

@@ -11,6 +11,7 @@
 //   node tests/e2e/mcp-runner.mjs read            # read-only ops
 //   node tests/e2e/mcp-runner.mjs write           # mutating ops (creates collection, sets rating, etc.)
 //   node tests/e2e/mcp-runner.mjs develop         # develop module ops
+//   node tests/e2e/mcp-runner.mjs preset-roundtrip # create/get/export/no-overwrite preset check
 //   node tests/e2e/mcp-runner.mjs failure         # error/edge-case ops
 //   node tests/e2e/mcp-runner.mjs all             # everything except import/export
 //   node tests/e2e/mcp-runner.mjs tool <name> '<json>'   # one-shot single tool call
@@ -19,6 +20,7 @@
 // Exit code is non-zero if any scenario fails.
 
 import { spawn, execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import { once } from "node:events";
@@ -178,6 +180,20 @@ function checkTrue(label, cond, ctx) {
   if (!cond) throw new Error(`${label}: ${ctx ?? "expected truthy"}`);
 }
 
+function exactPresetSelector(preset, presets) {
+  if (preset.uuid) return { preset_uuid: preset.uuid };
+  const matches = presets.filter((candidate) =>
+    candidate.name === preset.name
+    && candidate.folder === preset.folder
+    && candidate.scope === preset.scope);
+  if (matches.length !== 1) return null;
+  return {
+    preset_name: preset.name,
+    preset_folder: preset.folder,
+    preset_scope: preset.scope,
+  };
+}
+
 async function run(label, fn) {
   process.stdout.write(`▶ ${label} ... `);
   try {
@@ -270,10 +286,89 @@ async function main() {
 
   const ctx = {};
 
+  if (mode === "preset-roundtrip") {
+    const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+    const checkpointName = `MCP_E2E_PresetRoundtrip_${stamp}`;
+    const outputRoot = process.env.LIGHTROOM_MCP_E2E_PRESET_DIR ?? os.tmpdir();
+    const destinationDir = path.join(outputRoot, checkpointName);
+
+    await run("find a source photo without changing it", async () => {
+      const r = await c.callTool("search_photos", { limit: 1 });
+      checkTrue("not error", !r.isError, r.text);
+      ctx.firstPhoto = r.parsed.photos?.[0];
+      checkTrue("photo exists", !!ctx.firstPhoto, "catalog appears empty");
+      return `${ctx.firstPhoto.path}`;
+    });
+
+    await run(`create hidden checkpoint ${checkpointName}`, async () => {
+      const candidateKeys = ["Contrast2012", "Exposure2012", "Vibrance"];
+      let lastError = "";
+      for (const key of candidateKeys) {
+        const r = await c.callTool("create_develop_preset", {
+          photo_id: String(ctx.firstPhoto.id),
+          preset_name: checkpointName,
+          settings: [key],
+        });
+        if (!r.isError) {
+          ctx.capturedKey = key;
+          ctx.createdPreset = r.parsed;
+          checkEq("scope", r.parsed.scope, "plugin");
+          checkEq("visible in Develop", r.parsed.visible_in_develop, false);
+          return `captured=${key}`;
+        }
+        lastError = r.text;
+      }
+      throw new Error(`no candidate develop setting could be captured: ${lastError}`);
+    });
+
+    await run("read the exact checkpoint back", async () => {
+      const r = await c.callTool("get_develop_preset", {
+        preset_name: checkpointName,
+        preset_scope: "plugin",
+      });
+      checkTrue("not error", !r.isError, r.text);
+      checkEq("setting count", r.parsed.setting_count, 1);
+      checkTrue("captured key present", Object.hasOwn(r.parsed.settings, ctx.capturedKey), r.text);
+      ctx.readPreset = r.parsed;
+      return `uuid=${r.parsed.uuid ?? "unavailable"}`;
+    });
+
+    await run("export the checkpoint backing file", async () => {
+      fs.mkdirSync(destinationDir, { recursive: true });
+      const r = await c.callTool("export_develop_preset", {
+        preset_name: checkpointName,
+        preset_scope: "plugin",
+        destination_dir: destinationDir,
+        filename: checkpointName,
+      });
+      checkTrue("not error", !r.isError, r.text);
+      checkTrue("exported file exists", fs.existsSync(r.parsed.destination), r.parsed.destination);
+      ctx.exportPath = r.parsed.destination;
+      ctx.exportHash = createHash("sha256").update(fs.readFileSync(ctx.exportPath)).digest("hex");
+      return `${ctx.exportPath} sha256=${ctx.exportHash}`;
+    });
+
+    await run("refuse a repeated export without changing the file", async () => {
+      const r = await c.callTool("export_develop_preset", {
+        preset_name: checkpointName,
+        preset_scope: "plugin",
+        destination_dir: destinationDir,
+        filename: checkpointName,
+      });
+      checkEq("isError", r.isError, true);
+      const afterHash = createHash("sha256").update(fs.readFileSync(ctx.exportPath)).digest("hex");
+      checkEq("file hash", afterHash, ctx.exportHash);
+      return "existing export preserved";
+    });
+
+    console.log(`checkpoint=${checkpointName}`);
+    console.log(`export=${ctx.exportPath ?? destinationDir}`);
+  }
+
   if (mode === "read" || mode === "all") {
-    await run("tools/list returns 14 tools", async () => {
+    await run("tools/list returns 18 tools", async () => {
       const tools = await c.listTools();
-      checkEq("tool count", tools.tools.length, 14);
+      checkEq("tool count", tools.tools.length, 18);
     });
 
     await run("list_collections smoke", async () => {
@@ -327,9 +422,34 @@ async function main() {
       const r = await c.callTool("list_develop_presets", {});
       checkTrue("not error", !r.isError, r.text);
       checkTrue("count is number", typeof r.parsed.count === "number");
-      ctx.firstPreset = r.parsed.presets[0];
-      return `count=${r.parsed.count}`;
+      ctx.presets = r.parsed.presets;
+      ctx.exactPresets = r.parsed.presets.filter((preset) =>
+        exactPresetSelector(preset, r.parsed.presets));
+      ctx.firstPreset = ctx.exactPresets[0];
+      return `count=${r.parsed.count}, exact=${ctx.exactPresets.length}`;
     });
+
+    if (ctx.firstPreset) {
+      await run("get_develop_preset for first exact preset", async () => {
+        const selector = exactPresetSelector(ctx.firstPreset, ctx.presets);
+        const r = await c.callTool("get_develop_preset", selector);
+        checkTrue("not error", !r.isError, r.text);
+        checkTrue("settings object", typeof r.parsed.settings === "object");
+        return `setting_count=${r.parsed.setting_count}`;
+      });
+    }
+
+    if (ctx.exactPresets?.length >= 2) {
+      await run("compare_develop_presets is deterministic", async () => {
+        const r = await c.callTool("compare_develop_presets", {
+          base: exactPresetSelector(ctx.exactPresets[0], ctx.presets),
+          candidate: exactPresetSelector(ctx.exactPresets[1], ctx.presets),
+        });
+        checkTrue("not error", !r.isError, r.text);
+        checkTrue("changes array", Array.isArray(r.parsed.changes));
+        return `changed_count=${r.parsed.changed_count}`;
+      });
+    }
   }
 
   if (mode === "write" || mode === "all") {
@@ -435,7 +555,8 @@ async function main() {
     }
     if (!ctx.firstPreset) {
       const list = await c.callTool("list_develop_presets", {});
-      ctx.firstPreset = list.parsed.presets?.[0];
+      ctx.presets = list.parsed.presets ?? [];
+      ctx.firstPreset = ctx.presets.find((preset) => exactPresetSelector(preset, ctx.presets));
     }
 
     if (ctx.firstPhoto) {
@@ -459,9 +580,10 @@ async function main() {
 
       if (ctx.firstPreset) {
         await run(`apply_develop_preset "${ctx.firstPreset.name}"`, async () => {
+          const selector = exactPresetSelector(ctx.firstPreset, ctx.presets);
           const r = await c.callTool("apply_develop_preset", {
             photo_ids: [String(ctx.firstPhoto.id)],
-            preset_name: ctx.firstPreset.name,
+            ...selector,
           });
           checkTrue("not error", !r.isError, r.text);
           checkEq("applied", r.parsed.applied, 1);
