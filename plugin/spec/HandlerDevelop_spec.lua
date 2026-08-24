@@ -134,14 +134,31 @@ describe("HandlerDevelop.getDevelopPreset", function()
 
     it("rejects ambiguous names", function()
         local folders = {
-            fakeFolder("A", { fakePreset("Same") }),
-            fakeFolder("B", { fakePreset("Same") }),
+            fakeFolder("A", { fakePreset("Same", { uuid = "same-a" }) }),
+            fakeFolder("B", { fakePreset("Same", { uuid = "same-b" }) }),
         }
         local _, Handler = setup({ folders = folders })
 
         assert.has_error(function()
             Handler.getDevelopPreset({ preset_name = "Same" })
         end, "Preset selector is ambiguous; provide preset_uuid or preset_folder")
+    end)
+
+    it("accepts a name that resolves to one aliased preset", function()
+        local shared = fakePreset("Portrait", {
+            uuid = "portrait-1",
+            settings = { Contrast2012 = 8 },
+        })
+        local folders = {
+            fakeFolder("Favorites", { shared }),
+            fakeFolder("John", { shared }),
+        }
+        local _, Handler = setup({ folders = folders })
+
+        local r = Handler.getDevelopPreset({ preset_name = "Portrait" })
+
+        assert.is_true(r.success)
+        assert.are.equal("portrait-1", r.uuid)
     end)
 
     it("accepts duplicate Lightroom aliases selected by UUID", function()
@@ -220,6 +237,29 @@ describe("HandlerDevelop.createDevelopPreset", function()
             Contrast2012 = 12,
             ToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
         }, state.pluginPresets[1]:getSetting())
+    end)
+
+    it("captures curves Lightroom stores off the 0-255 anchors", function()
+        local photo = helper.fakePhoto({
+            id = "source",
+            path = "/raw/source.nef",
+            developSettings = {
+                ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 },
+            },
+        })
+        local _, Handler, state = setup({ photos = { photo } })
+
+        local r = Handler.createDevelopPreset({
+            photo_id = "source",
+            preset_name = "Clipped v1",
+            settings = { "ToneCurvePV2012" },
+        })
+
+        assert.is_true(r.success)
+        assert.are.same(
+            { ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 } },
+            state.pluginPresets[1]:getSetting()
+        )
     end)
 
     it("refuses duplicate names and missing source settings", function()

@@ -123,6 +123,61 @@ class GeneratorTests(unittest.TestCase):
                 GEN.atomic_write(sidecar, self.render(), force=True)
             self.assertEqual(before, hashlib.sha256(sidecar.read_bytes()).hexdigest())
 
+    def test_force_refuses_full_name_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            raw = Path(temp) / "DSC_0001.NEF"
+            sidecar = Path(temp) / "DSC_0001.NEF.xmp"
+            raw.write_bytes(b"raw")
+            sidecar.write_text("existing sidecar", encoding="utf-8")
+            before = hashlib.sha256(sidecar.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(ValueError, "sidecar"):
+                GEN.atomic_write(sidecar, self.render(), force=True)
+            self.assertEqual(before, hashlib.sha256(sidecar.read_bytes()).hexdigest())
+
+    def test_force_refuses_sidecar_for_less_common_raw_extensions(self) -> None:
+        for extension in (".crw", ".mrw", ".rwl", ".sr2", ".x3f", ".gpr"):
+            with tempfile.TemporaryDirectory() as temp:
+                raw = Path(temp) / f"IMG_1{extension}"
+                sidecar = Path(temp) / "IMG_1.xmp"
+                raw.write_bytes(b"raw")
+                sidecar.write_text("existing sidecar", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "sidecar"):
+                    GEN.atomic_write(sidecar, self.render(), force=True)
+                self.assertEqual(sidecar.read_text(encoding="utf-8"), "existing sidecar")
+
+    def test_force_refuses_symlinked_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "real.xmp"
+            target.write_text("original", encoding="utf-8")
+            link = Path(temp) / "link.xmp"
+            link.symlink_to(target)
+            with self.assertRaisesRegex(ValueError, "symbolic-link"):
+                GEN.atomic_write(link, self.render(), force=True)
+            self.assertEqual(target.read_text(encoding="utf-8"), "original")
+
+    def test_control_characters_are_rejected(self) -> None:
+        for field in ("name", "group"):
+            with self.assertRaisesRegex(ValueError, "control characters"):
+                GEN.validate_metadata("Bad\x01Name", field, False)
+            with self.assertRaisesRegex(ValueError, "control characters"):
+                GEN.validate_metadata("Bad\x01Name", field, True)
+
+    def test_grayscale_preset_declares_a_monochrome_treatment(self) -> None:
+        root = ET.fromstring(self.render(overrides={"ConvertToGrayscale": "True"}))
+        description = root.find(f"{{{RDF}}}RDF/{{{RDF}}}Description")
+        assert description is not None
+        self.assertEqual(description.get(f"{{{CRS}}}ConvertToGrayscale"), "True")
+        self.assertEqual(description.get(f"{{{CRS}}}Treatment"), "Black & White")
+        self.assertEqual(description.get(f"{{{CRS}}}SupportsMonochrome"), "True")
+        self.assertEqual(description.get(f"{{{CRS}}}SupportsColor"), "False")
+
+    def test_colour_preset_keeps_the_colour_treatment(self) -> None:
+        root = ET.fromstring(self.render())
+        description = root.find(f"{{{RDF}}}RDF/{{{RDF}}}Description")
+        assert description is not None
+        self.assertEqual(description.get(f"{{{CRS}}}Treatment"), "Color")
+        self.assertEqual(description.get(f"{{{CRS}}}SupportsMonochrome"), "False")
+
     def test_sidecar_detection_is_case_insensitive(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             raw = Path(temp) / "DSC_0002.NEF"

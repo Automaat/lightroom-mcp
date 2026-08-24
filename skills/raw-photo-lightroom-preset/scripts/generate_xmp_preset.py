@@ -25,9 +25,11 @@ ET.register_namespace("crs", CRS_NS)
 
 STYLE_CATALOG_PATH = Path(__file__).resolve().parent.parent / "references" / "styles.json"
 IMAGE_EXTENSIONS = {
-    ".nef", ".nrw", ".dng", ".cr2", ".cr3", ".arw", ".raf", ".rw2",
-    ".orf", ".pef", ".srw", ".raw", ".jpg", ".jpeg", ".tif", ".tiff",
-    ".png", ".heic", ".psd",
+    ".nef", ".nrw", ".dng", ".cr2", ".cr3", ".crw", ".arw", ".sr2", ".srf",
+    ".raf", ".rw2", ".rwl", ".orf", ".pef", ".srw", ".raw", ".mrw", ".3fr",
+    ".fff", ".iiq", ".mef", ".mos", ".erf", ".kdc", ".dcr", ".x3f", ".gpr",
+    ".jpg", ".jpeg", ".jpe", ".tif", ".tiff", ".png", ".heic", ".heif",
+    ".webp", ".avif", ".bmp", ".gif", ".psd",
 }
 
 
@@ -110,6 +112,9 @@ def validate_metadata(value: str, field: str, allow_unicode: bool) -> str:
     value = value.strip()
     if not value:
         raise ValueError(f"{field} must not be empty")
+    for char in value:
+        if ord(char) < 0x20 or ord(char) == 0x7F:
+            raise ValueError(f"{field} must not contain control characters: {value!r}")
     if not allow_unicode:
         try:
             value.encode("ascii")
@@ -297,6 +302,10 @@ def render_xmp(
             curves[key] = value
         else:
             attrs[key] = str(value)
+    if attrs.get("ConvertToGrayscale") == "True":
+        attrs["Treatment"] = "Black & White"
+        attrs["SupportsMonochrome"] = "True"
+        attrs["SupportsColor"] = "False"
     attrs["Cluster"] = group
     attrs["UUID"] = str(uuid.uuid4()).upper()
 
@@ -322,7 +331,9 @@ def looks_like_photo_sidecar(path: Path) -> Path | None:
         return None
     target_stem = path.stem.casefold()
     for sibling in path.parent.iterdir():
-        if sibling.stem.casefold() == target_stem and sibling.suffix.casefold() in IMAGE_EXTENSIONS:
+        if sibling.suffix.casefold() not in IMAGE_EXTENSIONS:
+            continue
+        if target_stem in {sibling.stem.casefold(), sibling.name.casefold()}:
             return sibling
     return None
 

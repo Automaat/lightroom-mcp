@@ -199,6 +199,30 @@ local function requireDevelopSettingValue(key, value)
     end
 end
 
+local function requireCapturedSettingValue(key, value)
+    local valueType = type(value)
+    if valueType == "number" or valueType == "string" or valueType == "boolean" then
+        return
+    end
+    if POINT_CURVE_SETTING_LOOKUP[key] and valueType == "table" then
+        local count = 0
+        for index, item in pairs(value) do
+            if type(index) ~= "number" or index < 1 or index ~= math.floor(index) then
+                error("Develop setting " .. tostring(key) .. " is not a capturable array")
+            end
+            if type(item) ~= "number" then
+                error("Develop setting " .. tostring(key) .. " must contain only numbers")
+            end
+            count = count + 1
+        end
+        if count ~= #value or count % 2 ~= 0 or count < 4 or count > MAX_POINT_CURVE_VALUES then
+            error("Develop setting " .. tostring(key) .. " is not a capturable point curve")
+        end
+        return
+    end
+    error("Unsupported value for develop setting key: " .. tostring(key))
+end
+
 local function requireDevelopSettingsObject(settings)
     if type(settings) ~= "table" then
         error("settings is required")
@@ -296,6 +320,19 @@ local function requirePresetSelector(args)
     end
 end
 
+local function sharesOneUuid(matches)
+    local uuid = matches[1].uuid
+    if uuid == nil then
+        return false
+    end
+    for index = 2, #matches do
+        if matches[index].uuid ~= uuid then
+            return false
+        end
+    end
+    return true
+end
+
 local function findPreset(args)
     requirePresetSelector(args)
     local matches = {}
@@ -315,10 +352,7 @@ local function findPreset(args)
     -- favourite and in its original group). Those aliases share one UUID, so
     -- a UUID selector is still exact even when the flattened folder list has
     -- multiple entries for it.
-    if #matches > 1 and args.preset_uuid ~= nil then
-        return matches[1]
-    end
-    if #matches > 1 then
+    if #matches > 1 and args.preset_uuid == nil and not sharesOneUuid(matches) then
         error("Preset selector is ambiguous; provide preset_uuid or preset_folder")
     end
     return matches[1]
@@ -485,7 +519,7 @@ function DevelopHandler.createDevelopPreset(args)
         if value == nil then
             error("Source photo has no develop setting: " .. key)
         end
-        requireDevelopSettingValue(key, value)
+        requireCapturedSettingValue(key, value)
         presetSettings[key] = value
     end
 

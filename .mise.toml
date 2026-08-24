@@ -34,6 +34,10 @@ run = "node scripts/build-mcpb.mjs"
 description = "Build single-file binaries (macos + windows) via Bun"
 run = "node scripts/build-binary.mjs"
 
+[tasks."skill:test"]
+description = "Run Python tests for bundled skill scripts"
+run = "cd skills/raw-photo-lightroom-preset && python3 -m unittest discover -s tests -v"
+
 [tasks."lua:deps"]
 description = "Install Lua test rocks (busted) into lua_modules/"
 run = "test -x lua_modules/bin/busted || luarocks install --tree lua_modules busted"
