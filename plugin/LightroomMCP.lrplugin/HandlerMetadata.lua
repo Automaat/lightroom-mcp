@@ -147,6 +147,16 @@ function MetadataHandler.getPhotoMetadata(args)
                 vibrance = developSettings.Vibrance,
                 saturation = developSettings.Saturation,
                 hsl = hslDevelopSettings(developSettings),
+                convertToGrayscale = developSettings.ConvertToGrayscale,
+                toneCurveName = developSettings.ToneCurveName2012,
+                toneCurve = developSettings.ToneCurvePV2012,
+                toneCurveRed = developSettings.ToneCurvePV2012Red,
+                toneCurveGreen = developSettings.ToneCurvePV2012Green,
+                toneCurveBlue = developSettings.ToneCurvePV2012Blue,
+                parametricShadows = developSettings.ParametricShadows,
+                parametricDarks = developSettings.ParametricDarks,
+                parametricLights = developSettings.ParametricLights,
+                parametricHighlights = developSettings.ParametricHighlights,
             }
         }
     end)
