@@ -159,8 +159,8 @@ local function requirePointCurve(value, name)
         if type(index) ~= "number" or index < 1 or index ~= math.floor(index) then
             error(name .. " must be an array")
         end
-        if type(item) ~= "number" or item < 0 or item > 255 then
-            error(name .. "[" .. tostring(index) .. "] must be a number from 0 to 255")
+        if type(item) ~= "number" or item < 0 or item > 255 or item ~= math.floor(item) then
+            error(name .. "[" .. tostring(index) .. "] must be an integer from 0 to 255")
         end
         count = count + 1
     end

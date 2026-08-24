@@ -318,6 +318,7 @@ describe("HandlerDevelop.setDevelopSettings", function()
             { 0, 0, 255, 300 },
             { 10, 0, 255, 255 },
             { 0, 0, 240, 255 },
+            { 0, 0, 128.5, 120, 255, 255 },
         }
 
         for _, curve in ipairs(invalidCurves) do

@@ -122,13 +122,25 @@ const scalarDevelopSettingValueSchema = {
   oneOf: [{ type: "number" }, { type: "string" }, { type: "boolean" }],
 };
 
+const POINT_CURVE_MIN_PAIRS = 2;
+const POINT_CURVE_MAX_PAIRS = 32;
+
+const evenLengthSchemas = Array.from(
+  { length: POINT_CURVE_MAX_PAIRS - POINT_CURVE_MIN_PAIRS + 1 },
+  (_, index) => {
+    const length = (POINT_CURVE_MIN_PAIRS + index) * 2;
+    return { minItems: length, maxItems: length };
+  },
+);
+
 const pointCurveDevelopSettingValueSchema = {
   type: "array",
-  items: { type: "number", minimum: 0, maximum: 255 },
-  minItems: 4,
-  maxItems: 64,
+  items: { type: "integer", minimum: 0, maximum: 255 },
+  minItems: POINT_CURVE_MIN_PAIRS * 2,
+  maxItems: POINT_CURVE_MAX_PAIRS * 2,
+  anyOf: evenLengthSchemas,
   description:
-    "Flat input/output pairs for a Lightroom point curve, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Inputs must be strictly increasing and the curve must start at input 0 and end at input 255.",
+    "Flat input/output pairs for a Lightroom point curve, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Values are integers from 0 to 255 and the array holds 2 to 32 pairs, so its length is always even. Inputs must be strictly increasing and the curve must start at input 0 and end at input 255.",
 };
 
 const pointCurveSettingKeySet = new Set<string>(POINT_CURVE_SETTING_KEYS);

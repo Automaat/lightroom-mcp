@@ -174,9 +174,9 @@ Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src
 
 `set_develop_settings` accepts Lightroom's composite and per-channel point curve
 keys: `ToneCurvePV2012`, `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, and
-`ToneCurvePV2012Blue`. Each value is a flat list of input/output pairs from 0 to
-255. Inputs must be strictly increasing and each curve must include input 0 and
-input 255.
+`ToneCurvePV2012Blue`. Each value is a flat list of 2 to 32 input/output pairs.
+Values are integers from 0 to 255, inputs must be strictly increasing, and each
+curve must start at input 0 and end at input 255.
 
 ```json
 {
