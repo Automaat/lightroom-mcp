@@ -128,6 +128,21 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Exit when the MCP client goes away. Signal handlers never fire when the
+  // parent dies without signaling (typical on Windows), and the live plugin
+  // sockets plus the heartbeat interval keep the event loop alive — the
+  // orphaned bridge then holds both the single-client plugin connection and
+  // the instance lock, so every future bridge instance fails with "Another
+  // Lightroom MCP bridge is already running". Stdin EOF is the one reliable
+  // cross-platform signal that the client is gone.
+  const exitOnClientGone = (reason: string) => () => {
+    console.error(`Shutting down: ${reason}`);
+    process.exit(0);
+  };
+  process.stdin.once("end", exitOnClientGone("stdin ended (client exited)"));
+  process.stdin.once("close", exitOnClientGone("stdin closed (client exited)"));
+
   console.error(`Lightroom MCP server v${VERSION} running on stdio`);
   console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
   console.error(`Token file: ${tokenFilePath()}`);
