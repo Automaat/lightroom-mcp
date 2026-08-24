@@ -16,6 +16,9 @@ local HANDLER_MODULES = {
 --   socketOps      -- array; "close"/"reconnect" calls on bound sockets land here
 --   stopLoopOnSleep -- flip running=false on the first LrTasks.sleep so the
 --                      monitor loop exits after a single tick
+--   capturedBinds  -- array; each LrSocket.bind opts table is appended, in
+--                      bind order (request socket first, then response), so
+--                      a test can invoke onConnected/onMessage/etc directly
 local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
@@ -48,7 +51,8 @@ local function installStubs(prefs, asyncTasks, opts)
             end,
         },
         LrSocket = {
-            bind = function()
+            bind = function(bindOpts)
+                if opts.capturedBinds then table.insert(opts.capturedBinds, bindOpts) end
                 return {
                     close = function()
                         if opts.socketOps then table.insert(opts.socketOps, "close") end
@@ -265,5 +269,124 @@ describe("PluginInfoProvider server task", function()
         assert.is_false(_G.LightroomMCP_State.requestNeedsReconnect)
         assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
         assert.is_false(_G.LightroomMCP_State.responseNeedsReconnect)
+    end)
+end)
+
+
+describe("stale-connection follow-up fixes (PR #151 re-review)", function()
+    local realOpen
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        realOpen = io.open
+        io.open = function(path, mode, ...)
+            if mode and mode:find("w", 1, true) then
+                return { write = function() end, close = function() end }
+            end
+            return realOpen(path, mode, ...)
+        end
+    end)
+    after_each(function()
+        io.open = realOpen
+    end)
+
+    it("clears a stale lastRequestTime on a fresh REQUEST connect so it doesn't leak into the new idle clock", function()
+        local binds = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        -- Simulate a prior session's activity timestamp surviving past a
+        -- manual Stop/Start (or any reconnect) that happens long after it
+        -- sat idle. Without clearing it here, the monitor loop's very next
+        -- tick would see a huge idle value and restart immediately.
+        _G.LightroomMCP_State.lastRequestTime = os.time() - 999
+        binds[1].onConnected()
+
+        assert.is_nil(_G.LightroomMCP_State.lastRequestTime)
+        assert.is_not_nil(_G.LightroomMCP_State.lastConnectedTime)
+    end)
+
+    it("keeps a request counted in-flight until sendResponse actually completes, not just until the handler returns", function()
+        package.loaded.JSON = nil -- exercise the real encoder/decoder, not the empty stub
+        local binds = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        state.sendConnected = true
+        state.responseSocket = {
+            send = function()
+                -- If inFlightRequests were decremented right after the
+                -- handler returns (the pre-fix behavior), the monitor loop
+                -- could see 0 in-flight and restart the server while this
+                -- send is still happening — defeating the blast-radius fix.
+                assert.are.equal(1, state.inFlightRequests)
+            end,
+        }
+
+        binds[1].onMessage(nil, '{"id":1,"action":"ping","hello":"' .. state.token .. '"}')
+
+        assert.are.equal(0, state.inFlightRequests)
+    end)
+end)
+
+describe("heartbeat / stale-connection blast radius (PR #151 review)", function()
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        installStubs()
+    end)
+
+    it("ping handler is a pure liveness no-op returning pong=true", function()
+        local mod = loadInfoProvider()
+        assert.are.same({ pong = true }, mod.handlePing({}))
+    end)
+
+    it("derives the soft/hard thresholds from the heartbeat interval", function()
+        local mod = loadInfoProvider()
+        assert.are.equal(30, mod.HEARTBEAT_INTERVAL_SECONDS)
+        assert.are.equal(90, mod.STALE_RECONNECT_SECONDS)
+        assert.are.equal(120, mod.STALE_RESTART_HARD_CAP_SECONDS)
+    end)
+
+    describe("shouldRestartForStaleConnection", function()
+        it("does not restart while idle is within the soft threshold", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                89, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_false(restart)
+            assert.are.equal("", suffix)
+        end)
+
+        it("restarts once idle passes the soft threshold with nothing in flight", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                91, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_true(restart)
+            assert.are.equal("", suffix)
+        end)
+
+        it("defers the restart past the soft threshold while a request is genuinely in flight (blast radius fix)", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                91, 1, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_false(restart)
+            assert.are.equal("", suffix)
+        end)
+
+        it("still restarts past the hard cap even if a request is in flight, to bound the wait", function()
+            local mod = loadInfoProvider()
+            local restart, suffix = mod.shouldRestartForStaleConnection(
+                121, 1, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_true(restart)
+            assert.are.equal(" [hard cap, request still in flight]", suffix)
+        end)
+
+        it("treats exactly-at-threshold idle as not yet past it (strict greater-than)", function()
+            local mod = loadInfoProvider()
+            local restart = mod.shouldRestartForStaleConnection(
+                90, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
+            assert.is_false(restart)
+        end)
     end)
 end)

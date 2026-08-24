@@ -34,6 +34,30 @@ export const DEVELOP_SETTING_KEYS = [
   "Dehaze",
   "Vibrance",
   "Saturation",
+  "SaturationAdjustmentRed",
+  "SaturationAdjustmentOrange",
+  "SaturationAdjustmentYellow",
+  "SaturationAdjustmentGreen",
+  "SaturationAdjustmentAqua",
+  "SaturationAdjustmentBlue",
+  "SaturationAdjustmentPurple",
+  "SaturationAdjustmentMagenta",
+  "HueAdjustmentRed",
+  "HueAdjustmentOrange",
+  "HueAdjustmentYellow",
+  "HueAdjustmentGreen",
+  "HueAdjustmentAqua",
+  "HueAdjustmentBlue",
+  "HueAdjustmentPurple",
+  "HueAdjustmentMagenta",
+  "LuminanceAdjustmentRed",
+  "LuminanceAdjustmentOrange",
+  "LuminanceAdjustmentYellow",
+  "LuminanceAdjustmentGreen",
+  "LuminanceAdjustmentAqua",
+  "LuminanceAdjustmentBlue",
+  "LuminanceAdjustmentPurple",
+  "LuminanceAdjustmentMagenta",
   "ParametricShadows",
   "ParametricDarks",
   "ParametricLights",
@@ -88,6 +112,12 @@ const stringArray = (description: string, maxItems?: number) => ({
 const photoIdArray = (description: string) =>
   stringArray(description, MAX_BULK_PHOTO_IDS);
 
+const dateStringSchema = (description: string) => ({
+  type: "string",
+  pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+  description,
+});
+
 const scalarDevelopSettingValueSchema = {
   oneOf: [{ type: "number" }, { type: "string" }, { type: "boolean" }],
 };
@@ -130,8 +160,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minimum: 0,
           maximum: 5,
         },
-        start_date: { type: "string", description: "Start date (YYYY-MM-DD)" },
-        end_date: { type: "string", description: "End date (YYYY-MM-DD)" },
+        start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
+        end_date: dateStringSchema("End date (YYYY-MM-DD)"),
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
@@ -336,7 +366,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
           description:
-            "Optional whitelist of SDK setting keys (e.g., Exposure2012, Contrast2012). Omit to copy all.",
+            "Optional whitelist of SDK setting keys (e.g., Exposure2012, Contrast2012, HueAdjustmentOrange). Omit to copy all.",
         },
       },
       required: ["source_id", "target_ids"],
@@ -346,7 +376,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "set_develop_settings",
     luaHandler: "HandlerDevelop.setDevelopSettings",
     description:
-      "Set Develop settings directly on a photo. Supports allowlisted Lightroom SDK scalar settings plus RGB composite and per-channel point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green, and ToneCurvePV2012Blue.",
+      "Set Develop settings directly on a photo. Keys use allowlisted Lightroom SDK names (Exposure2012, WhiteBalance, Contrast2012, Highlights2012, Shadows2012, Whites2012, Blacks2012, Clarity2012, Vibrance, Saturation, HueAdjustmentRed, SaturationAdjustmentOrange, LuminanceAdjustmentYellow, etc.), plus RGB composite and per-channel point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green, and ToneCurvePV2012Blue.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -360,7 +390,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           properties: developSettingsProperties,
           additionalProperties: false,
           minProperties: 1,
-          description: "Allowlisted SDK setting key/value pairs (e.g., {\"Exposure2012\": 0.5})",
+          description:
+            "Allowlisted SDK setting key/value pairs (e.g., {\"Exposure2012\": 0.5, \"SaturationAdjustmentOrange\": -10})",
         },
       },
       required: ["photo_id", "settings"],

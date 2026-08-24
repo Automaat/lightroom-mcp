@@ -4,6 +4,37 @@ local Log = require 'Log'
 
 local SearchHandler = {}
 
+local function parseDate(value, name)
+    if type(value) ~= "string" then
+        error(name .. " must be a string in YYYY-MM-DD format", 0)
+    end
+
+    local year, month, day = value:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)$")
+    if not year then
+        error(name .. " must use YYYY-MM-DD format", 0)
+    end
+
+    year = tonumber(year)
+    month = tonumber(month)
+    day = tonumber(day)
+
+    if month < 1 or month > 12 then
+        error(name .. " must use a valid calendar date", 0)
+    end
+
+    local timestamp = os.time({ year = year, month = month, day = day, hour = 12 })
+    local normalized = os.date("*t", timestamp)
+    if normalized.year ~= year or normalized.month ~= month or normalized.day ~= day then
+        error(name .. " must use a valid calendar date", 0)
+    end
+
+    return value, timestamp
+end
+
+local function addDays(timestamp, days)
+    return os.date("%Y-%m-%d", timestamp + (days * 86400))
+end
+
 local function buildSearchDesc(args)
     local desc = { combine = "intersect" }
 
@@ -22,16 +53,23 @@ local function buildSearchDesc(args)
     end
 
     if args.start_date and args.end_date then
+        local startDate, startTimestamp = parseDate(args.start_date, "start_date")
+        local endDate, endTimestamp = parseDate(args.end_date, "end_date")
+        if startTimestamp > endTimestamp then
+            error("start_date must be on or before end_date", 0)
+        end
         table.insert(desc, {
             criteria = "captureTime",
-            operation = "inRange",
-            value = args.start_date,
-            value2 = args.end_date,
+            operation = "in",
+            value = startDate,
+            value2 = endDate,
         })
     elseif args.start_date then
-        table.insert(desc, { criteria = "captureTime", operation = ">=", value = args.start_date })
+        local _, startTimestamp = parseDate(args.start_date, "start_date")
+        table.insert(desc, { criteria = "captureTime", operation = ">", value = addDays(startTimestamp, -1) })
     elseif args.end_date then
-        table.insert(desc, { criteria = "captureTime", operation = "<=", value = args.end_date })
+        local _, endTimestamp = parseDate(args.end_date, "end_date")
+        table.insert(desc, { criteria = "captureTime", operation = "<", value = addDays(endTimestamp, 1) })
     end
 
     return desc

@@ -195,4 +195,75 @@ describe("plugin rebind cycle (issue #110)", () => {
     },
     60_000,
   );
+
+  it(
+    "reproduces the unguarded split-client response interception from issue #164",
+    async () => {
+      const [requestPort, responsePort] = await Promise.all([freePort(), freePort()]);
+      const handledActions: string[] = [];
+      const plugin = new FakePlugin({
+        requestPort,
+        responsePort,
+        token: TOKEN,
+        sendWaitMs: 500,
+        handler: (action: string) => {
+          handledActions.push(action);
+          return { echoed: action };
+        },
+      });
+      await plugin.start();
+
+      const requestA = new PluginSocket({
+        port: requestPort,
+        label: "request-a",
+        reconnectDelayMs: 50,
+        log: () => {},
+      });
+      const dispatcherA = new Dispatcher({
+        send: (line) => requestA.send(line),
+        getToken: () => TOKEN,
+        timeoutMs: 1_000,
+        log: () => {},
+      });
+
+      const responsesOnB: string[] = [];
+      const dispatcherB = new Dispatcher({
+        send: () => false,
+        getToken: () => TOKEN,
+        timeoutMs: 1_000,
+        log: () => {},
+      });
+      const responseB = new PluginSocket({
+        port: responsePort,
+        label: "response-b",
+        reconnectDelayMs: 50,
+        log: () => {},
+        onLine: (line) => {
+          responsesOnB.push(line);
+          dispatcherB.handleResponseLine(line);
+        },
+      });
+
+      harness = {
+        plugin,
+        request: requestA,
+        response: responseB,
+        dispatcher: dispatcherA,
+      };
+      requestA.connect();
+      await waitFor(() => requestA.isConnected(), 3_000, "request A connected");
+      await waitFor(
+        () => plugin.events.some((evt) => evt.kind === "response_rebound"),
+        3_000,
+        "response rebound after request A connected",
+      );
+      responseB.connect();
+      await waitFor(() => responseB.isConnected(), 3_000, "response B connected");
+
+      await expect(dispatcherA.call("get_selected_photos", {})).rejects.toThrow(/timeout/i);
+      expect(handledActions).toEqual(["get_selected_photos"]);
+      expect(responsesOnB).toHaveLength(1);
+    },
+    10_000,
+  );
 });
