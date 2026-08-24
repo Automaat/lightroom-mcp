@@ -32,6 +32,7 @@ Use mise tasks from repo root:
 - `mise run dev` — `tsc --watch`
 - `mise run lua:lint` — `selene plugin/LightroomMCP.lrplugin`
 - `mise run lua:test` — `busted` specs for the plugin
+- `mise run skill:test` — Python unittest for bundled skill scripts
 
 Lua tooling: `mise install` provisions `lua` + `luarocks` + `selene`. `lua:test` auto-installs `busted` into `lua_modules/` (gitignored) via the `lua:deps` task. `selene` is a mise tool (`aqua:Kampfkarren/selene`), a native binary that does not run on `lua` — so unlike luacheck it is immune to Lua-version breakage. `selene.toml` configures it; `lightroom.yml` is the custom std declaring LR SDK globals; `JSON.lua` is excluded.
 
@@ -39,6 +40,7 @@ Lua tooling: `mise install` provisions `lua` + `luarocks` + `selene`. `lua:test`
 
 - `.github/workflows/ci.yml` — build+test on ubuntu/macos/windows, Node 24.15.0.
 - `.github/workflows/lua-lint.yml` — selene (via mise-action) on plugin changes.
+- `.github/workflows/skill-test.yml` — Python unittest for bundled skill scripts, on `skills/` changes.
 - Type check runs `npm run check` (`tsc --noEmit` on src + `tsconfig.test.json` on tests); do not break it.
 - Lint runs `npm run lint` (ESLint flat config, type-aware rules over src + tests); do not break it.
 
@@ -52,6 +54,7 @@ Run before every commit (CI runs the same):
 - `mise run test` — Jest suite must pass
 - `mise run lua:lint` — only if Lua changed
 - `mise run lua:test` — only if Lua changed
+- `mise run skill:test` — only if `skills/` changed
 
 ## Plugin install (manual, no automation)
 

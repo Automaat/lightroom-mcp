@@ -2,6 +2,8 @@
 
 MCP server bridging Claude / Codex / Cursor to Adobe Lightroom Classic via a bundled Lua plugin.
 
+The preset round-trip tools can inspect and compare historical Develop presets, create versioned plugin-managed checkpoints from an edited representative photo, and export a preset backing file without overwriting an existing file. Plugin checkpoints are hidden from Lightroom's Develop panel by Adobe SDK design.
+
 ## Quick install
 
 ### Claude Desktop / Claude Code (one-click)

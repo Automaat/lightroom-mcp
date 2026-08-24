@@ -154,6 +154,24 @@ const developSettingsProperties = Object.fromEntries(
   ]),
 );
 
+const presetSelectorProperties = {
+  preset_name: { type: "string", minLength: 1, description: "Develop preset name" },
+  preset_uuid: { type: "string", minLength: 1, description: "Develop preset UUID (preferred)" },
+  preset_folder: { type: "string", minLength: 1, description: "Preset folder for disambiguation" },
+  preset_scope: {
+    type: "string",
+    enum: ["lightroom", "plugin"],
+    description: "Lightroom-visible preset or plugin-managed checkpoint",
+  },
+};
+
+const presetSelectorSchema: InputSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: presetSelectorProperties,
+  anyOf: [{ required: ["preset_uuid"] }, { required: ["preset_name"] }],
+};
+
 export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "search_photos",
@@ -332,7 +350,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "list_develop_presets",
     luaHandler: "HandlerDevelop.listDevelopPresets",
-    description: "List available Develop presets across all preset folders",
+    description: "List Lightroom-visible Develop presets and plugin-managed preset checkpoints",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -340,9 +358,83 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_develop_preset",
+    luaHandler: "HandlerDevelop.getDevelopPreset",
+    description:
+      "Read the settings and backing-file metadata for one exact Develop preset. Use preset_uuid or provide folder/scope when names are duplicated.",
+    inputSchema: presetSelectorSchema,
+  },
+  {
+    name: "compare_develop_presets",
+    luaHandler: "HandlerDevelop.compareDevelopPresets",
+    description:
+      "Compare two Develop presets and return a deterministic per-setting diff for iterative style matching",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        base: { ...presetSelectorSchema, description: "Approved historical/base preset" },
+        candidate: { ...presetSelectorSchema, description: "Candidate preset checkpoint" },
+      },
+      required: ["base", "candidate"],
+    },
+  },
+  {
+    name: "create_develop_preset",
+    luaHandler: "HandlerDevelop.createDevelopPreset",
+    description:
+      "Create a versioned plugin-managed Develop preset checkpoint from selected settings on one photo. The checkpoint is hidden from the Develop panel; export it for handoff.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: { type: "string", minLength: 1, description: "Source photo ID or file path" },
+        preset_name: {
+          type: "string",
+          minLength: 1,
+          description: "Unique versioned checkpoint name; existing plugin names are refused",
+        },
+        settings: {
+          type: "array",
+          items: { type: "string", enum: DEVELOP_SETTING_KEYS },
+          minItems: 1,
+          maxItems: DEVELOP_SETTING_KEYS.length,
+          uniqueItems: true,
+          description: "Explicit Lightroom SDK setting keys to capture from the source photo",
+        },
+      },
+      required: ["photo_id", "preset_name", "settings"],
+    },
+  },
+  {
+    name: "export_develop_preset",
+    luaHandler: "HandlerDevelop.exportDevelopPreset",
+    description:
+      "Copy one exact custom or plugin-managed Develop preset backing file to a destination directory. Existing files are never overwritten; built-in presets without backing files cannot be exported.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ...presetSelectorProperties,
+        destination_dir: {
+          type: "string",
+          minLength: 1,
+          description: "Destination directory; created when missing",
+        },
+        filename: {
+          type: "string",
+          minLength: 1,
+          description: "Optional leaf filename. Extension must match the Lightroom backing file.",
+        },
+      },
+      required: ["destination_dir"],
+      anyOf: [{ required: ["preset_uuid"] }, { required: ["preset_name"] }],
+    },
+  },
+  {
     name: "apply_develop_preset",
     luaHandler: "HandlerDevelop.applyDevelopPreset",
-    description: "Apply a named Develop preset to one or more photos",
+    description: "Apply one exact Develop preset to one or more photos",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -350,10 +442,14 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
         preset_name: {
           type: "string",
-          description: "Preset name (first match across folders)",
+          description: "Preset name",
         },
+        preset_uuid: { type: "string", description: "Preset UUID (preferred)" },
+        preset_folder: { type: "string", description: "Preset folder for disambiguation" },
+        preset_scope: { type: "string", enum: ["lightroom", "plugin"] },
       },
-      required: ["photo_ids", "preset_name"],
+      required: ["photo_ids"],
+      anyOf: [{ required: ["preset_uuid"] }, { required: ["preset_name"] }],
     },
   },
   {

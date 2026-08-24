@@ -1,279 +1,162 @@
-# Lightroom Classic MCP Server
+# Lightroom MCP＋RAW 挑圖調色 Skill v2
 
-Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** photo catalog. Search photos, set ratings, edit develop settings, manage collections, import/export — all by chatting.
+這個 fork 把 Lightroom MCP 與完整的 `raw-photo-lightroom-preset` v2 skill 放在同一個 repository，涵蓋：
 
-[![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
-[![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
+- RAW／JPG 配對與挑圖；
+- 按光線場景分群；
+- 讀取過往 Lightroom preset 的實際設定；
+- 小步調整、輸出預覽、比較結果；
+- 建立不覆寫舊版本的 preset checkpoint；
+- 匯出 Lightroom 產生的 preset 檔案；
+- MCP 不可用時的安全 XMP fallback。
 
-> **Works with:** Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, VS Code.
-> **Needs:** Lightroom Classic on macOS or Windows. Nothing else — no programming required.
+上游專案仍保留為 [`Automaat/lightroom-mcp`](https://github.com/Automaat/lightroom-mcp)。使用 fork 而不是另開無關 repository，可以保留原始 commit、MIT 授權與未來同步 upstream 的能力；本機建議維持 `origin` 指向本 fork、`upstream` 指向原作者。
 
----
+## Repository 內容
 
-## Install (Claude Desktop — easiest, 3 steps)
-
-This is the recommended path. Takes ~2 minutes, no terminal needed.
-
-### 1. Download the installer
-
-Go to the [latest release page](https://github.com/Automaat/lightroom-mcp/releases/latest) and download the file ending in **`.mcpb`** (it's near the top, called `lightroom-mcp-<version>.mcpb`).
-
-### 2. Double-click the downloaded file
-
-Claude Desktop opens automatically and asks: *"Install Lightroom Classic extension?"*. Click **Install**.
-
-> Don't have Claude Desktop yet? Get it free from [claude.com/download](https://claude.com/download). It runs on Mac and Windows.
-
-### 3. Turn on the plugin in Lightroom
-
-1. **Quit and reopen Lightroom Classic.** (The plugin needs a restart to show up.)
-2. In Lightroom, click **File** in the menu bar → **Plug-in Manager**.
-3. In the left list, click **Lightroom MCP**.
-4. On the right, click the **Start Server** button.
-5. You should see "Server running" appear. Done!
-
-### Try it
-
-Open Claude Desktop and type:
-
-> *List all my Lightroom collections.*
-
-Claude will list every collection in your catalog.
-
-Some other things to try:
-- *"Find all my 5-star photos from last summer."*
-- *"Add the keyword 'portfolio' to the photos I have selected in Lightroom."*
-- *"Apply the 'Vivid' develop preset to these photos."*
-- *"Export the selected photos to my Desktop as JPEGs at 2000px wide."*
-
----
-
-## Install (other AI tools)
-
-Already using Claude Code, Codex, Cursor, Windsurf, or VS Code? Pick your tool below. **All paths still end with the Lightroom step from the section above** — restart Lightroom and click **Start Server** in Plug-in Manager.
-
-<details>
-<summary><b>Claude Code</b></summary>
-
-Same `.mcpb` file as Claude Desktop above — Claude Code accepts it too. Or install via the CLI:
-
-```bash
-claude mcp add lightroom -- npx -y @mskalski/lightroom-mcp
+```text
+plugin/LightroomMCP.lrplugin/       Lightroom Classic Lua 外掛
+server/                             MCP server 與工具契約
+skills/raw-photo-lightroom-preset/ 完整 v2 Codex skill
+tests/e2e/                          Lightroom 實機驗證流程
 ```
 
-</details>
+Skill 目錄包含 `SKILL.md`、UI metadata、挑圖／調色／MCP 參考文件、風格資料、XMP 產生器及其測試；不含使用者照片、catalog、token 或本機絕對路徑。
 
-<details>
-<summary><b>Codex CLI</b></summary>
+## v2 挑圖流程
 
-```bash
-codex mcp add lightroom -- npx -y @mskalski/lightroom-mcp
+### 1. 先建立來源關係
+
+每組 RAW／預覽至少記錄相對路徑、檔名 stem、拍攝時間、相機、尺寸與預覽產生方式。不同資料夾可能有相同檔名，所以不能只靠 basename 配對；缺漏或衝突項目標為 `未分類`，不繼承其他 JPG 的調色結論。
+
+一般相機 JPG 可以先判斷構圖、對焦與表情；最終曝光、白平衡、色彩與 preset 方向必須用 Lightroom／Camera Raw 的 RAW render 判斷。
+
+### 2. 三組狀態分開記錄
+
+| 欄位 | 可用值 | 用途 |
+|---|---|---|
+| `selection_status` | `交付候選`、`保留`、`淘汰`、`待確認` | 構圖、焦點、表情與交付價值 |
+| `edit_status` | `RAW 待檢`、`輕微全域調整`、`需局部調整`、`未知` | 後製工作量 |
+| `style_status` | `已分類`、`未分類` | 是否已找到可靠的色調方向 |
+| `confidence` | `high`、`medium`、`low` | 判斷可信度 |
+
+不要自行把這些狀態映射成 Lightroom 星等或色標。若要映射，先由使用者明確定義，再把映射當成獨立欄位處理。
+
+### 3. 按光線與用途分群
+
+不要替整場活動硬套一個 preset。常見分群包括戶外陰影、室內暖／混合光、舞台光、逆光與高 ISO。每群先選一張代表 RAW，難處理的 outlier 保持獨立。
+
+推薦的挑圖交付欄位：
+
+```text
+relative_raw_path, relative_preview_path, selection_status, edit_status,
+style_status, lighting_cluster, confidence, notes
 ```
 
-The Lightroom plugin installs itself the first time Codex talks to the server.
+## 歷史色調迭代流程
 
-</details>
+1. 選一張不會破壞 master edit 的代表 RAW 或 virtual copy。
+2. 讀取目前 metadata／Develop settings，輸出一張 baseline JPEG。
+3. 用 `get_develop_preset` 讀取已認可的歷史 preset；同名時用 UUID 或 folder／scope 消除歧義。
+4. 每次只做一小段：技術校正、明暗形狀、色彩校正、創意風格、細節／降噪。
+5. 每段都從 Lightroom 輸出新預覽並實際比較，不一次猜大量滑桿。
+6. 用 `create_develop_preset` 建立唯一、版本化的 plugin checkpoint。
+7. 用 `compare_develop_presets` 比較歷史版本與候選版本，保留設定差異紀錄。
+8. 代表照片確認後，才用明確欄位清單把設定複製到同一光線群。
+9. 用 `export_develop_preset` 匯出接受的 checkpoint；若目的檔已存在，工具會拒絕覆寫。
+10. 在目標 Lightroom 版本匯入並檢查後，才能宣稱 preset 相容且視覺結果正確。
 
-<details>
-<summary><b>Cursor / Windsurf / VS Code (Continue, Cline, Roo, ...)</b></summary>
+## v0.10.0 新增的 MCP 工具
 
-Open your client's MCP settings and add:
+| 工具 | 功能 |
+|---|---|
+| `get_develop_preset` | 讀取一個精確 preset 的 UUID、來源檔與完整可序列化設定 |
+| `compare_develop_presets` | 產生 base／candidate 的逐設定差異 |
+| `create_develop_preset` | 從代表照片選定欄位建立版本化 checkpoint |
+| `export_develop_preset` | 複製 Lightroom preset backing file，永不覆寫既有檔案 |
 
-```json
-{
-  "mcpServers": {
-    "lightroom": {
-      "command": "npx",
-      "args": ["-y", "@mskalski/lightroom-mcp"]
-    }
-  }
-}
+既有的 `list_develop_presets` 與 `apply_develop_preset` 也支援 UUID、folder、scope；`set_develop_settings`、`copy_develop_settings` 與 checkpoint 建立支援主曲線及 RGB point-curve arrays。
+
+Adobe SDK 建立的 plugin-managed checkpoint 不會出現在 Develop 面板。它仍可由 MCP 列出、套用與匯出；若需要面板內可見的正式 preset，請匯出後由 Lightroom UI 匯入，或在 Lightroom 內使用 Create Preset。
+
+## Windows 安裝
+
+### 1. 建置本 fork
+
+```powershell
+git clone https://github.com/John-owo/lightroom-mcp.git
+Set-Location .\lightroom-mcp
+git switch feat/preset-roundtrip
+Set-Location .\server
+npm ci
+npm run build
+Set-Location ..
 ```
 
-The plugin installs itself the first time your client starts the server. If your client only starts the server on first tool call, you can install the plugin upfront:
+### 2. 安裝 Lightroom 外掛
 
-```bash
-npx -y @mskalski/lightroom-mcp install-plugin
+```powershell
+node .\server\dist\index.js install-plugin
 ```
 
-</details>
+完整關閉並重開 Lightroom Classic，再到「檔案 → 增效模組管理員 → Lightroom MCP」啟動 server。
 
-<details>
-<summary><b>No Node.js installed? Use the standalone binary</b></summary>
+### 3. 設定 Codex MCP
 
-1. Download the right file from the [latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
-   - **Mac (Apple Silicon, M1/M2/M3/M4):** `lightroom-mcp-darwin-arm64`
-   - **Mac (Intel):** `lightroom-mcp-darwin-x64`
-   - **Windows:** `lightroom-mcp-windows-x64.exe`
+在 Codex 設定加入本機建置後的 `server/dist/index.js`；以下路徑請換成實際 clone 位置：
 
-2. **macOS only** — make it runnable and bypass Gatekeeper (the binary isn't signed):
-   ```bash
-   chmod +x ~/Downloads/lightroom-mcp-darwin-arm64
-   xattr -d com.apple.quarantine ~/Downloads/lightroom-mcp-darwin-arm64
-   ```
-
-3. Install the Lightroom plugin:
-   ```bash
-   ~/Downloads/lightroom-mcp-darwin-arm64 install-plugin
-   ```
-
-4. Point your AI tool at the binary's full path. Example for Codex:
-   ```bash
-   codex mcp add lightroom -- /Users/you/Downloads/lightroom-mcp-darwin-arm64
-   ```
-
-</details>
-
-<details>
-<summary><b>Install the Lightroom plugin manually (any client)</b></summary>
-
-If you'd rather drop the plugin in by hand:
-
-1. Download the matching zip from the [latest release](https://github.com/Automaat/lightroom-mcp/releases/latest):
-   - Mac: `LightroomMCP-macos.lrplugin.zip`
-   - Windows: `LightroomMCP-windows.lrplugin.zip`
-2. Unzip it. You get a folder called `LightroomMCP.lrplugin`.
-3. Move that folder into Lightroom's Modules folder:
-   - **Mac:** `~/Library/Application Support/Adobe/Lightroom/Modules/`
-   - **Windows:** `%APPDATA%\Adobe\Lightroom\Modules\`
-   - (If the `Modules` folder doesn't exist, create it.)
-4. Restart Lightroom → **Plug-in Manager** → **Start Server**.
-
-</details>
-
----
-
-## Something not working?
-
-1. Open Lightroom → **File → Plug-in Manager → Lightroom MCP → Show Status**. Both sockets should say `connected: true`. If not, click **Start Server**.
-2. Make sure you **fully quit and reopened Lightroom** after install (Cmd+Q on Mac, Alt+F4 on Windows). "Reload Plug-in" alone is not enough.
-3. See [Troubleshooting](#troubleshooting) below for specific errors.
-
-## Tools
-
-| Tool | What it does |
-| --- | --- |
-| `search_photos` | Search by filename / keywords / rating / date range. |
-| `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
-| `list_collections` | All collections and collection sets. |
-| `create_collection` | New collection (optional parent set). |
-| `add_to_collection` | Add photos to a named collection. |
-| `set_keywords` | Add or remove keywords on photos. |
-| `set_rating` | Set 0-5 star rating on photos. |
-| `import_photos` | Import a file or folder into the catalog. |
-| `export_photos` | Export with format / quality / dimensions. |
-| `list_develop_presets` | Discover available Develop presets. |
-| `apply_develop_preset` | Apply a named preset to photos. |
-| `copy_develop_settings` | Copy develop settings between photos. |
-| `set_develop_settings` | Write SDK setting key/values directly. |
-
-Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
-
-### Point curves
-
-`set_develop_settings` accepts Lightroom's composite and per-channel point curve
-keys: `ToneCurvePV2012`, `ToneCurvePV2012Red`, `ToneCurvePV2012Green`, and
-`ToneCurvePV2012Blue`. Each value is a flat list of 2 to 32 input/output pairs.
-Values are integers from 0 to 255, inputs must be strictly increasing, and each
-curve must start at input 0 and end at input 255.
-
-```json
-{
-  "photo_id": "283615",
-  "settings": {
-    "ToneCurveName2012": "Custom",
-    "ToneCurvePV2012": [0, 0, 40, 25, 128, 132, 220, 240, 255, 250],
-    "ToneCurvePV2012Blue": [0, 0, 64, 58, 192, 198, 255, 255]
-  }
-}
+```toml
+[mcp_servers.lightroom]
+command = 'C:\Program Files\nodejs\node.exe'
+args = ['D:\path\to\lightroom-mcp\server\dist\index.js']
+startup_timeout_sec = 60
 ```
 
-## How it works
+重新啟動 Codex，新的 task 才會載入 18 個工具。
 
-```
-┌─────────────┐    stdio    ┌──────────────────┐  TCP :58763 →   ┌──────────────────┐
-│  AI client  │ ◄─────────► │   MCP server     │ ──────────────► │ Lightroom plugin │
-│ (Claude/    │             │  (Node TCP)      │ ←────────────── │   (LrSocket)     │
-│  Codex/...) │             └──────────────────┘   ← TCP :58764  └──────────────────┘
-└─────────────┘                                                           │
-                                                                          ▼
-                                                                catalog:withReadAccessDo
-```
+### 4. 安裝 v2 skill
 
-Plugin binds two `LrSocket` servers on localhost (`58763` request, `58764` response). Server connects as TCP client. Frame: line-delimited JSON, `\n` terminator. Auto-reconnect on both sides. Same dual-port pattern as MIDI2LR.
+若已經有同名 skill，請先備份。接著在 repository 根目錄執行：
 
-## CLI reference
-
-```
-lightroom-mcp [stdio]            Run MCP over stdio (default)
-lightroom-mcp install-plugin     Copy bundled plugin into Lightroom Modules folder
-lightroom-mcp --help | --version
+```powershell
+$skillSource = Resolve-Path '.\skills\raw-photo-lightroom-preset'
+$skillTarget = Join-Path $env:USERPROFILE '.codex\skills\raw-photo-lightroom-preset'
+New-Item -ItemType Directory -Path $skillTarget -Force | Out-Null
+Copy-Item -Path "$skillSource\*" -Destination $skillTarget -Recurse -Force
 ```
 
-Env vars:
+重新啟動 Codex 後，可使用：
 
-| Var | Default | Purpose |
-| --- | --- | --- |
-| `LIGHTROOM_MCP_REQUEST_PORT` | `58763` | Plugin request port. |
-| `LIGHTROOM_MCP_RESPONSE_PORT` | `58764` | Plugin response port. |
-| `LIGHTROOM_MCP_TOKEN_PATH` | `~/.config/lightroom-mcp/token` | Auth token file. |
-
-If you change ports on the server side, change them in **Plug-in Manager → Lightroom MCP** to match.
-
-## Security
-
-The plugin generates a 256-bit token in `~/.config/lightroom-mcp/token` on **Start Server**. The MCP server attaches it to every request. Localhost-only — no remote attack surface.
-
-## Develop
-
-```bash
-mise install                        # tools (node, bun, lua + luarocks, selene)
-mise run install                    # npm ci
-mise run build                      # tsc
-mise run test                       # jest
-mise run mcpb                       # build .mcpb bundle
-mise run binary                     # build single-file binaries via Bun
-mise run lua:lint                   # selene-lint the Lua plugin
-mise run lua:test                   # busted specs for the Lua plugin
+```text
+使用 $raw-photo-lightroom-preset 幫我挑這批 RAW，先分出交付候選與待確認，
+再按光線分群。讀取我已認可的歷史 preset，只在代表照片上小步調整，
+每輪輸出比較並建立不覆寫的版本化 checkpoint。
 ```
 
-Repo layout:
+## 安全邊界
 
-- `server/` — TypeScript MCP server (ESM, NodeNext).
-- `plugin/LightroomMCP.lrplugin/` — Lua plugin loaded by Lightroom Classic.
-- `mcpb/manifest.json` — `.mcpb` bundle manifest.
-- `scripts/build-mcpb.mjs` — pack the .mcpb.
-- `scripts/build-binary.mjs` — Bun `--compile` per-target binaries.
-- `manual-test.mjs` — direct TCP probe (bypasses MCP).
+- 不移動、改名、刪除或覆寫原始照片。
+- 不在未批准的 master edit 上測試。
+- 不只看相機 JPG 就宣稱色彩或 preset 已完成。
+- 不把 crop、白平衡、profile、鏡頭狀態或 detail 設定默默複製到整批。
+- MCP 沒有 virtual copy、snapshot、undo 或完整局部工具；需要遮罩、修復、AI Denoise、Calibration、Color Grading 或 Point Color 時，交回 Lightroom 手動完成。
+- MCP checkpoint 的 backing format 由 Lightroom 決定；內建 preset 若沒有 backing file，不能匯出。
 
-## Adding a new tool
+## 已驗證範圍
 
-1. Add a new `Handler*.lua` under `plugin/LightroomMCP.lrplugin/`.
-2. Register it in the `DISPATCH` table in `PluginInfoProvider.lua`.
-3. Add a contract entry in `server/src/tool-contracts.ts`.
-4. Declare any new LR globals in `lightroom.yml` (selene std).
+- TypeScript：13 suites、160 tests 通過。
+- Lua `HandlerDevelop`：28 個行為測試通過；Selene 0 errors／0 warnings／0 parse errors。
+- Lightroom Classic 實機：建立 checkpoint、精確讀回、匯出 `.lrtemplate`、重複匯出拒絕且原檔 hash 不變，共 5／5 通過。
+- XMP fallback generator：14 tests 通過，並具備副檔名、sidecar、覆寫、原子寫入、schema 與範圍保護。
 
-## Troubleshooting
+實機測試沒有透過 Lightroom UI 再匯入匯出的 `.lrtemplate`，因此不把「目標 Lightroom 匯入相容」或「視覺風格正確」列為已通過；這兩項必須用實際照片與使用者確認。
 
-- **`failed to open localhost:58763` after Reload Plug-in** — old async task still owns the port. Quit Lightroom (Cmd+Q on macOS / Alt+F4 on Windows) and reopen.
-- **Plugin not connected** — the server now self-restarts after a Reload Plug-in that tore down a running instance. If it's still stopped, click **Start Server** in Plug-in Manager; it reconnects within ~1s.
-- **Timeout errors** — handler may be scanning a large catalog without filters; add `rating`, `filename`, `keywords`, or date filters to narrow.
-- **macOS "cannot be opened because the developer cannot be verified"** (binary path) — `xattr -d com.apple.quarantine /path/to/binary`. Or right-click → Open the first time.
-- **Windows SmartScreen blocks the .exe** — More info → Run anyway.
+## 進一步文件
 
-Logs:
+- [v2 skill 主流程](skills/raw-photo-lightroom-preset/SKILL.md)
+- [挑圖、分群與五階段調色](skills/raw-photo-lightroom-preset/references/workflow.md)
+- [風格庫](skills/raw-photo-lightroom-preset/references/style-library.md)
+- [Lightroom MCP 邊界與 closed loop](skills/raw-photo-lightroom-preset/references/lightroom-mcp.md)
+- [英文 README](README.en.md)
 
-| Component | macOS | Windows |
-| --- | --- | --- |
-| Plugin | `~/Documents/LrClassicLogs/LightroomMCP.log` | `%USERPROFILE%\Documents\LrClassicLogs\LightroomMCP.log` |
-| Claude Desktop | `~/Library/Logs/Claude/mcp*.log` | `%APPDATA%\Claude\Logs\mcp*.log` |
-
-The plugin resolves its log path via the OS (`LrPathUtils`), so on Windows with
-OneDrive-redirected Documents the file follows the redirect. The exact resolved
-path is shown as **Log file:** in Plug-in Manager → **Show Status** — use that if
-the table path above is empty.
-
-## License
-
-MIT
+授權沿用 repository 的 [MIT License](LICENSE)。

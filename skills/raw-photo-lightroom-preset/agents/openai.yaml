@@ -1,0 +1,10 @@
+interface:
+  display_name: "RAW Photo Lightroom v2"
+  short_description: "Cull RAW shoots and iterate versioned Lightroom presets."
+  default_prompt: "Use $raw-photo-lightroom-preset to cull a RAW shoot, verify preview provenance, tune one lighting cluster through Lightroom-rendered feedback, compare approved and candidate presets, and export a safe versioned handoff."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "lightroom"
+      description: "Optional local Lightroom Classic bridge for reading settings, applying bounded edits, comparing preset history, creating checkpoints, and exporting rendered previews/presets."

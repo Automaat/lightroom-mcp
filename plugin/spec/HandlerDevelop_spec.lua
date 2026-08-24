@@ -1,7 +1,13 @@
 local helper = require 'spec_helper'
 
-local function fakePreset(name)
-    return { getName = function() return name end }
+local function fakePreset(name, opts)
+    opts = opts or {}
+    return {
+        getName = function() return name end,
+        getUuid = function() return opts.uuid or ("uuid-" .. name) end,
+        getFile = function() return opts.file end,
+        getSetting = function() return opts.settings or {} end,
+    }
 end
 
 local function fakeFolder(name, presets)
@@ -14,15 +20,55 @@ end
 local function setup(opts)
     opts = opts or {}
     local catalog = helper.fakeCatalog({ photos = opts.photos or {} })
+    local pluginPresets = opts.pluginPresets or {}
+    local files = opts.files or {}
+    local copies = {}
+    local function leafName(path)
+        return path:match("([^/\\]+)$") or path
+    end
+    local function extension(path)
+        return leafName(path):match("%.([^%.]+)$") or ""
+    end
+    _G._PLUGIN = opts.plugin or { id = "com.lightroom.mcp" }
     helper.installImport({
         LrApplication = {
             activeCatalog = function() return catalog end,
             developPresetFolders = function() return opts.folders or {} end,
+            getDevelopPresetsForPlugin = function() return pluginPresets end,
+            addDevelopPresetForPlugin = function(_, name, settings)
+                local preset = fakePreset(name, {
+                    uuid = "plugin-" .. tostring(#pluginPresets + 1),
+                    file = "/plugin/" .. name .. ".xmp",
+                    settings = settings,
+                })
+                table.insert(pluginPresets, preset)
+                files[preset:getFile()] = "file"
+                return preset
+            end,
+        },
+        LrFileUtils = {
+            exists = function(path) return files[path] or false end,
+            createAllDirectories = function(path) files[path] = "directory" return true end,
+            copy = function(source, destination)
+                if files[source] ~= "file" or files[destination] then return false, "copy refused" end
+                files[destination] = "file"
+                table.insert(copies, { source = source, destination = destination })
+                return true
+            end,
+        },
+        LrPathUtils = {
+            leafName = leafName,
+            extension = extension,
+            child = function(parent, child) return parent .. "/" .. child end,
         },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerDevelop = nil
-    return catalog, require 'HandlerDevelop'
+    return catalog, require 'HandlerDevelop', {
+        pluginPresets = pluginPresets,
+        files = files,
+        copies = copies,
+    }
 end
 
 describe("HandlerDevelop.listDevelopPresets", function()
@@ -49,6 +95,242 @@ describe("HandlerDevelop.listDevelopPresets", function()
         local r = Handler.listDevelopPresets({})
         assert.are.equal(0, r.count)
         assert.are.same({}, r.presets)
+    end)
+
+    it("includes UUID, scope, and plugin-managed checkpoints", function()
+        local visible = fakePreset("Visible", { uuid = "visible-1", file = "/user/Visible.xmp" })
+        local checkpoint = fakePreset("Look-v2", { uuid = "plugin-1", file = "/plugin/Look-v2.xmp" })
+        local _, Handler = setup({
+            folders = { fakeFolder("User Presets", { visible }) },
+            pluginPresets = { checkpoint },
+        })
+
+        local r = Handler.listDevelopPresets({})
+
+        assert.are.equal(2, r.count)
+        assert.are.equal("lightroom", r.presets[1].scope)
+        assert.are.equal("visible-1", r.presets[1].uuid)
+        assert.are.equal("plugin", r.presets[2].scope)
+        assert.are.equal("Plugin Develop Presets", r.presets[2].folder)
+    end)
+end)
+
+describe("HandlerDevelop.getDevelopPreset", function()
+    it("returns exact preset settings", function()
+        local preset = fakePreset("John Warm", {
+            uuid = "warm-1",
+            file = "/user/John Warm.xmp",
+            settings = { Exposure2012 = 0.25, ToneCurvePV2012 = { 0, 0, 255, 255 } },
+        })
+        local _, Handler = setup({ folders = { fakeFolder("John", { preset }) } })
+
+        local r = Handler.getDevelopPreset({ preset_uuid = "warm-1" })
+
+        assert.is_true(r.success)
+        assert.are.equal("John Warm", r.name)
+        assert.are.equal(2, r.setting_count)
+        assert.are.same({ 0, 0, 255, 255 }, r.settings.ToneCurvePV2012)
+    end)
+
+    it("rejects ambiguous names", function()
+        local folders = {
+            fakeFolder("A", { fakePreset("Same", { uuid = "same-a" }) }),
+            fakeFolder("B", { fakePreset("Same", { uuid = "same-b" }) }),
+        }
+        local _, Handler = setup({ folders = folders })
+
+        assert.has_error(function()
+            Handler.getDevelopPreset({ preset_name = "Same" })
+        end, "Preset selector is ambiguous; provide preset_uuid or preset_folder")
+    end)
+
+    it("accepts a name that resolves to one aliased preset", function()
+        local shared = fakePreset("Portrait", {
+            uuid = "portrait-1",
+            settings = { Contrast2012 = 8 },
+        })
+        local folders = {
+            fakeFolder("Favorites", { shared }),
+            fakeFolder("John", { shared }),
+        }
+        local _, Handler = setup({ folders = folders })
+
+        local r = Handler.getDevelopPreset({ preset_name = "Portrait" })
+
+        assert.is_true(r.success)
+        assert.are.equal("portrait-1", r.uuid)
+    end)
+
+    it("accepts duplicate Lightroom aliases selected by UUID", function()
+        local shared = fakePreset("John Warm", {
+            uuid = "warm-1",
+            file = "/user/John Warm.xmp",
+            settings = { Contrast2012 = 12 },
+        })
+        local folders = {
+            fakeFolder("Favorites", { shared }),
+            fakeFolder("John", { shared }),
+        }
+        local _, Handler = setup({ folders = folders })
+
+        local r = Handler.getDevelopPreset({ preset_uuid = "warm-1" })
+
+        assert.is_true(r.success)
+        assert.are.equal("warm-1", r.uuid)
+        assert.are.equal(12, r.settings.Contrast2012)
+    end)
+end)
+
+describe("HandlerDevelop.compareDevelopPresets", function()
+    it("returns deterministic setting differences", function()
+        local base = fakePreset("Approved", {
+            uuid = "base",
+            settings = { Contrast2012 = 10, Vibrance = 5, Saturation = -2 },
+        })
+        local candidate = fakePreset("Candidate", {
+            uuid = "candidate",
+            settings = { Contrast2012 = 15, Vibrance = 5, Dehaze = 3 },
+        })
+        local _, Handler = setup({ folders = { fakeFolder("John", { base, candidate }) } })
+
+        local r = Handler.compareDevelopPresets({
+            base = { preset_uuid = "base" },
+            candidate = { preset_uuid = "candidate" },
+        })
+
+        assert.are.equal(3, r.changed_count)
+        assert.are.equal("Contrast2012", r.changes[1].key)
+        assert.are.equal(10, r.changes[1].before)
+        assert.are.equal(15, r.changes[1].after)
+        assert.are.equal("Dehaze", r.changes[2].key)
+        assert.is_false(r.changes[2].before_present)
+        assert.are.equal("Saturation", r.changes[3].key)
+        assert.is_false(r.changes[3].after_present)
+    end)
+end)
+
+describe("HandlerDevelop.createDevelopPreset", function()
+    it("creates a versioned plugin checkpoint from explicit photo settings", function()
+        local photo = helper.fakePhoto({
+            id = "source",
+            path = "/raw/source.nef",
+            developSettings = {
+                Exposure2012 = 0.5,
+                Contrast2012 = 12,
+                ToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
+                CropTop = 0.1,
+            },
+        })
+        local _, Handler, state = setup({ photos = { photo } })
+
+        local r = Handler.createDevelopPreset({
+            photo_id = "source",
+            preset_name = "John Warm v2",
+            settings = { "Contrast2012", "ToneCurvePV2012" },
+        })
+
+        assert.is_true(r.success)
+        assert.is_false(r.visible_in_develop)
+        assert.are.equal("plugin", r.scope)
+        assert.are.equal(1, #state.pluginPresets)
+        assert.are.same({
+            Contrast2012 = 12,
+            ToneCurvePV2012 = { 0, 0, 64, 58, 255, 255 },
+        }, state.pluginPresets[1]:getSetting())
+    end)
+
+    it("captures curves Lightroom stores off the 0-255 anchors", function()
+        local photo = helper.fakePhoto({
+            id = "source",
+            path = "/raw/source.nef",
+            developSettings = {
+                ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 },
+            },
+        })
+        local _, Handler, state = setup({ photos = { photo } })
+
+        local r = Handler.createDevelopPreset({
+            photo_id = "source",
+            preset_name = "Clipped v1",
+            settings = { "ToneCurvePV2012" },
+        })
+
+        assert.is_true(r.success)
+        assert.are.same(
+            { ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 } },
+            state.pluginPresets[1]:getSetting()
+        )
+    end)
+
+    it("refuses duplicate names and missing source settings", function()
+        local existing = fakePreset("Existing")
+        local photo = helper.fakePhoto({
+            id = "source", path = "/raw/source.nef", developSettings = { Exposure2012 = 0.5 },
+        })
+        local _, Handler = setup({ photos = { photo }, pluginPresets = { existing } })
+
+        assert.has_error(function()
+            Handler.createDevelopPreset({
+                photo_id = "source", preset_name = "Existing", settings = { "Exposure2012" },
+            })
+        end, "Plugin preset already exists; use a versioned preset_name")
+        assert.has_error(function()
+            Handler.createDevelopPreset({
+                photo_id = "source", preset_name = "New", settings = { "Contrast2012" },
+            })
+        end, "Source photo has no develop setting: Contrast2012")
+    end)
+end)
+
+describe("HandlerDevelop.exportDevelopPreset", function()
+    it("copies the backing file without overwriting", function()
+        local preset = fakePreset("John Warm", {
+            uuid = "warm-1",
+            file = "/user/John Warm.xmp",
+        })
+        local _, Handler, state = setup({
+            folders = { fakeFolder("John", { preset }) },
+            files = { ["/user/John Warm.xmp"] = "file" },
+        })
+
+        local r = Handler.exportDevelopPreset({
+            preset_uuid = "warm-1",
+            destination_dir = "/exports",
+            filename = "John-Warm-v2",
+        })
+
+        assert.is_true(r.success)
+        assert.are.equal("/exports/John-Warm-v2.xmp", r.destination)
+        assert.are.equal("/user/John Warm.xmp", state.copies[1].source)
+        assert.are.equal("/exports/John-Warm-v2.xmp", state.copies[1].destination)
+    end)
+
+    it("refuses path traversal, extension changes, and existing files", function()
+        local preset = fakePreset("John Warm", { uuid = "warm-1", file = "/user/Warm.xmp" })
+        local base = {
+            folders = { fakeFolder("John", { preset }) },
+            files = { ["/user/Warm.xmp"] = "file", ["/exports"] = "directory" },
+        }
+        local _, Handler = setup(base)
+
+        assert.has_error(function()
+            Handler.exportDevelopPreset({
+                preset_uuid = "warm-1", destination_dir = "/exports", filename = "../escape.xmp",
+            })
+        end, "filename must be a leaf filename without path separators")
+        assert.has_error(function()
+            Handler.exportDevelopPreset({
+                preset_uuid = "warm-1", destination_dir = "/exports", filename = "Warm.lrtemplate",
+            })
+        end, "filename extension must match preset backing file: .xmp")
+
+        base.files["/exports/Warm.xmp"] = "file"
+        local _, ExistingHandler = setup(base)
+        assert.has_error(function()
+            ExistingHandler.exportDevelopPreset({
+                preset_uuid = "warm-1", destination_dir = "/exports", filename = "Warm.xmp",
+            })
+        end, "destination preset already exists; choose a new filename")
     end)
 end)
 
@@ -78,6 +360,20 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         local r = Handler.applyDevelopPreset({ photo_ids = { "1", "missing" }, preset_name = "Moody" })
 
         assert.are.equal(1, r.applied)
+    end)
+
+    it("passes the plugin object when applying a plugin-managed checkpoint", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local preset = fakePreset("Checkpoint", { uuid = "plugin-1" })
+        local _, Handler = setup({ photos = { p1 }, pluginPresets = { preset } })
+
+        local r = Handler.applyDevelopPreset({
+            photo_ids = { "1" }, preset_uuid = "plugin-1", preset_scope = "plugin",
+        })
+
+        assert.is_true(r.success)
+        assert.are.equal(preset, p1.getRawMetadata(p1, "__appliedPreset"))
+        assert.are.equal(_G._PLUGIN, p1.getRawMetadata(p1, "__appliedPresetPlugin"))
     end)
 
     it("errors on unknown preset", function()

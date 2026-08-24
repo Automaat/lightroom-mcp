@@ -34,6 +34,10 @@ build/
 coverage/
 .nyc_output/
 
+# Python skill tests
+__pycache__/
+*.py[cod]
+
 # Logs
 logs/
 *.log
