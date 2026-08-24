@@ -56,6 +56,7 @@ end
 if not _G.LightroomMCP_State then
     _G.LightroomMCP_State = {
         running = false,
+        shuttingDown = false,
         requestSocket = nil,
         responseSocket = nil,
         sendConnected = false,
@@ -73,6 +74,10 @@ if not _G.LightroomMCP_State then
 end
 
 local pluginState = _G.LightroomMCP_State
+
+local function shutdownRequested()
+    return pluginState.shuttingDown == true
+end
 
 local function tokenDir()
     return LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), ".config")
@@ -190,9 +195,17 @@ local function shouldRestartForStaleConnection(idle, inFlightRequests, softSecon
 end
 
 local function sendResponse(response)
+    if shutdownRequested() then
+        addLog("Drop response (shutting down) id=" .. tostring(response.id))
+        return
+    end
     local waited = 0
     local selfHealRequested = false
     while not pluginState.sendConnected and waited < SEND_WAIT_SECONDS do
+        if shutdownRequested() then
+            addLog("Drop response (shutting down) id=" .. tostring(response.id))
+            return
+        end
         if not selfHealRequested and waited >= SEND_REBIND_TRIGGER_SECONDS then
             addLog("sendResponse stalled " .. SEND_REBIND_TRIGGER_SECONDS .. "s, requesting rebind id=" .. tostring(response.id))
             pluginState.responseNeedsRebind = true
@@ -215,6 +228,7 @@ local function sendResponse(response)
 end
 
 local function dispatchAction(request)
+    if shutdownRequested() then return end
     local id = request.id
     local action = request.action
     local params = request.params or {}
@@ -285,6 +299,10 @@ local function consumeMessage(message)
 end
 
 local function startServer()
+    if shutdownRequested() then
+        addLog("Start ignored (shutting down)")
+        return
+    end
     if pluginState.running then
         addLog("Already running")
         return
@@ -376,6 +394,7 @@ local function startServer()
                     end
                 end,
                 onMessage = function(_, message)
+                    if shutdownRequested() then return end
                     local request = consumeMessage(message)
                     if request then
                         LrTasks.startAsyncTask(function()
@@ -466,7 +485,7 @@ local function startServer()
         pluginState.responseSocket = bindResponse(pluginState.responseGen)
         addLog("RESPONSE bound on " .. responsePort .. " gen=" .. pluginState.responseGen)
 
-        while pluginState.running do
+        while pluginState.running and not shutdownRequested() do
             if pluginState.requestNeedsReconnect and pluginState.requestSocket then
                 pluginState.requestNeedsReconnect = false
                 pluginState.requestSocket:reconnect()
@@ -492,6 +511,7 @@ local function startServer()
                 -- again. The actual server-side reconnect takes ~1s, so
                 -- 100ms here doesn't meaningfully delay recovery.
                 LrTasks.sleep(0.1)
+                if shutdownRequested() then break end
                 pluginState.responseSocket = bindResponse(newGen)
                 pluginState.responseNeedsRebind = false
                 pluginState.responseNeedsReconnect = false
@@ -545,6 +565,11 @@ local function startServer()
     end)
 end
 
+local function startServerFromPanel()
+    pluginState.shuttingDown = false
+    startServer()
+end
+
 local function stopServer()
     if not pluginState.running then
         addLog("Not running")
@@ -563,6 +588,7 @@ end
 -- table) so this module's pluginState and the old loop's closure keep
 -- pointing at the same table — flipping running here is what stops it.
 local function resetForReload()
+    pluginState.shuttingDown = false
     if not pluginState.running then return end
     addLog("Reload detected - resetting previous server instance")
     pluginState.running = false
@@ -597,11 +623,40 @@ local function resetForReload()
     pluginState.inFlightRequests = 0
 end
 
+local function shutdown()
+    if not pluginState.running and not pluginState.requestSocket
+        and not pluginState.responseSocket then
+        pluginState.shuttingDown = true
+        return
+    end
+    addLog("Shutdown requested - stopping LrSocket servers")
+    pluginState.shuttingDown = true
+    pluginState.running = false
+    pluginState.requestNeedsReconnect = false
+    pluginState.responseNeedsRebind = false
+    pluginState.responseNeedsReconnect = false
+    pluginState.needsFullRestart = false
+    pluginState.freshRestart = false
+    if pluginState.requestSocket then
+        pcall(function() pluginState.requestSocket:close() end)
+    end
+    if pluginState.responseSocket then
+        pcall(function() pluginState.responseSocket:close() end)
+    end
+    pluginState.requestSocket = nil
+    pluginState.responseSocket = nil
+    pluginState.sendConnected = false
+    pluginState.receiveConnected = false
+    pluginState.token = nil
+end
+
 addLog("PluginInfoProvider loaded")
 
 local PluginInfoProvider = {
     startServer = startServer,
+    startServerFromPanel = startServerFromPanel,
     stopServer = stopServer,
+    shutdown = shutdown,
     resetForReload = resetForReload,
     -- Exposed for PluginInfoProvider_spec.lua only; not used elsewhere in the plugin.
     shouldRestartForStaleConnection = shouldRestartForStaleConnection,
@@ -699,7 +754,7 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                         if pluginState.running then
                             stopServer()
                         else
-                            startServer()
+                            startServerFromPanel()
                         end
                     end,
                 },

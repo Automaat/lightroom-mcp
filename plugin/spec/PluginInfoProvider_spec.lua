@@ -19,6 +19,8 @@ local HANDLER_MODULES = {
 --   capturedBinds  -- array; each LrSocket.bind opts table is appended, in
 --                      bind order (request socket first, then response), so
 --                      a test can invoke onConnected/onMessage/etc directly
+--   onSleep        -- called with the shared state on each LrTasks.sleep, so a
+--                      test can flip flags between monitor-loop ticks
 local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
@@ -34,6 +36,7 @@ local function installStubs(prefs, asyncTasks, opts)
                 if opts.stopLoopOnSleep and _G.LightroomMCP_State then
                     _G.LightroomMCP_State.running = false
                 end
+                if opts.onSleep then opts.onSleep(_G.LightroomMCP_State) end
             end,
             pcall = pcall,
         },
@@ -388,5 +391,289 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
                 90, 0, mod.STALE_RECONNECT_SECONDS, mod.STALE_RESTART_HARD_CAP_SECONDS)
             assert.is_false(restart)
         end)
+    end)
+end)
+
+describe("cooperative shutdown at Lightroom quit (issue 195)", function()
+    local realOpen
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        realOpen = io.open
+        io.open = function(path, mode, ...)
+            if mode and mode:find("w", 1, true) then
+                return { write = function() end, close = function() end }
+            end
+            return realOpen(path, mode, ...)
+        end
+    end)
+    after_each(function()
+        io.open = realOpen
+        package.preload.PluginInfoProvider = nil
+    end)
+
+    local function requestFor(state, action)
+        return '{"id":1,"action":"' .. action .. '","hello":"' .. state.token .. '"}'
+    end
+
+    it("closes both sockets and clears connection state", function()
+        local ops = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        mod.shutdown()
+
+        local state = _G.LightroomMCP_State
+        assert.is_true(state.shuttingDown)
+        assert.is_false(state.running)
+        assert.is_nil(state.requestSocket)
+        assert.is_nil(state.responseSocket)
+        assert.is_false(state.sendConnected)
+        assert.is_false(state.receiveConnected)
+        assert.is_nil(state.token)
+        assert.are.same({ "close", "close" }, ops)
+    end)
+
+    it("is a cheap no-op when the server never started", function()
+        local ops = {}
+        installStubs(nil, nil, { socketOps = ops })
+        local mod = loadInfoProvider()
+
+        assert.has_no.errors(function() mod.shutdown() end)
+        assert.are.same({}, ops)
+        assert.is_true(_G.LightroomMCP_State.shuttingDown)
+    end)
+
+    it("leaves the monitor loop on the first tick after quit begins", function()
+        local ticks = 0
+        installStubs(nil, {}, {
+            runTask = true,
+            cleanups = {},
+            onSleep = function(state)
+                ticks = ticks + 1
+                if ticks == 1 then
+                    state.shuttingDown = true
+                else
+                    state.running = false
+                end
+            end,
+        })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+
+        assert.are.equal(1, ticks)
+    end)
+
+    it("does not bind a new response listener when quit lands inside the rebind yield", function()
+        local binds = {}
+        local ticks = 0
+        installStubs(nil, {}, {
+            runTask = true,
+            cleanups = {},
+            capturedBinds = binds,
+            onSleep = function(state)
+                ticks = ticks + 1
+                if ticks == 1 then
+                    state.responseNeedsRebind = true
+                elseif ticks == 2 then
+                    state.shuttingDown = true
+                else
+                    state.running = false
+                end
+            end,
+        })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+
+        assert.is_table(binds[2])
+        assert.is_nil(binds[3])
+    end)
+
+    it("queues no dispatch task for a message that arrives during quit", function()
+        local binds, asyncTasks = {}, {}
+        installStubs(nil, asyncTasks, {
+            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
+        })
+        package.loaded.JSON = nil
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        state.shuttingDown = true
+        binds[1].onMessage(nil, requestFor(state, "ping"))
+
+        assert.is_nil(asyncTasks[1])
+    end)
+
+    it("does not run a handler whose dispatch task was queued before quit", function()
+        local binds, asyncTasks = {}, {}
+        local handlerCalls = 0
+        installStubs(nil, asyncTasks, {
+            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
+        })
+        package.loaded.JSON = nil
+        package.loaded.HandlerSearch = {
+            searchPhotos = function()
+                handlerCalls = handlerCalls + 1
+                return { photos = {} }
+            end,
+        }
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        binds[1].onMessage(nil, requestFor(state, "search_photos"))
+        state.shuttingDown = true
+        asyncTasks[1]()
+
+        assert.are.equal(0, handlerCalls)
+    end)
+
+    it("drops the response of a handler that finished after quit began", function()
+        local binds, sent = {}, {}
+        installStubs(nil, nil, {
+            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
+        })
+        package.loaded.JSON = nil
+        package.loaded.HandlerSearch = {
+            searchPhotos = function()
+                _G.LightroomMCP_State.shuttingDown = true
+                return { photos = {} }
+            end,
+        }
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        state.sendConnected = true
+        state.responseSocket = { send = function() table.insert(sent, true) end }
+
+        binds[1].onMessage(nil, requestFor(state, "search_photos"))
+
+        assert.are.same({}, sent)
+    end)
+
+    it("stops waiting for the send socket as soon as quit begins", function()
+        local binds = {}
+        local waitSleeps = 0
+        local waiting = false
+        installStubs(nil, nil, {
+            runTask = true, stopLoopOnSleep = true, cleanups = {}, capturedBinds = binds,
+            onSleep = function(state)
+                if not waiting then return end
+                waitSleeps = waitSleeps + 1
+                if waitSleeps == 2 then state.shuttingDown = true end
+            end,
+        })
+        package.loaded.JSON = nil
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        state.sendConnected = false
+        waiting = true
+
+        binds[1].onMessage(nil, requestFor(state, "ping"))
+
+        assert.are.equal(2, waitSleeps)
+    end)
+
+    it("abandons a pending stale-connection restart", function()
+        local asyncTasks = {}
+        local ticks = 0
+        installStubs(nil, asyncTasks, {
+            runTask = true,
+            cleanups = {},
+            onSleep = function(state)
+                ticks = ticks + 1
+                if ticks == 1 then
+                    state.needsFullRestart = true
+                else
+                    state.running = false
+                end
+            end,
+        })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        local instanceBefore = _G.LightroomMCP_State.instanceId
+        _G.LightroomMCP_State.shuttingDown = true
+        local pendingRestart = asyncTasks[1]
+        assert.is_function(pendingRestart)
+        pendingRestart()
+
+        assert.are.equal(instanceBefore, _G.LightroomMCP_State.instanceId)
+    end)
+
+    it("refuses an auto-start that wakes after quit began", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        local mod = loadInfoProvider()
+
+        mod.shutdown()
+        mod.startServer()
+
+        assert.is_false(_G.LightroomMCP_State.running)
+        assert.is_nil(_G.LightroomMCP_State.token)
+    end)
+
+    it("lets the Plug-in Manager Start button supersede an earlier shutdown", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        mod.shutdown()
+        mod.startServerFromPanel()
+
+        assert.is_false(_G.LightroomMCP_State.shuttingDown)
+        assert.is_not_nil(_G.LightroomMCP_State.token)
+    end)
+
+    it("clears the shutdown flag on reload so the fresh instance can bind", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        mod.shutdown()
+        mod.resetForReload()
+        mod.startServer()
+
+        assert.is_false(_G.LightroomMCP_State.shuttingDown)
+        assert.is_not_nil(_G.LightroomMCP_State.token)
+    end)
+
+    it("PluginShutdown.lua tears the server down through the module", function()
+        local ops = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
+        local mod = loadInfoProvider()
+        mod.startServer()
+
+        package.loaded.PluginShutdown = nil
+        require 'PluginShutdown'
+
+        assert.is_true(_G.LightroomMCP_State.shuttingDown)
+        assert.is_false(_G.LightroomMCP_State.running)
+        assert.are.same({ "close", "close" }, ops)
+    end)
+
+    it("PluginShutdown.lua still tears down when the module cannot be required", function()
+        local ops = {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
+        local mod = loadInfoProvider()
+        mod.startServer()
+
+        package.loaded.PluginInfoProvider = nil
+        package.preload.PluginInfoProvider = function() error("load failed") end
+        package.loaded.PluginShutdown = nil
+        require 'PluginShutdown'
+        package.preload.PluginInfoProvider = nil
+
+        assert.is_true(_G.LightroomMCP_State.shuttingDown)
+        assert.is_false(_G.LightroomMCP_State.running)
+        assert.is_nil(_G.LightroomMCP_State.requestSocket)
+        assert.is_nil(_G.LightroomMCP_State.responseSocket)
+        assert.is_nil(_G.LightroomMCP_State.token)
+        assert.are.same({ "close", "close" }, ops)
     end)
 end)
