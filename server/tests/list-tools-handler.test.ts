@@ -1,8 +1,13 @@
 import { describe, it, expect } from '@jest/globals';
+import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
-import { DEVELOP_SETTING_KEYS, TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import {
+  DEVELOP_SETTING_KEYS,
+  POINT_CURVE_SETTING_KEYS,
+  TOOL_CONTRACTS,
+} from '../src/tool-contracts.js';
 
 const EXPECTED_TOOL_NAMES = [
   'search_photos',
@@ -159,6 +164,54 @@ describe('develop setting schema', () => {
     expect(properties.settings.additionalProperties).toBe(false);
     expect(properties.settings.minProperties).toBe(1);
     expect(Object.keys(properties.settings.properties ?? {})).toEqual(DEVELOP_SETTING_KEYS);
+  });
+
+  it('uses numeric arrays for point curves and scalar values for ordinary settings', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
+    const properties = tool?.inputSchema.properties as Record<
+      string,
+      {
+        properties?: Record<
+          string,
+          {
+            type?: string;
+            minItems?: number;
+            maxItems?: number;
+            items?: { type?: string; minimum?: number; maximum?: number };
+            oneOf?: unknown[];
+          }
+        >;
+      }
+    >;
+    const settings = properties.settings.properties ?? {};
+
+    for (const key of POINT_CURVE_SETTING_KEYS) {
+      expect(settings[key]).toMatchObject({
+        type: 'array',
+        minItems: 4,
+        maxItems: 64,
+        items: { type: 'integer', minimum: 0, maximum: 255 },
+      });
+    }
+    expect(settings.Exposure2012.oneOf).toBeDefined();
+    expect(settings.Exposure2012.type).toBeUndefined();
+  });
+
+  it('rejects malformed point curve payloads against the published schema', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+
+    const check = (curve: unknown[]) =>
+      validate({ photo_id: '1', settings: { ToneCurvePV2012: curve } });
+
+    expect(check([0, 0, 64, 48, 192, 210, 255, 255])).toBe(true);
+    expect(check([0, 0, 255, 255])).toBe(true);
+    expect(check([0, 0, 128, 120, 255])).toBe(false);
+    expect(check([0, 0, 128.5, 120, 255, 255])).toBe(false);
+    expect(check([0, 0, 128, 300, 255, 255])).toBe(false);
+    expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
+    expect(check([0, 0])).toBe(false);
+    expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
   });
 
   it('matches Lua develop setting allowlist', () => {
