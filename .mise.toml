@@ -1,5 +1,5 @@
 [tools]
-node = "24.19.0"
+node = "24.20.0"
 bun = "1.4.0"
 lua = "5.5.1"
 # selene (Rust) is the Lua linter — see lua:lint. A native binary, so unlike
