@@ -719,6 +719,41 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         assert.is_nil(package.loaded.PluginInfoProvider)
     end)
 
+    it("PluginShutdown.lua returns the LrShutdownApp table", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        loadInfoProvider()
+
+        package.loaded.PluginShutdown = nil
+        local shutdownModule = require 'PluginShutdown'
+
+        assert.are.equal("table", type(shutdownModule))
+        assert.are.equal("function", type(shutdownModule.LrShutdownFunction))
+    end)
+
+    it("LrShutdownFunction reports progress and done without yielding", function()
+        installStubs(nil, nil, { runTask = false, stopLoopOnSleep = true, cleanups = {} })
+        loadInfoProvider()
+
+        package.loaded.PluginShutdown = nil
+        local shutdownModule = require 'PluginShutdown'
+
+        local done, percent = false, nil
+        shutdownModule.LrShutdownFunction(function() done = true end, function(p) percent = p end)
+
+        assert.is_true(done)
+        assert.are.equal(1, percent)
+    end)
+
+    it("LrShutdownFunction tolerates Lightroom omitting the callbacks", function()
+        installStubs(nil, nil, { runTask = false, stopLoopOnSleep = true, cleanups = {} })
+        loadInfoProvider()
+
+        package.loaded.PluginShutdown = nil
+        local shutdownModule = require 'PluginShutdown'
+
+        assert.has_no.errors(function() shutdownModule.LrShutdownFunction() end)
+    end)
+
     it("PluginShutdown.lua is inert when the plugin never built its state", function()
         _G.LightroomMCP_State = nil
 
