@@ -624,12 +624,6 @@ local function resetForReload()
 end
 
 local function shutdown()
-    if not pluginState.running and not pluginState.requestSocket
-        and not pluginState.responseSocket then
-        pluginState.shuttingDown = true
-        return
-    end
-    addLog("Shutdown requested - stopping LrSocket servers")
     pluginState.shuttingDown = true
     pluginState.running = false
     pluginState.requestNeedsReconnect = false
@@ -637,14 +631,6 @@ local function shutdown()
     pluginState.responseNeedsReconnect = false
     pluginState.needsFullRestart = false
     pluginState.freshRestart = false
-    if pluginState.requestSocket then
-        pcall(function() pluginState.requestSocket:close() end)
-    end
-    if pluginState.responseSocket then
-        pcall(function() pluginState.responseSocket:close() end)
-    end
-    pluginState.requestSocket = nil
-    pluginState.responseSocket = nil
     pluginState.sendConnected = false
     pluginState.receiveConnected = false
     pluginState.token = nil

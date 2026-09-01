@@ -396,10 +396,15 @@ end)
 
 describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     local realOpen
+    local logOpens
     before_each(function()
         _G.LightroomMCP_State = nil
+        logOpens = 0
         realOpen = io.open
         io.open = function(path, mode, ...)
+            if path and path:find("LightroomMCP.log", 1, true) then
+                logOpens = logOpens + 1
+            end
             if mode and mode:find("w", 1, true) then
                 return { write = function() end, close = function() end }
             end
@@ -415,23 +420,41 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         return '{"id":1,"action":"' .. action .. '","hello":"' .. state.token .. '"}'
     end
 
-    it("closes both sockets and clears connection state", function()
+    it("clears connection state without blocking on sockets or the log file", function()
         local ops = {}
         installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
         local mod = loadInfoProvider()
 
         mod.startServer()
+        logOpens = 0
         mod.shutdown()
 
         local state = _G.LightroomMCP_State
         assert.is_true(state.shuttingDown)
         assert.is_false(state.running)
-        assert.is_nil(state.requestSocket)
-        assert.is_nil(state.responseSocket)
         assert.is_false(state.sendConnected)
         assert.is_false(state.receiveConnected)
         assert.is_nil(state.token)
+        assert.are.same({}, ops)
+        assert.are.equal(0, logOpens)
+    end)
+
+    it("leaves the sockets for the server task to release", function()
+        local ops, cleanups = {}, {}
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = cleanups, socketOps = ops })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        mod.shutdown()
+
+        assert.is_not_nil(_G.LightroomMCP_State.requestSocket)
+        assert.is_not_nil(_G.LightroomMCP_State.responseSocket)
+
+        cleanups[1]()
+
         assert.are.same({ "close", "close" }, ops)
+        assert.is_nil(_G.LightroomMCP_State.requestSocket)
+        assert.is_nil(_G.LightroomMCP_State.responseSocket)
     end)
 
     it("is a cheap no-op when the server never started", function()
@@ -643,7 +666,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         assert.is_not_nil(_G.LightroomMCP_State.token)
     end)
 
-    it("PluginShutdown.lua tears the server down through the module", function()
+    it("PluginShutdown.lua raises the flags the server task polls", function()
         local ops = {}
         installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
         local mod = loadInfoProvider()
@@ -652,28 +675,56 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         package.loaded.PluginShutdown = nil
         require 'PluginShutdown'
 
-        assert.is_true(_G.LightroomMCP_State.shuttingDown)
-        assert.is_false(_G.LightroomMCP_State.running)
-        assert.are.same({ "close", "close" }, ops)
+        local state = _G.LightroomMCP_State
+        assert.is_true(state.shuttingDown)
+        assert.is_false(state.running)
+        assert.is_false(state.requestNeedsReconnect)
+        assert.is_false(state.responseNeedsRebind)
+        assert.is_false(state.responseNeedsReconnect)
+        assert.is_false(state.needsFullRestart)
+        assert.is_false(state.freshRestart)
+        assert.is_false(state.sendConnected)
+        assert.is_false(state.receiveConnected)
+        assert.is_nil(state.token)
     end)
 
-    it("PluginShutdown.lua still tears down when the module cannot be required", function()
+    it("PluginShutdown.lua closes no socket and writes no file", function()
         local ops = {}
         installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {}, socketOps = ops })
+        local mod = loadInfoProvider()
+        mod.startServer()
+
+        logOpens = 0
+        package.loaded.PluginShutdown = nil
+        require 'PluginShutdown'
+
+        assert.are.same({}, ops)
+        assert.are.equal(0, logOpens)
+        assert.is_not_nil(_G.LightroomMCP_State.requestSocket)
+        assert.is_not_nil(_G.LightroomMCP_State.responseSocket)
+    end)
+
+    it("PluginShutdown.lua does not load PluginInfoProvider", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
         local mod = loadInfoProvider()
         mod.startServer()
 
         package.loaded.PluginInfoProvider = nil
-        package.preload.PluginInfoProvider = function() error("load failed") end
+        package.preload.PluginInfoProvider = function() error("must not load at quit") end
         package.loaded.PluginShutdown = nil
-        require 'PluginShutdown'
+        assert.has_no.errors(function() require 'PluginShutdown' end)
         package.preload.PluginInfoProvider = nil
 
         assert.is_true(_G.LightroomMCP_State.shuttingDown)
-        assert.is_false(_G.LightroomMCP_State.running)
-        assert.is_nil(_G.LightroomMCP_State.requestSocket)
-        assert.is_nil(_G.LightroomMCP_State.responseSocket)
-        assert.is_nil(_G.LightroomMCP_State.token)
-        assert.are.same({ "close", "close" }, ops)
+        assert.is_nil(package.loaded.PluginInfoProvider)
+    end)
+
+    it("PluginShutdown.lua is inert when the plugin never built its state", function()
+        _G.LightroomMCP_State = nil
+
+        package.loaded.PluginShutdown = nil
+        assert.has_no.errors(function() require 'PluginShutdown' end)
+
+        assert.is_nil(_G.LightroomMCP_State)
     end)
 end)
