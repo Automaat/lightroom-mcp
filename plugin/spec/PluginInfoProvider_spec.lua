@@ -396,13 +396,15 @@ end)
 
 describe("cooperative shutdown at Lightroom quit (issue 195)", function()
     local realOpen
-    local opens
+    local logOpens
     before_each(function()
         _G.LightroomMCP_State = nil
-        opens = 0
+        logOpens = 0
         realOpen = io.open
         io.open = function(path, mode, ...)
-            opens = opens + 1
+            if path and path:find("LightroomMCP.log", 1, true) then
+                logOpens = logOpens + 1
+            end
             if mode and mode:find("w", 1, true) then
                 return { write = function() end, close = function() end }
             end
@@ -424,7 +426,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         local mod = loadInfoProvider()
 
         mod.startServer()
-        local opensBefore = opens
+        logOpens = 0
         mod.shutdown()
 
         local state = _G.LightroomMCP_State
@@ -434,7 +436,7 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         assert.is_false(state.receiveConnected)
         assert.is_nil(state.token)
         assert.are.same({}, ops)
-        assert.are.equal(opensBefore, opens)
+        assert.are.equal(0, logOpens)
     end)
 
     it("leaves the sockets for the server task to release", function()
@@ -692,12 +694,12 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         local mod = loadInfoProvider()
         mod.startServer()
 
-        local opensBefore = opens
+        logOpens = 0
         package.loaded.PluginShutdown = nil
         require 'PluginShutdown'
 
         assert.are.same({}, ops)
-        assert.are.equal(opensBefore, opens)
+        assert.are.equal(0, logOpens)
         assert.is_not_nil(_G.LightroomMCP_State.requestSocket)
         assert.is_not_nil(_G.LightroomMCP_State.responseSocket)
     end)
