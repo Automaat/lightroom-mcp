@@ -1,6 +1,6 @@
 [tools]
 node = "24.20.0"
-bun = "1.4.0"
+bun = "1.4.1"
 lua = "5.5.1"
 # selene (Rust) is the Lua linter — see lua:lint. A native binary, so unlike
 # luacheck it does not run on the Lua above and is immune to Lua-version breaks.
