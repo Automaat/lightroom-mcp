@@ -11,3 +11,10 @@ if state then
     state.receiveConnected = false
     state.token = nil
 end
+
+return {
+    LrShutdownFunction = function(doneFunction, progressFunction)
+        if progressFunction then progressFunction(1) end
+        if doneFunction then doneFunction() end
+    end,
+}
