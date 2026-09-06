@@ -139,6 +139,7 @@ function M.fakeCatalog(opts)
     -- OUTSIDE the gate; specs assert getQueriedInsideReadAccess() == false.
     local insideReadAccess = false
     local queriedInsideReadAccess = false
+    local selectionCall = nil
     local function markQuery()
         if insideReadAccess then queriedInsideReadAccess = true end
     end
@@ -205,6 +206,11 @@ function M.fakeCatalog(opts)
             if not ok then error(err, 0) end
         end,
         getQueriedInsideReadAccess = function() return queriedInsideReadAccess end,
+        setSelectedPhotos = function(_, activePhoto, selected)
+            markQuery()
+            selectionCall = { active = activePhoto, photos = selected }
+        end,
+        getSelectionCall = function() return selectionCall end,
         withWriteAccessDo = function(_, _, fn)
             writeAccessCount = writeAccessCount + 1
             fn()

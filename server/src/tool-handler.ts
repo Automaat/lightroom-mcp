@@ -1,8 +1,11 @@
 import type { Dispatcher } from "./dispatcher.js";
+import { validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
   isReady: () => boolean;
+  notReadyMessage?: () => string;
+  settleReadiness?: () => Promise<void>;
 }
 
 export interface ToolResponse {
@@ -11,14 +14,24 @@ export interface ToolResponse {
   [key: string]: unknown;
 }
 
-const NOT_CONNECTED_MESSAGE =
+export const NOT_CONNECTED_MESSAGE =
   "Lightroom plugin not connected. Open Lightroom and click 'Start Server' in Plug-in Manager.";
 
 export function createCallToolHandler(deps: ToolHandlerDeps) {
   return async (name: string, args: unknown): Promise<ToolResponse> => {
+    const invalid = validateToolArgs(name, args);
+    if (invalid) {
+      return {
+        content: [{ type: "text", text: invalid }],
+        isError: true,
+      };
+    }
+
+    await deps.settleReadiness?.();
+
     if (!deps.isReady()) {
       return {
-        content: [{ type: "text", text: NOT_CONNECTED_MESSAGE }],
+        content: [{ type: "text", text: deps.notReadyMessage?.() ?? NOT_CONNECTED_MESSAGE }],
         isError: true,
       };
     }

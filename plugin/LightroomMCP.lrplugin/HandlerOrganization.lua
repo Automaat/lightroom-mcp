@@ -19,6 +19,14 @@ function OrganizationHandler.setKeywords(args)
     validateKeywordLimit(args.add_keywords, "add_keywords")
     validateKeywordLimit(args.remove_keywords, "remove_keywords")
 
+    -- Neither list means there is nothing to do; reporting "Updated keywords
+    -- for 1 photos" for that claimed work that never happened.
+    local hasAdds = args.add_keywords ~= nil and args.add_keywords[1] ~= nil
+    local hasRemoves = args.remove_keywords ~= nil and args.remove_keywords[1] ~= nil
+    if not hasAdds and not hasRemoves then
+        error("add_keywords or remove_keywords is required")
+    end
+
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
 
@@ -89,12 +97,20 @@ function OrganizationHandler.setRating(args)
         error("rating is required")
     end
 
+    -- Comparing a string to a number raised a raw Lua type error that leaked
+    -- the handler's file and line to the client.
+    if type(args.rating) ~= "number" then
+        error("rating must be a number between 0 and 5")
+    end
+
     if args.rating < 0 or args.rating > 5 then
         error("rating must be between 0 and 5")
     end
 
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
+    local missingIds = {}
+    local missingCount = 0
 
     -- LrSDK rejects literal 0 on the rating field; nil means "no rating".
     local ratingValue = args.rating
@@ -106,6 +122,9 @@ function OrganizationHandler.setRating(args)
             if entry.photo then
                 entry.photo:setRawMetadata('rating', ratingValue)
                 updatedCount = updatedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
             end
         end
     end)
@@ -116,7 +135,9 @@ function OrganizationHandler.setRating(args)
         success = true,
         updated = updatedCount,
         rating = args.rating,
-        message = string.format("Set rating to %d for %d photos", args.rating, updatedCount)
+        missing = missingIds,
+        message = string.format("Set rating to %d for %d photos (%d ids not found)",
+            args.rating, updatedCount, missingCount)
     }
 end
 

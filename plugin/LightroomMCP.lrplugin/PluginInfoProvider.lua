@@ -140,6 +140,9 @@ local DISPATCH = {
     import_photos = HandlerImport.importPhotos,
     export_photos = HandlerExport.exportPhotos,
     get_selected_photos = HandlerSelection.getSelectedPhotos,
+    -- Test-only, no matching MCP tool contract: only the raw TCP probe
+    -- (manual-test.mjs / the e2e playbook) can reach it. See HandlerSelection.
+    set_selection = HandlerSelection.setSelection,
     list_develop_presets = HandlerDevelop.listDevelopPresets,
     get_develop_preset = HandlerDevelop.getDevelopPreset,
     compare_develop_presets = HandlerDevelop.compareDevelopPresets,
@@ -233,6 +236,12 @@ local function dispatchAction(request)
     local action = request.action
     local params = request.params or {}
 
+    if request.undecodable then
+        addLog("Rejecting undecodable request id=" .. tostring(id))
+        sendResponse({ id = id, error = "Malformed request: " .. request.undecodable })
+        return
+    end
+
     -- Heartbeat pings arrive every 30s and are pure liveness noise once the
     -- connection is healthy; skip them here so they don't dominate the
     -- 100-line ring buffer used by the status panel and drown out real
@@ -284,6 +293,15 @@ local function consumeMessage(message)
     local parsedOk, request = pcall(function() return JSON:decode(message) end)
     if not parsedOk or type(request) ~= "table" then
         addLog("JSON decode failed: " .. tostring(message))
+        -- A client that cannot be decoded still deserves an answer, or it sits
+        -- there until its own 30s timeout with no clue why. Salvage id+token by
+        -- pattern: only an authenticated caller gets the error back, so
+        -- unauthenticated garbage stays silent as before.
+        local salvagedToken = message:match('"hello"%s*:%s*"([^"]*)"')
+        local salvagedId = message:match('"id"%s*:%s*"([^"]*)"')
+        if salvagedId and pluginState.token and salvagedToken == pluginState.token then
+            return { id = salvagedId, undecodable = tostring(request) }
+        end
         return nil
     end
 
@@ -734,14 +752,26 @@ function PluginInfoProvider.sectionsForTopOfDialog(f, propertyTable)
                 height_in_lines = 2,
             },
             f:row {
+                -- Two buttons rather than one toggle. The toggle's title was
+                -- computed once at render, so after Stop it still read "Stop
+                -- Server" and clicking it only logged "Not running" -- there was
+                -- no way to start again without closing and reopening the
+                -- dialog. A bound title does not work here: Lightroom ignores a
+                -- binding on a push_button title.
                 f:push_button {
-                    title = pluginState.running and "Stop Server" or "Start Server",
+                    title = "Start Server",
                     action = function()
                         if pluginState.running then
-                            stopServer()
-                        else
-                            startServerFromPanel()
+                            addLog("Start ignored (already running)")
+                            return
                         end
+                        startServerFromPanel()
+                    end,
+                },
+                f:push_button {
+                    title = "Stop Server",
+                    action = function()
+                        stopServer()
                     end,
                 },
                 f:push_button {

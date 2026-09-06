@@ -227,6 +227,25 @@ describe('develop setting schema', () => {
     expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
   });
 
+  it('accepts the numeric photo ids the catalog hands back', () => {
+    const ajv = new Ajv({ strict: false });
+    const validateFor = (name: string) =>
+      ajv.compile(TOOL_DEFINITIONS.find((t) => t.name === name)!.inputSchema);
+
+    expect(validateFor('get_photo_metadata')({ photo_id: 914 })).toBe(true);
+    expect(validateFor('get_photo_metadata')({ photo_id: '914' })).toBe(true);
+    expect(validateFor('set_rating')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
+    expect(validateFor('set_develop_settings')({
+      photo_id: 914,
+      settings: { Exposure2012: 0.5 },
+    })).toBe(true);
+    expect(validateFor('copy_develop_settings')({ source_id: 914, target_ids: [915] })).toBe(true);
+
+    expect(validateFor('get_photo_metadata')({ photo_id: '' })).toBe(false);
+    expect(validateFor('set_rating')({ photo_ids: [], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating')({ photo_ids: [true], rating: 3 })).toBe(false);
+  });
+
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === 'create_develop_preset');
     const properties = tool?.inputSchema.properties as Record<
@@ -243,6 +262,14 @@ describe('develop setting schema', () => {
     expect(parseLuaDevelopSettingKeys()).toEqual(DEVELOP_SETTING_KEYS);
   });
 });
+
+/**
+ * Lua DISPATCH entries that exist for e2e setup only: reachable from the raw TCP
+ * probe, deliberately absent from TOOL_CONTRACTS so no MCP client can call them.
+ */
+const TEST_ONLY_ACTIONS: Record<string, string> = {
+  set_selection: 'HandlerSelection.setSelection',
+};
 
 describe('tool contracts vs Lua dispatch', () => {
   function parseLuaDispatch(): Record<string, string> {
@@ -265,6 +292,19 @@ describe('tool contracts vs Lua dispatch', () => {
       TOOL_CONTRACTS.map((contract) => [contract.name, contract.luaHandler]),
     );
 
+    for (const action of Object.keys(TEST_ONLY_ACTIONS)) {
+      delete dispatch[action];
+    }
+
     expect(dispatch).toEqual(manifest);
+  });
+
+  it('keeps test-only actions off the MCP tool surface', () => {
+    const dispatch = parseLuaDispatch();
+
+    for (const [action, luaHandler] of Object.entries(TEST_ONLY_ACTIONS)) {
+      expect(dispatch[action]).toBe(luaHandler);
+      expect(TOOL_CONTRACTS.some((contract) => contract.name === action)).toBe(false);
+    }
   });
 });

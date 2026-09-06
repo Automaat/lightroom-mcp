@@ -181,6 +181,76 @@ describe("HandlerDevelop.getDevelopPreset", function()
     end)
 end)
 
+describe("HandlerDevelop.compareDevelopPresets volatile ids", function()
+    local function maskedPreset(name, uuid, correctionId, maskId, extra)
+        return fakePreset(name, {
+            uuid = uuid,
+            settings = {
+                Contrast2012 = extra or 10,
+                MaskGroupBasedCorrections = {
+                    {
+                        CorrectionID = correctionId,
+                        CorrectionActive = true,
+                        CorrectionMasks = { { MaskID = maskId, MaskInverted = false } },
+                    },
+                },
+            },
+        })
+    end
+
+    it("ignores the per-read CorrectionID and MaskID Lightroom regenerates", function()
+        local base = maskedPreset("Masked A", "a", "correction-1", "mask-1")
+        local candidate = maskedPreset("Masked B", "b", "correction-2", "mask-2")
+        local _, Handler = setup({ folders = { fakeFolder("F", { base, candidate }) } })
+
+        local r = Handler.compareDevelopPresets({
+            base = { preset_uuid = "a" },
+            candidate = { preset_uuid = "b" },
+        })
+
+        assert.are.equal(0, r.changed_count)
+        assert.are.same({}, r.changes)
+    end)
+
+    it("still reports a real difference inside a masked preset", function()
+        local base = maskedPreset("Masked A", "a", "correction-1", "mask-1", 10)
+        local candidate = maskedPreset("Masked B", "b", "correction-2", "mask-2", 40)
+        local _, Handler = setup({ folders = { fakeFolder("F", { base, candidate }) } })
+
+        local r = Handler.compareDevelopPresets({
+            base = { preset_uuid = "a" },
+            candidate = { preset_uuid = "b" },
+        })
+
+        assert.are.equal(1, r.changed_count)
+        assert.are.equal("Contrast2012", r.changes[1].key)
+        assert.are.equal(10, r.changes[1].before)
+        assert.are.equal(40, r.changes[1].after)
+    end)
+
+    it("strips volatile ids from the reported diff values", function()
+        local base = maskedPreset("Masked A", "a", "correction-1", "mask-1")
+        local candidate = fakePreset("Plain", {
+            uuid = "b",
+            settings = { Contrast2012 = 10 },
+        })
+        local _, Handler = setup({ folders = { fakeFolder("F", { base, candidate }) } })
+
+        local r = Handler.compareDevelopPresets({
+            base = { preset_uuid = "a" },
+            candidate = { preset_uuid = "b" },
+        })
+
+        assert.are.equal(1, r.changed_count)
+        assert.are.equal("MaskGroupBasedCorrections", r.changes[1].key)
+        assert.is_true(r.changes[1].before_present)
+        assert.is_false(r.changes[1].after_present)
+        assert.is_nil(r.changes[1].before[1].CorrectionID)
+        assert.is_nil(r.changes[1].before[1].CorrectionMasks[1].MaskID)
+        assert.is_true(r.changes[1].before[1].CorrectionActive)
+    end)
+end)
+
 describe("HandlerDevelop.compareDevelopPresets", function()
     it("returns deterministic setting differences", function()
         local base = fakePreset("Approved", {
@@ -393,6 +463,50 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.has_error(function() Handler.applyDevelopPreset({ photo_ids = {}, preset_name = "X" }) end)
         assert.has_error(function() Handler.applyDevelopPreset({ photo_ids = { "" }, preset_name = "X" }) end)
         assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+end)
+
+describe("HandlerDevelop numeric photo ids", function()
+    it("accepts the numeric ids the catalog hands out", function()
+        local source = helper.fakePhoto({
+            id = 10, path = "/s.jpg",
+            developSettings = { Exposure2012 = 1.0 },
+        })
+        local target = helper.fakePhoto({ id = 11, path = "/t.jpg" })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local set = Handler.setDevelopSettings({
+            photo_id = 10,
+            settings = { Exposure2012 = 0.25 },
+        })
+        assert.is_true(set.success)
+
+        local copied = Handler.copyDevelopSettings({ source_id = 10, target_ids = { 11 } })
+        assert.are.equal(1, copied.copied)
+    end)
+
+    it("reports target ids that matched no photo", function()
+        local source = helper.fakePhoto({
+            id = 10, path = "/s.jpg", developSettings = { Exposure2012 = 1.0 },
+        })
+        local target = helper.fakePhoto({ id = 11, path = "/t.jpg" })
+        local _, Handler = setup({ photos = { source, target } })
+
+        local r = Handler.copyDevelopSettings({ source_id = 10, target_ids = { 11, "ghost" } })
+
+        assert.are.equal(1, r.copied)
+        assert.are.same({ "ghost" }, r.missing)
+        assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+    end)
+
+    it("still rejects ids that are neither a number nor a non-empty string", function()
+        local _, Handler = setup({})
+        assert.has_error(function()
+            Handler.setDevelopSettings({ photo_id = true, settings = { Exposure2012 = 0 } })
+        end, "photo_id is required")
+        assert.has_error(function()
+            Handler.copyDevelopSettings({ source_id = "s", target_ids = { {} } })
+        end, "target_ids[1] must be a photo id or file path")
     end)
 end)
 

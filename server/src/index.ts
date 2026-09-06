@@ -8,9 +8,12 @@ import { Dispatcher } from "./dispatcher.js";
 import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
 import { createMcpServer } from "./create-server.js";
+import { NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
 import { parseCli, helpText } from "./cli.js";
 import { VERSION } from "./version.js";
-import { startHeartbeat } from "./heartbeat.js";
+import { startHeartbeat, probePlugin } from "./heartbeat.js";
+import { PluginLiveness, SHADOW_BRIDGE_MESSAGE } from "./plugin-liveness.js";
+import { waitUntil } from "./wait-until.js";
 import { acquireInstanceLock } from "./instance-lock.js";
 import {
   ensurePluginInstalled,
@@ -28,6 +31,16 @@ const LONG_RUNNING_TIMEOUT_MS = 300_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const PING_TIMEOUT_MS = 10_000;
 const RESPONSE_CONNECT_SETTLE_MS = 200;
+// Short enough that a tool call waiting on the verdict is not left hanging,
+// generous enough for a busy-but-healthy plugin: a ping is a no-op dispatch
+// that answered in single-digit milliseconds even mid-export.
+const PROBE_TIMEOUT_MS = 5_000;
+const PROBE_RECOVERY_INTERVAL_MS = 5_000;
+// A client that calls a tool immediately after initialize would otherwise be
+// told "plugin not connected" while the sockets are still coming up, which is
+// a lie about a perfectly healthy Lightroom. Wait out the connect instead.
+const STARTUP_GRACE_MS = 3_000;
+const CONNECT_POLL_MS = 50;
 const ACTION_TIMEOUTS_MS: Record<string, number> = {
   export_photos: LONG_RUNNING_TIMEOUT_MS,
   import_photos: LONG_RUNNING_TIMEOUT_MS,
@@ -86,16 +99,40 @@ async function main() {
     timeoutMs: REQUEST_TIMEOUT_MS,
     actionTimeoutsMs: ACTION_TIMEOUTS_MS,
   });
+  const liveness = new PluginLiveness();
+  let recoveryTimer: NodeJS.Timeout | null = null;
+  const probeOnConnect = () => {
+    const token = liveness.beginProbe();
+    if (token === null) return;
+    void probePlugin(dispatcher, PROBE_TIMEOUT_MS).then((answered) => {
+      if (!liveness.settleProbe(token, answered)) return;
+      if (answered) {
+        if (recoveryTimer) {
+          clearInterval(recoveryTimer);
+          recoveryTimer = null;
+        }
+        return;
+      }
+      console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
+      // Re-probe faster than the 30s heartbeat so the bridge recovers promptly
+      // once the process holding the plugin goes away.
+      if (!recoveryTimer) {
+        recoveryTimer = setInterval(() => probeOnConnect(), PROBE_RECOVERY_INTERVAL_MS);
+      }
+    });
+  };
   const startResponseSocket = () => {
     if (responseSocket || !requestSocket.isConnected()) return;
     responseSocket = new PluginSocket({
       port: RESPONSE_PORT,
       label: "response",
       onLine: (line) => dispatcher.handleResponseLine(line),
+      onConnect: () => probeOnConnect(),
     });
     responseSocket.connect();
   };
   const stopResponseSocket = () => {
+    liveness.reset();
     if (responseConnectTimer) {
       clearTimeout(responseConnectTimer);
       responseConnectTimer = null;
@@ -119,11 +156,36 @@ async function main() {
   });
   requestSocket.connect();
 
-  startHeartbeat(dispatcher, HEARTBEAT_INTERVAL_MS);
+  const socketsConnected = () =>
+    requestSocket.isConnected() && (responseSocket?.isConnected() ?? false);
+
+  startHeartbeat(
+    dispatcher,
+    HEARTBEAT_INTERVAL_MS,
+    (err) => {
+      console.error(`[heartbeat] ping failed: ${err.message}`);
+      // A ping that fails because the socket is down is an ordinary disconnect,
+      // not a second bridge holding the plugin. Only diagnose the latter while
+      // the connection is actually up, or a stopped plugin gets blamed on a
+      // process that does not exist.
+      if (!socketsConnected()) {
+        liveness.reset();
+        return;
+      }
+      liveness.markUnresponsive();
+      console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
+    },
+    () => liveness.markResponsive(),
+  );
 
   const server = createMcpServer({
     dispatcher,
-    isReady: () => requestSocket.isConnected() && (responseSocket?.isConnected() ?? false),
+    isReady: () => socketsConnected() && liveness.isUsable(),
+    notReadyMessage: () => (socketsConnected() ? SHADOW_BRIDGE_MESSAGE : NOT_CONNECTED_MESSAGE),
+    settleReadiness: async () => {
+      await waitUntil(socketsConnected, STARTUP_GRACE_MS, CONNECT_POLL_MS);
+      await liveness.settled();
+    },
   });
 
   const transport = new StdioServerTransport();

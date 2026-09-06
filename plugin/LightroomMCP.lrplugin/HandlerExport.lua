@@ -8,6 +8,25 @@ local Log = require 'Log'
 
 local ExportHandler = {}
 
+-- Lightroom's default collision handling is "ask", which opens a modal
+-- ("The following files already exist") and blocks the export task until a
+-- human clicks. Over the bridge that hangs the request until the server
+-- timeout and queues every later request behind it, so re-exporting the same
+-- photo to the same folder wedged the plugin. Never prompt.
+local COLLISION_HANDLING = {
+    rename = 'rename',
+    overwrite = 'overwrite',
+    skip = 'skip',
+}
+local DEFAULT_COLLISION_HANDLING = 'rename'
+
+local EXPORT_FORMATS = {
+    jpeg = 'JPEG',
+    png = 'PNG',
+    tiff = 'TIFF',
+    original = 'ORIGINAL',
+}
+
 function ExportHandler.exportPhotos(args)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
@@ -44,11 +63,17 @@ function ExportHandler.exportPhotos(args)
     -- LR_export_destinationPathPrefix; sourceFolder ignores it and
     -- writes next to the original. LR_format is set in the
     -- format-specific block below.
+    local collisionHandling = args.on_existing or DEFAULT_COLLISION_HANDLING
+    if not COLLISION_HANDLING[collisionHandling] then
+        error("on_existing must be one of: rename, overwrite, skip")
+    end
+
     local exportSettings = {
         LR_export_destinationType = 'specificFolder',
         LR_export_destinationPathPrefix = args.destination,
         LR_export_useSubfolder = false,
         LR_jpeg_quality = args.quality or 90,
+        LR_collisionHandling = COLLISION_HANDLING[collisionHandling],
     }
 
     -- Set dimensions if specified
@@ -60,16 +85,22 @@ function ExportHandler.exportPhotos(args)
     end
 
     -- Handle different formats
-    if args.format == 'jpeg' or args.format == 'JPEG' or not args.format then
-        exportSettings.LR_format = 'JPEG'
+    local requestedFormat = args.format
+    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+
+    local formatKey = requestedFormat and requestedFormat:lower() or 'jpeg'
+    local resolvedFormat = EXPORT_FORMATS[formatKey]
+    if not resolvedFormat then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+
+    exportSettings.LR_format = resolvedFormat
+    if resolvedFormat == 'JPEG' then
         exportSettings.LR_export_colorSpace = 'sRGB'
-    elseif args.format == 'png' or args.format == 'PNG' then
-        exportSettings.LR_format = 'PNG'
-    elseif args.format == 'tiff' or args.format == 'TIFF' then
-        exportSettings.LR_format = 'TIFF'
+    elseif resolvedFormat == 'TIFF' then
         exportSettings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
-    elseif args.format == 'original' or args.format == 'ORIGINAL' then
-        exportSettings.LR_format = 'ORIGINAL'
     end
 
     -- Create export session

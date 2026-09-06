@@ -37,10 +37,22 @@ describe("HandlerOrganization.setRating", function()
         assert.has_error(function() Handler.setRating({ photo_ids = { "1" } }) end)
     end)
 
-    it("skips unknown photos silently", function()
-        local _, Handler = setup({ photos = {} })
-        local r = Handler.setRating({ photo_ids = { "missing" }, rating = 2 })
-        assert.are.equal(0, r.updated)
+    it("reports unknown photos instead of claiming a silent success", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
+        local _, Handler = setup({ photos = { p1 } })
+
+        local r = Handler.setRating({ photo_ids = { "1", "missing" }, rating = 2 })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "missing" }, r.missing)
+        assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+    end)
+
+    it("rejects a rating that is not a number", function()
+        local _, Handler = setup({})
+        assert.has_error(
+            function() Handler.setRating({ photo_ids = { "1" }, rating = "3" }) end,
+            "rating must be a number between 0 and 5")
     end)
 end)
 
@@ -82,6 +94,18 @@ describe("HandlerOrganization.setKeywords", function()
         local _, Handler = setup({})
         assert.has_error(function() Handler.setKeywords({}) end)
         assert.has_error(function() Handler.setKeywords({ photo_ids = {} }) end)
+    end)
+
+    it("rejects a call with neither add_keywords nor remove_keywords", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local _, Handler = setup({ photos = { p1 } })
+
+        assert.has_error(
+            function() Handler.setKeywords({ photo_ids = { "1" } }) end,
+            "add_keywords or remove_keywords is required")
+        assert.has_error(
+            function() Handler.setKeywords({ photo_ids = { "1" }, add_keywords = {} }) end,
+            "add_keywords or remove_keywords is required")
     end)
 
     it("limits keyword batch size", function()
