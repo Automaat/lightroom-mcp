@@ -61,12 +61,21 @@ function CollectionsHandler.listCollections(args)
 end
 
 function CollectionsHandler.createCollection(args)
-    if not args.name then
+    if type(args.name) ~= "string" or args.name:match("^%s*$") then
         error("name is required")
     end
 
     local catalog = LrApplication.activeCatalog()
     local collectionName = args.name
+
+    -- add_to_collection addresses collections by name, so a second collection
+    -- with the same name makes that lookup ambiguous: photos would silently
+    -- land in whichever one enumerates first.
+    for _, collection in ipairs(catalog:getChildCollections()) do
+        if collection:getName() == collectionName then
+            error("Collection already exists: " .. collectionName)
+        end
+    end
 
     catalog:withWriteAccessDo("Create Collection", function()
         catalog:createCollection(collectionName)
@@ -90,6 +99,8 @@ function CollectionsHandler.addToCollection(args)
 
     local catalog = LrApplication.activeCatalog()
     local addedCount = 0
+    local missingIds = {}
+    local missingCount = 0
 
     catalog:withWriteAccessDo("Add Photos to Collection", function()
         -- Find the collection
@@ -143,6 +154,9 @@ function CollectionsHandler.addToCollection(args)
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 table.insert(photosToAdd, entry.photo)
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
             end
         end
 
@@ -154,10 +168,14 @@ function CollectionsHandler.addToCollection(args)
 
     Log.info(string.format("Added %d photos to collection: %s", addedCount, args.collection_name))
 
+    -- Unresolvable ids used to vanish into a "success" with added=0, leaving the
+    -- caller no way to tell a typo'd id from an empty add.
     return {
         success = true,
         added = addedCount,
-        message = string.format("Added %d photos to collection", addedCount)
+        missing = missingIds,
+        message = string.format("Added %d photos to collection (%d ids not found)",
+            addedCount, missingCount)
     }
 end
 

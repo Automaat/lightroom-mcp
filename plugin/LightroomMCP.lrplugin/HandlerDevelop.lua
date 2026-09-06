@@ -118,6 +118,18 @@ local function requireString(value, name)
     end
 end
 
+-- Photo ids leave the catalog as numbers (localIdentifier), so a caller feeding
+-- search/selection output back in sends numbers. PhotoLookup normalizes with
+-- tostring; only these validators used to reject them, which surfaced as a
+-- misleading "photo_id is required".
+local function requirePhotoId(value, name)
+    if type(value) == "number" then
+        return tostring(value)
+    end
+    requireString(value, name)
+    return value
+end
+
 local function requireStringArray(value, name, maxItems)
     if type(value) ~= "table" then
         error(name .. " is required")
@@ -143,6 +155,42 @@ local function requireStringArray(value, name, maxItems)
     if maxItems and count > maxItems then
         error(name .. " must contain at most " .. tostring(maxItems) .. " items")
     end
+end
+
+local function requirePhotoIdArray(value, name, maxItems)
+    if type(value) ~= "table" then
+        error(name .. " is required")
+    end
+
+    local normalized = {}
+    local count = 0
+    local maxIndex = 0
+    for key, item in pairs(value) do
+        if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then
+            error(name .. " must be an array")
+        end
+        if type(item) == "number" then
+            normalized[key] = tostring(item)
+        elseif type(item) == "string" and item ~= "" then
+            normalized[key] = item
+        else
+            error(name .. "[" .. tostring(key) .. "] must be a photo id or file path")
+        end
+        count = count + 1
+        if key > maxIndex then maxIndex = key end
+    end
+
+    if count == 0 then
+        error(name .. " is required")
+    end
+    if count ~= maxIndex then
+        error(name .. " must be an array")
+    end
+    if maxItems and count > maxItems then
+        error(name .. " must contain at most " .. tostring(maxItems) .. " items")
+    end
+
+    return normalized
 end
 
 local function requireAllowedDevelopSettingKey(key)
@@ -403,6 +451,25 @@ local function normalizedPresetSettings(preset)
     return normalized
 end
 
+-- Lightroom mints a fresh CorrectionID/MaskID on every getSetting() call, so
+-- they identify a read rather than the preset. Comparing them made every
+-- masked preset (all the Adaptive/AI ones) differ from itself.
+local VOLATILE_SETTING_KEYS = {
+    CorrectionID = true,
+    MaskID = true,
+}
+
+local function withoutVolatileIds(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for key, item in pairs(value) do
+        if not VOLATILE_SETTING_KEYS[key] then
+            out[key] = withoutVolatileIds(item)
+        end
+    end
+    return out
+end
+
 local function deepEqual(left, right)
     if type(left) ~= type(right) then return false end
     if type(left) ~= "table" then return left == right end
@@ -465,13 +532,13 @@ function DevelopHandler.compareDevelopPresets(args)
 
     local changes = {}
     for _, key in ipairs(keyList) do
-        local before = baseSettings[key]
-        local after = candidateSettings[key]
+        local before = withoutVolatileIds(baseSettings[key])
+        local after = withoutVolatileIds(candidateSettings[key])
         if not deepEqual(before, after) then
             local change = {
                 key = key,
-                before_present = before ~= nil,
-                after_present = after ~= nil,
+                before_present = baseSettings[key] ~= nil,
+                after_present = candidateSettings[key] ~= nil,
             }
             if before ~= nil then change.before = before end
             if after ~= nil then change.after = after end
@@ -489,7 +556,7 @@ function DevelopHandler.compareDevelopPresets(args)
 end
 
 function DevelopHandler.createDevelopPreset(args)
-    requireString(args.photo_id, "photo_id")
+    args.photo_id = requirePhotoId(args.photo_id, "photo_id")
     requireString(args.preset_name, "preset_name")
     requireStringArray(args.settings, "settings", #ALLOWED_DEVELOP_SETTING_KEYS)
     requireDevelopSettingWhitelist(args.settings)
@@ -589,11 +656,14 @@ function DevelopHandler.exportDevelopPreset(args)
 end
 
 function DevelopHandler.applyDevelopPreset(args)
-    requireStringArray(args.photo_ids, "photo_ids", MAX_BULK_PHOTO_IDS)
+    args.photo_ids = requirePhotoIdArray(args.photo_ids, "photo_ids", MAX_BULK_PHOTO_IDS)
     local selectedPreset = findPreset(args)
 
     local catalog = LrApplication.activeCatalog()
     local appliedCount = 0
+
+    local missingIds = {}
+    local missingCount = 0
 
     catalog:withWriteAccessDo("Apply Develop Preset", function()
         local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
@@ -605,6 +675,9 @@ function DevelopHandler.applyDevelopPreset(args)
                     resolvedEntry.photo:applyDevelopPreset(selectedPreset.preset)
                 end
                 appliedCount = appliedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(resolvedEntry.id)
             end
         end
     end)
@@ -618,13 +691,15 @@ function DevelopHandler.applyDevelopPreset(args)
         folder = selectedPreset.folder,
         scope = selectedPreset.scope,
         uuid = selectedPreset.uuid,
-        message = string.format("Applied preset %s to %d photos", selectedPreset.name, appliedCount),
+        missing = missingIds,
+        message = string.format("Applied preset %s to %d photos (%d ids not found)",
+            selectedPreset.name, appliedCount, missingCount),
     }
 end
 
 function DevelopHandler.copyDevelopSettings(args)
-    requireString(args.source_id, "source_id")
-    requireStringArray(args.target_ids, "target_ids", MAX_BULK_PHOTO_IDS)
+    args.source_id = requirePhotoId(args.source_id, "source_id")
+    args.target_ids = requirePhotoIdArray(args.target_ids, "target_ids", MAX_BULK_PHOTO_IDS)
     requireDevelopSettingWhitelist(args.settings)
 
     local catalog = LrApplication.activeCatalog()
@@ -647,6 +722,8 @@ function DevelopHandler.copyDevelopSettings(args)
     end
 
     local copiedCount = 0
+    local missingIds = {}
+    local missingCount = 0
 
     catalog:withWriteAccessDo("Copy Develop Settings", function()
         local resolved = PhotoLookup.resolveMany(catalog, args.target_ids)
@@ -654,6 +731,9 @@ function DevelopHandler.copyDevelopSettings(args)
             if entry.photo then
                 entry.photo:applyDevelopSettings(toApply)
                 copiedCount = copiedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
             end
         end
     end)
@@ -664,12 +744,14 @@ function DevelopHandler.copyDevelopSettings(args)
         success = true,
         copied = copiedCount,
         source = args.source_id,
-        message = string.format("Copied develop settings from %s to %d photos", args.source_id, copiedCount),
+        missing = missingIds,
+        message = string.format("Copied develop settings from %s to %d photos (%d ids not found)",
+            args.source_id, copiedCount, missingCount),
     }
 end
 
 function DevelopHandler.setDevelopSettings(args)
-    requireString(args.photo_id, "photo_id")
+    args.photo_id = requirePhotoId(args.photo_id, "photo_id")
     requireDevelopSettingsObject(args.settings)
 
     local catalog = LrApplication.activeCatalog()

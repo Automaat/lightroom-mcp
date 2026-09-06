@@ -109,8 +109,23 @@ const stringArray = (description: string, maxItems?: number) => ({
   description,
 });
 
-const photoIdArray = (description: string) =>
-  stringArray(description, MAX_BULK_PHOTO_IDS);
+/**
+ * Photo ids come back from the catalog as numbers (`localIdentifier`), so a
+ * caller piping search/selection output straight into a write tool sends
+ * numbers. Accept both rather than making every caller stringify.
+ */
+const photoIdSchema = (description: string) => ({
+  oneOf: [{ type: "string", minLength: 1 }, { type: "number" }],
+  description,
+});
+
+const photoIdArray = (description: string) => ({
+  type: "array",
+  items: { oneOf: [{ type: "string", minLength: 1 }, { type: "number" }] },
+  minItems: 1,
+  maxItems: MAX_BULK_PHOTO_IDS,
+  description,
+});
 
 const dateStringSchema = (description: string) => ({
   type: "string",
@@ -219,7 +234,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: { type: "string", description: "Photo ID or file path" },
+        photo_id: photoIdSchema("Photo ID or file path"),
       },
       required: ["photo_id"],
     },
@@ -343,6 +358,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         width: { type: "number", description: "Max width in pixels (optional)" },
         height: { type: "number", description: "Max height in pixels (optional)" },
+        on_existing: {
+          type: "string",
+          description:
+            "What to do when the destination already holds a file with that name (default rename). Lightroom never prompts.",
+          enum: ["rename", "overwrite", "skip"],
+        },
       },
       required: ["photo_ids", "destination"],
     },
@@ -388,7 +409,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: { type: "string", minLength: 1, description: "Source photo ID or file path" },
+        photo_id: photoIdSchema("Source photo ID or file path"),
         preset_name: {
           type: "string",
           minLength: 1,
@@ -460,10 +481,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        source_id: {
-          type: "string",
-          description: "Source photo ID or file path",
-        },
+        source_id: photoIdSchema("Source photo ID or file path"),
         target_ids: photoIdArray("Target photo IDs or file paths"),
         settings: {
           type: "array",
@@ -489,10 +507,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: {
-          type: "string",
-          description: "Photo ID or file path",
-        },
+        photo_id: photoIdSchema("Photo ID or file path"),
         settings: {
           type: "object",
           properties: developSettingsProperties,
