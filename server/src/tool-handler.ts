@@ -1,4 +1,5 @@
 import type { Dispatcher } from "./dispatcher.js";
+import { validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
@@ -18,6 +19,14 @@ export const NOT_CONNECTED_MESSAGE =
 
 export function createCallToolHandler(deps: ToolHandlerDeps) {
   return async (name: string, args: unknown): Promise<ToolResponse> => {
+    const invalid = validateToolArgs(name, args);
+    if (invalid) {
+      return {
+        content: [{ type: "text", text: invalid }],
+        isError: true,
+      };
+    }
+
     await deps.settleReadiness?.();
 
     if (!deps.isReady()) {

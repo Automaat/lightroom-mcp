@@ -143,7 +143,10 @@ describe('createMcpServer', () => {
       pair = await connect({
         call: async () => { throw new Error('Failed to send request to plugin (socket dropped)'); },
       });
-      const result = asToolResult(await pair.client.callTool({ name: 'set_rating', arguments: {} }));
+      const result = asToolResult(await pair.client.callTool({
+        name: 'set_rating',
+        arguments: { photo_ids: [914], rating: 3 },
+      }));
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toMatch(/socket dropped/);
     });
