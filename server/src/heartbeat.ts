@@ -10,7 +10,7 @@
 // missed pong itself; a failed/timed-out ping is only logged for visibility.
 
 export interface HeartbeatDispatcher {
-  call(action: string, params: unknown): Promise<unknown>;
+  call(action: string, params: unknown, timeoutMs?: number): Promise<unknown>;
 }
 
 /**
@@ -24,10 +24,28 @@ export function startHeartbeat(
   dispatcher: HeartbeatDispatcher,
   intervalMs: number,
   onError: (err: Error) => void = (err) => console.error(`[heartbeat] ping failed: ${err.message}`),
+  onSuccess: () => void = () => {},
 ): NodeJS.Timeout {
   return setInterval(() => {
-    dispatcher.call("ping", {}).catch((err: Error) => {
-      onError(err);
-    });
+    dispatcher.call("ping", {}).then(
+      () => onSuccess(),
+      (err: Error) => onError(err),
+    );
   }, intervalMs);
+}
+
+/**
+ * One ping outside the interval loop, for probing a freshly opened connection.
+ * Resolves true when the plugin answered.
+ */
+export async function probePlugin(
+  dispatcher: HeartbeatDispatcher,
+  timeoutMs?: number,
+): Promise<boolean> {
+  try {
+    await dispatcher.call("ping", {}, timeoutMs);
+    return true;
+  } catch {
+    return false;
+  }
 }

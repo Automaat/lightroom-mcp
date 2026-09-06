@@ -11,6 +11,8 @@ import { VERSION } from "./version.js";
 export interface ServerDeps {
   dispatcher: Pick<Dispatcher, "call">;
   isReady: () => boolean;
+  notReadyMessage?: () => string;
+  settleReadiness?: () => Promise<void>;
 }
 
 export function createMcpServer(deps: ServerDeps): Server {

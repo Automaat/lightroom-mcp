@@ -62,11 +62,11 @@ export class Dispatcher {
     p.resolve(resp);
   }
 
-  async call(action: string, params: unknown): Promise<PluginResponse> {
+  async call(action: string, params: unknown, timeoutOverrideMs?: number): Promise<PluginResponse> {
     const id = `req_${Date.now()}_${this.idCounter++}`;
     // A non-positive override means "no override": `0` would otherwise arm a
     // 0 ms timer that rejects on the next tick.
-    const override = this.actionTimeoutsMs[action];
+    const override = timeoutOverrideMs ?? this.actionTimeoutsMs[action];
     const timeoutMs = override !== undefined && override > 0 ? override : this.timeoutMs;
 
     const responsePromise = new Promise<PluginResponse>((resolve, reject) => {
