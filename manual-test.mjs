@@ -65,34 +65,56 @@ function connect(port, label) {
   });
 }
 
-const [reqSock, respSock] = await Promise.all([
-  connect(REQUEST_PORT, "request"),
-  connect(RESPONSE_PORT, "response"),
-]);
+const RESPONSE_CONNECT_SETTLE_MS = 200;
+const RESPONSE_RECONNECT_DELAY_MS = 500;
+
+const reqSock = await connect(REQUEST_PORT, "request");
+await new Promise((resolve) => setTimeout(resolve, RESPONSE_CONNECT_SETTLE_MS));
 
 let buf = "";
+let respSock = null;
 const responsePromise = new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error("timeout waiting for response")), TIMEOUT_MS);
-  respSock.on("data", (chunk) => {
-    buf += chunk;
-    let idx;
-    while ((idx = buf.indexOf("\n")) !== -1) {
-      const line = buf.slice(0, idx).trim();
-      buf = buf.slice(idx + 1);
-      if (!line) continue;
-      const resp = JSON.parse(line);
-      if (resp.id === id) {
-        clearTimeout(timer);
-        resolve(resp);
+  let settled = false;
+
+  const attachResponseSocket = (sock) => {
+    respSock = sock;
+    sock.on("data", (chunk) => {
+      buf += chunk;
+      let idx;
+      while ((idx = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line) continue;
+        const resp = JSON.parse(line);
+        if (resp.id === id) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(resp);
+        }
       }
-    }
-  });
-  respSock.on("close", () => reject(new Error("response socket closed")));
+    });
+    sock.on("close", () => {
+      if (settled) return;
+      buf = "";
+      console.log("[response] dropped by plugin rebind, reconnecting");
+      setTimeout(reconnectResponseSocket, RESPONSE_RECONNECT_DELAY_MS);
+    });
+  };
+
+  function reconnectResponseSocket() {
+    if (settled) return;
+    connect(RESPONSE_PORT, "response").then(attachResponseSocket, (err) => {
+      if (settled) return;
+      console.log(`[response] connect failed (${err.message}), retrying`);
+      setTimeout(reconnectResponseSocket, RESPONSE_RECONNECT_DELAY_MS);
+    });
+  }
+
+  reconnectResponseSocket();
 });
 
-reqSock.write(JSON.stringify({ hello: token }) + "\n");
-
-const payload = JSON.stringify({ id, action, params });
+const payload = JSON.stringify({ hello: token, id, action, params });
 console.log(`>>> ${payload}`);
 reqSock.write(payload + "\n");
 
@@ -100,4 +122,4 @@ const resp = await responsePromise;
 console.log("<<<", JSON.stringify(resp, null, 2));
 
 reqSock.destroy();
-respSock.destroy();
+respSock?.destroy();
