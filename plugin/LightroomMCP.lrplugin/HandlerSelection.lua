@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 
+local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 
 local SelectionHandler = {}
@@ -54,6 +55,76 @@ function SelectionHandler.getSelectedPhotos(args)
         photos = results,
         has_more = (offset + #results) < total,
     }
+end
+
+-- Test-only: kept out of server/src/tool-contracts.ts so it is reachable from
+-- the raw TCP probe but never from an MCP client, which must not be able to
+-- reorder the user's filmstrip. Lets the e2e playbook stage the selection that
+-- get_selected_photos reads back, instead of a human clicking in Lightroom.
+function SelectionHandler.setSelection(args)
+    args = args or {}
+    local ids = args.photo_ids
+    if type(ids) ~= "table" or ids[1] == nil then
+        error("photo_ids is required")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local resolved = PhotoLookup.resolveMany(catalog, ids)
+
+    local photos = {}
+    local missing = {}
+    local seen = {}
+    local selectedCount = 0
+    local missingCount = 0
+    for _, entry in ipairs(resolved) do
+        if entry.photo then
+            if not seen[entry.photo] then
+                seen[entry.photo] = true
+                selectedCount = selectedCount + 1
+                photos[selectedCount] = entry.photo
+            end
+        else
+            missingCount = missingCount + 1
+            missing[missingCount] = tostring(entry.id)
+        end
+    end
+
+    if selectedCount == 0 then
+        error("No photos matched photo_ids")
+    end
+
+    -- Yields to the UI thread, so it must stay OUTSIDE withReadAccessDo for the
+    -- same reason getTargetPhotos does (#134/#124). First arg becomes active.
+    Log.info(string.format("setSelection: selecting %d (missing %d)", selectedCount, missingCount))
+    catalog:setSelectedPhotos(photos[1], photos)
+
+    -- Lightroom ignores photos outside the current view source and leaves the
+    -- old selection in place, reporting nothing. Read the selection back so a
+    -- caller is never told a selection happened that did not.
+    local requested = {}
+    for _, photo in ipairs(photos) do
+        requested[photo] = true
+    end
+    local actualCount = 0
+    for _, photo in ipairs(catalog:getTargetPhotos() or {}) do
+        if requested[photo] then
+            actualCount = actualCount + 1
+        end
+    end
+
+    local result = {
+        selected = actualCount,
+        requested = selectedCount,
+        active = photos[1].localIdentifier,
+        missing = missing,
+    }
+    if actualCount < selectedCount then
+        result.warning = string.format(
+            "Lightroom selected %d of %d photos: the rest are not in the current view source. "
+            .. "Switch Lightroom to a source that contains them, such as All Photographs.",
+            actualCount, selectedCount)
+    end
+    return result
 end
 
 return SelectionHandler
