@@ -75,6 +75,11 @@ end
 
 local pluginState = _G.LightroomMCP_State
 
+-- Nothing in the plugin raises this any more: the LrShutdownApp and
+-- LrShutdownPlugin hooks were removed because they cost a second or more on
+-- every quit and bought no teardown that Lightroom's own context cancellation
+-- did not already do. The guards stay because shutdown() below is still the
+-- programmatic stop, and re-registering a hook is a one-line change.
 local function shutdownRequested()
     return pluginState.shuttingDown == true
 end

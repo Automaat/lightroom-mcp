@@ -15,8 +15,6 @@ return {
     -- plugin also exposes at least one menu item — see LrLibraryMenuItems
     -- below. Adobe's own remote_control_socket sample uses this pattern.
     LrForceInitPlugin = true,
-    LrShutdownPlugin = 'PluginShutdown.lua',
-    LrShutdownApp = 'PluginShutdown.lua',
 
     LrLibraryMenuItems = {
         {
