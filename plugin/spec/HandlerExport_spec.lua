@@ -33,6 +33,41 @@ describe("HandlerExport.exportPhotos", function()
         assert.are.equal("JPEG", calls[1].exportSettings.LR_format)
     end)
 
+    it("never lets Lightroom prompt about existing files", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler, calls = setup({ photos = { p } })
+
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" })
+        assert.are.equal("rename", calls[1].exportSettings.LR_collisionHandling)
+
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", on_existing = "overwrite" })
+        assert.are.equal("overwrite", calls[2].exportSettings.LR_collisionHandling)
+
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", on_existing = "skip" })
+        assert.are.equal("skip", calls[3].exportSettings.LR_collisionHandling)
+    end)
+
+    it("rejects an unknown on_existing mode, including Lightroom's own ask", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+
+        assert.has_error(function()
+            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", on_existing = "ask" })
+        end, "on_existing must be one of: rename, overwrite, skip")
+    end)
+
+    it("rejects an unsupported format instead of silently exporting another", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+
+        assert.has_error(function()
+            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", format = "bmp" })
+        end, "format must be one of: jpeg, png, tiff, original")
+        assert.has_error(function()
+            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", format = 7 })
+        end, "format must be one of: jpeg, png, tiff, original")
+    end)
+
     it("applies width/height constraint", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler, calls = setup({ photos = { p } })
