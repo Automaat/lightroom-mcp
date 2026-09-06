@@ -67,18 +67,42 @@ function connect(port, label) {
 
 const RESPONSE_CONNECT_SETTLE_MS = 200;
 const RESPONSE_RECONNECT_DELAY_MS = 500;
+const CONNECT_RETRY_DELAY_MS = 500;
+const CONNECT_RETRY_ATTEMPTS = 20;
 
-const reqSock = await connect(REQUEST_PORT, "request");
+// The plugin rebinds a listener after a client disconnects, and the port is
+// briefly refused during that window. The MCP server rides it out by retrying,
+// so back-to-back probe runs need the same patience.
+async function connectWithRetry(port, label) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await connect(port, label);
+    } catch (err) {
+      if (attempt >= CONNECT_RETRY_ATTEMPTS) throw err;
+      console.log(`[${label}] connect failed (${err.message}), retrying`);
+      await new Promise((resolve) => setTimeout(resolve, CONNECT_RETRY_DELAY_MS));
+    }
+  }
+}
+
+const reqSock = await connectWithRetry(REQUEST_PORT, "request");
 await new Promise((resolve) => setTimeout(resolve, RESPONSE_CONNECT_SETTLE_MS));
 
 let buf = "";
 let respSock = null;
+
+let signalConnected;
+const responseConnected = new Promise((resolve) => {
+  signalConnected = resolve;
+});
+
 const responsePromise = new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error("timeout waiting for response")), TIMEOUT_MS);
   let settled = false;
 
   const attachResponseSocket = (sock) => {
     respSock = sock;
+    signalConnected();
     sock.on("data", (chunk) => {
       buf += chunk;
       let idx;
@@ -104,7 +128,7 @@ const responsePromise = new Promise((resolve, reject) => {
 
   function reconnectResponseSocket() {
     if (settled) return;
-    connect(RESPONSE_PORT, "response").then(attachResponseSocket, (err) => {
+    connectWithRetry(RESPONSE_PORT, "response").then(attachResponseSocket, (err) => {
       if (settled) return;
       console.log(`[response] connect failed (${err.message}), retrying`);
       setTimeout(reconnectResponseSocket, RESPONSE_RECONNECT_DELAY_MS);
@@ -113,6 +137,8 @@ const responsePromise = new Promise((resolve, reject) => {
 
   reconnectResponseSocket();
 });
+
+await responseConnected;
 
 const payload = JSON.stringify({ hello: token, id, action, params });
 console.log(`>>> ${payload}`);
