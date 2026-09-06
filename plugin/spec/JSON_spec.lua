@@ -63,6 +63,12 @@ describe("JSON", function()
             assert.are.equal(1e308, decoded.e)
         end)
 
+        it("rejects a malformed number instead of decoding it as nil", function()
+            for _, text in ipairs({ '{"a":1e}', '{"a":1e+}', '{"a":1e-}', '{"a":-}' }) do
+                assert.has_error(function() JSON:decode(text) end)
+            end
+        end)
+
         it("still decodes plain integers and decimals", function()
             local decoded = JSON:decode('{"a":42,"b":-7,"c":150.5}')
 

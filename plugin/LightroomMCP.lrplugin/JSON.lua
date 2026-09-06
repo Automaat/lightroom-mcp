@@ -250,7 +250,15 @@ function JSON:decode(str)
                     pos = pos + 1
                 end
             end
-            return tonumber(str:sub(start, pos - 1))
+            -- tonumber returns nil for a malformed number such as "1e", "1e+"
+            -- or a lone "-". Returning that nil would drop the field silently
+            -- and read as null; a malformed number is a parse error.
+            local numberText = str:sub(start, pos - 1)
+            local value = tonumber(numberText)
+            if value == nil then
+                error("Invalid number: " .. numberText)
+            end
+            return value
         else
             error("Unexpected character: " .. char)
         end
