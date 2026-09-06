@@ -40,17 +40,51 @@ describe('PluginLiveness', () => {
     expect(liveness.isUsable()).toBe(false);
   });
 
-  it('keeps the first probe when beginProbe is called again', async () => {
+  it('refuses a second probe while one is in flight', () => {
     const liveness = new PluginLiveness();
-    liveness.beginProbe();
-    liveness.beginProbe();
+
+    const first = liveness.beginProbe();
+    const second = liveness.beginProbe();
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+
+    liveness.settleProbe(first as number, true);
+    expect(liveness.beginProbe()).not.toBeNull();
+  });
+
+  it('lets a slow probe settle without a second one overwriting it', async () => {
+    const liveness = new PluginLiveness();
+    const token = liveness.beginProbe() as number;
+
+    expect(liveness.beginProbe()).toBeNull();
+    expect(liveness.settleProbe(token, true)).toBe(true);
+
+    expect(liveness.current()).toBe('responsive');
+  });
+
+  it('discards a probe verdict from a connection already torn down', () => {
+    const liveness = new PluginLiveness();
+    const stale = liveness.beginProbe() as number;
+
+    liveness.reset();
+    const applied = liveness.settleProbe(stale, false);
+
+    expect(applied).toBe(false);
+    expect(liveness.current()).toBe('unknown');
+    expect(liveness.isUsable()).toBe(true);
+  });
+
+  it('releases waiters when the probe settles', async () => {
+    const liveness = new PluginLiveness();
+    const token = liveness.beginProbe() as number;
 
     let settled = false;
     const waiter = liveness.settled().then(() => { settled = true; });
     await Promise.resolve();
     expect(settled).toBe(false);
 
-    liveness.markResponsive();
+    liveness.settleProbe(token, true);
     await waiter;
     expect(settled).toBe(true);
   });

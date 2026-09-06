@@ -27,6 +27,7 @@ export class PluginLiveness {
   private state: PluginLivenessState = "unknown";
   private pending: Promise<void> | null = null;
   private resolvePending: (() => void) | null = null;
+  private generation = 0;
 
   markResponsive(): void {
     this.state = "responsive";
@@ -40,15 +41,36 @@ export class PluginLiveness {
 
   reset(): void {
     this.state = "unknown";
+    this.generation += 1;
     this.release();
   }
 
-  /** Marks a probe as in flight so callers can await its verdict. */
-  beginProbe(): void {
-    if (this.pending) return;
+  /**
+   * Claims the right to probe. Returns a token to hand back to settleProbe, or
+   * null when a probe is already running: without this the recovery interval
+   * could stack probes whose verdicts then land in arbitrary order, letting a
+   * slow timeout overwrite a fast success.
+   */
+  beginProbe(): number | null {
+    if (this.pending) return null;
     this.pending = new Promise<void>((resolve) => {
       this.resolvePending = resolve;
     });
+    return this.generation;
+  }
+
+  /**
+   * Records a probe verdict, ignoring one that belongs to a connection already
+   * torn down (reset bumps the generation). Returns whether it was applied.
+   */
+  settleProbe(token: number, responsive: boolean): boolean {
+    if (token !== this.generation) return false;
+    if (responsive) {
+      this.markResponsive();
+    } else {
+      this.markUnresponsive();
+    }
+    return true;
   }
 
   /**

@@ -102,17 +102,17 @@ async function main() {
   const liveness = new PluginLiveness();
   let recoveryTimer: NodeJS.Timeout | null = null;
   const probeOnConnect = () => {
-    liveness.beginProbe();
+    const token = liveness.beginProbe();
+    if (token === null) return;
     void probePlugin(dispatcher, PROBE_TIMEOUT_MS).then((answered) => {
+      if (!liveness.settleProbe(token, answered)) return;
       if (answered) {
-        liveness.markResponsive();
         if (recoveryTimer) {
           clearInterval(recoveryTimer);
           recoveryTimer = null;
         }
         return;
       }
-      liveness.markUnresponsive();
       console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
       // Re-probe faster than the 30s heartbeat so the bridge recovers promptly
       // once the process holding the plugin goes away.
