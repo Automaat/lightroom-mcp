@@ -21,6 +21,7 @@ local HANDLER_MODULES = {
 --                      a test can invoke onConnected/onMessage/etc directly
 --   onSleep        -- called with the shared state on each LrTasks.sleep, so a
 --                      test can flip flags between monitor-loop ticks
+--   sends          -- array; every line written to a bound socket lands here
 local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
@@ -63,7 +64,9 @@ local function installStubs(prefs, asyncTasks, opts)
                     reconnect = function()
                         if opts.socketOps then table.insert(opts.socketOps, "reconnect") end
                     end,
-                    send = function() end,
+                    send = function(_, line)
+                        if opts.sends then table.insert(opts.sends, line) end
+                    end,
                 }
             end,
         },
@@ -210,6 +213,69 @@ describe("PluginInfoProvider server task", function()
     end)
     after_each(function()
         io.open = realOpen
+    end)
+
+    describe("undecodable requests", function()
+        local function startServerCapturing(sends)
+            local binds = {}
+            installStubs(nil, nil, {
+                runTask = true, stopLoopOnSleep = true, cleanups = {},
+                capturedBinds = binds, sends = sends,
+            })
+            package.loaded.JSON = nil
+            local mod = loadInfoProvider()
+            mod.startServer()
+            _G.LightroomMCP_State.sendConnected = true
+            return binds
+        end
+
+        local function malformed(token)
+            return '{"hello":"' .. token .. '","id":"req_1","action":"ping","params":{"x":"\\q"}}'
+        end
+
+        it("answers an authenticated client instead of leaving it to time out", function()
+            local sends = {}
+            local binds = startServerCapturing(sends)
+
+            binds[1].onMessage(nil, malformed(_G.LightroomMCP_State.token))
+
+            assert.is_not_nil(sends[1])
+            assert.is_nil(sends[2])
+            assert.is_not_nil(sends[1]:find('"id":"req_1"', 1, true))
+            assert.is_not_nil(sends[1]:find('Malformed request', 1, true))
+        end)
+
+        it("stays silent when the salvaged token does not match", function()
+            local sends = {}
+            local binds = startServerCapturing(sends)
+
+            binds[1].onMessage(nil, malformed("not-the-token"))
+
+            assert.is_nil(sends[1])
+        end)
+
+        it("stays silent when no id can be salvaged", function()
+            local sends = {}
+            local binds = startServerCapturing(sends)
+
+            binds[1].onMessage(nil, '{"hello":"' .. _G.LightroomMCP_State.token .. '","action":"ping"')
+
+            assert.is_nil(sends[1])
+        end)
+    end)
+
+    it("can start again after a stop, without a reload in between", function()
+        installStubs(nil, nil, { runTask = false, cleanups = {} })
+        local mod = loadInfoProvider()
+
+        mod.startServer()
+        assert.is_true(_G.LightroomMCP_State.running)
+
+        mod.stopServer()
+        assert.is_false(_G.LightroomMCP_State.running)
+
+        mod.startServerFromPanel()
+        assert.is_true(_G.LightroomMCP_State.running)
     end)
 
     it("bumps instanceId on every start", function()
