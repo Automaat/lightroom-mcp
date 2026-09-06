@@ -28,6 +28,21 @@ describe('waitUntil', () => {
     expect(ticks).toBe(3);
   });
 
+  it('polls with real timers when no clock is injected', async () => {
+    let ready = false;
+    setTimeout(() => { ready = true; }, 30);
+
+    const held = await waitUntil(() => ready, 2_000, 10);
+
+    expect(held).toBe(true);
+  });
+
+  it('gives up at the deadline with real timers too', async () => {
+    const held = await waitUntil(() => false, 40, 10);
+
+    expect(held).toBe(false);
+  });
+
   it('gives up at the deadline instead of waiting forever', async () => {
     let clock = 0;
     const held = await waitUntil(

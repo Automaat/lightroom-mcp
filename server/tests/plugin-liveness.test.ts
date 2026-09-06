@@ -40,6 +40,21 @@ describe('PluginLiveness', () => {
     expect(liveness.isUsable()).toBe(false);
   });
 
+  it('keeps the first probe when beginProbe is called again', async () => {
+    const liveness = new PluginLiveness();
+    liveness.beginProbe();
+    liveness.beginProbe();
+
+    let settled = false;
+    const waiter = liveness.settled().then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    liveness.markResponsive();
+    await waiter;
+    expect(settled).toBe(true);
+  });
+
   it('does not block when no probe is in flight', async () => {
     const liveness = new PluginLiveness();
 

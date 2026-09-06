@@ -40,6 +40,18 @@ describe('validateToolArgs', () => {
     expect(msg).toContain("required property 'rating'");
   });
 
+  it('treats missing arguments as an empty object', () => {
+    expect(validateToolArgs('search_photos', undefined)).toBeNull();
+    expect(validateToolArgs('set_rating', undefined)).toContain('required property');
+  });
+
+  it('reports a violation that has no field path', () => {
+    const msg = validateToolArgs('search_photos', 'not-an-object');
+
+    expect(msg).toContain('Invalid arguments for search_photos');
+    expect(msg).toContain('object');
+  });
+
   it('leaves unknown tool names to the dispatcher', () => {
     expect(validateToolArgs('no_such_tool', { anything: true })).toBeNull();
   });
