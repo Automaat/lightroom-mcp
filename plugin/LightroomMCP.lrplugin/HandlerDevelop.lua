@@ -665,8 +665,12 @@ function DevelopHandler.applyDevelopPreset(args)
     local missingIds = {}
     local missingCount = 0
 
+    -- Resolve outside the write gate: the lookup scans the catalog and does
+    -- not write, so holding the exclusive gate across it only serializes
+    -- every other handler behind it.
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
     catalog:withWriteAccessDo("Apply Develop Preset", function()
-        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, resolvedEntry in ipairs(resolved) do
             if resolvedEntry.photo then
                 if selectedPreset.scope == "plugin" then
@@ -725,8 +729,9 @@ function DevelopHandler.copyDevelopSettings(args)
     local missingIds = {}
     local missingCount = 0
 
+    local resolved = PhotoLookup.resolveMany(catalog, args.target_ids)
+
     catalog:withWriteAccessDo("Copy Develop Settings", function()
-        local resolved = PhotoLookup.resolveMany(catalog, args.target_ids)
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 entry.photo:applyDevelopSettings(toApply)
@@ -757,11 +762,12 @@ function DevelopHandler.setDevelopSettings(args)
     local catalog = LrApplication.activeCatalog()
     local applied = false
 
+    local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
+    if not photo then
+        error("Photo not found: " .. args.photo_id)
+    end
+
     catalog:withWriteAccessDo("Set Develop Settings", function()
-        local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
-        if not photo then
-            error("Photo not found: " .. args.photo_id)
-        end
         photo:applyDevelopSettings(args.settings)
         applied = true
     end)

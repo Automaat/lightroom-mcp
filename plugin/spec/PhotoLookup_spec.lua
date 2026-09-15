@@ -1,15 +1,18 @@
-local function fakePhoto(id, path)
+local function fakePhoto(id, path, state)
     return {
         localIdentifier = id,
         getRawMetadata = function(_, key)
-            if key == 'path' then return path end
+            if key == 'path' then
+                if state then state.pathReads = state.pathReads + 1 end
+                return path
+            end
             return nil
         end,
     }
 end
 
 local function fakeCatalog(photos)
-    local state = { getAllPhotosCalls = 0 }
+    local state = { getAllPhotosCalls = 0, pathReads = 0 }
     local catalog = {
         getAllPhotos = function()
             state.getAllPhotosCalls = state.getAllPhotosCalls + 1
@@ -94,6 +97,45 @@ describe("PhotoLookup.resolveMany", function()
         local catalog, _ = fakeCatalog({})
         local r = PhotoLookup.resolveMany(catalog, {})
         assert.are.equal(0, #r)
+    end)
+
+    -- The scan runs per call on every handler that resolves ids, so on a large
+    -- catalog its cost is the handler's cost. These two pin that down.
+    it("never reads paths when every id is numeric", function()
+        local state = { pathReads = 0 }
+        local photos = {}
+        for i = 1, 5 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        local catalog = fakeCatalog(photos)
+
+        PhotoLookup.resolveMany(catalog, { "1", "2" })
+
+        assert.are.equal(0, state.pathReads)
+    end)
+
+    it("stops scanning once every requested id is found", function()
+        local state = { pathReads = 0 }
+        local photos = {}
+        for i = 1, 100 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        local catalog = fakeCatalog(photos)
+
+        -- a path id forces the path index on; the match is the 2nd photo, so
+        -- a full pass would read 100 paths
+        local r = PhotoLookup.resolveMany(catalog, { "/2.jpg" })
+
+        assert.are.equal(photos[2], r[1].photo)
+        assert.are.equal(2, state.pathReads)
+    end)
+
+    it("still scans the whole catalog for an id that matches nothing", function()
+        local state = { pathReads = 0 }
+        local photos = {}
+        for i = 1, 10 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        local catalog = fakeCatalog(photos)
+
+        local r = PhotoLookup.resolveMany(catalog, { "/missing.jpg" })
+
+        assert.is_nil(r[1].photo)
+        assert.are.equal(10, state.pathReads)
     end)
 end)
 

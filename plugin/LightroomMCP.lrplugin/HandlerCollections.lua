@@ -102,6 +102,8 @@ function CollectionsHandler.addToCollection(args)
     local missingIds = {}
     local missingCount = 0
 
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
     catalog:withWriteAccessDo("Add Photos to Collection", function()
         -- Find the collection
         local targetCollection = nil
@@ -150,7 +152,6 @@ function CollectionsHandler.addToCollection(args)
 
         -- Find and add photos
         local photosToAdd = {}
-        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 table.insert(photosToAdd, entry.photo)
