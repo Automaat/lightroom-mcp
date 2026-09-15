@@ -126,6 +126,20 @@ describe("HandlerCollections.addToCollection", function()
         end)
     end)
 
+    -- Resolving ids scans the whole catalog, which on a large library outruns
+    -- the server's request timeout. Paying that before noticing a typo'd
+    -- collection name turns a clear "Collection not found" into no answer.
+    it("rejects an unknown collection without scanning the catalog", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        assert.has_error(function()
+            Handler.addToCollection({ collection_name = "Nope", photo_ids = { "/missing.raw" } })
+        end)
+
+        assert.are.equal(0, catalog.getQueryCount())
+    end)
+
     it("reports ids that matched no photo", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local target = helper.fakeCollection("Target", {})

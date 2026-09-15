@@ -146,7 +146,11 @@ function M.fakeCatalog(opts)
     local insideWriteAccess = false
     local queriedInsideWriteAccess = false
     local selectionCall = nil
+    -- How MANY catalog scans ran, not just where. A handler that can reject bad
+    -- input before scanning should prove it never scanned.
+    local queryCount = 0
     local function markQuery()
+        queryCount = queryCount + 1
         if insideReadAccess then queriedInsideReadAccess = true end
         if insideWriteAccess then queriedInsideWriteAccess = true end
     end
@@ -253,6 +257,7 @@ function M.fakeCatalog(opts)
         getCreatedKeywords = function() return createdKeywords end,
         getReadAccessCount = function() return readAccessCount end,
         getWriteAccessCount = function() return writeAccessCount end,
+        getQueryCount = function() return queryCount end,
     }
 end
 

@@ -11,6 +11,19 @@ local function fakePhoto(id, path, state)
     }
 end
 
+-- Counts how many photos the scan actually touches. The scan reads
+-- localIdentifier on every photo it visits, so proxying that field measures how
+-- far it got -- which a path-read counter cannot do for an all-numeric batch.
+local function countingPhoto(id, path, state)
+    local inner = fakePhoto(id, path, state)
+    return setmetatable({}, {
+        __index = function(_, key)
+            if key == 'localIdentifier' then state.visits = state.visits + 1 end
+            return inner[key]
+        end,
+    })
+end
+
 local function fakeCatalog(photos)
     local state = { getAllPhotosCalls = 0, pathReads = 0 }
     local catalog = {
@@ -112,18 +125,45 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(0, state.pathReads)
     end)
 
-    it("stops scanning once every requested id is found", function()
-        local state = { pathReads = 0 }
+    it("stops scanning once every requested numeric id is found", function()
+        local state = { pathReads = 0, visits = 0 }
         local photos = {}
-        for i = 1, 100 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        for i = 1, 100 do photos[i] = countingPhoto(i, "/" .. i .. ".jpg", state) end
         local catalog = fakeCatalog(photos)
 
-        -- a path id forces the path index on; the match is the 2nd photo, so
-        -- a full pass would read 100 paths
+        local r = PhotoLookup.resolveMany(catalog, { "2" })
+
+        assert.are.equal(photos[2], r[1].photo)
+        assert.are.equal(2, state.visits)
+    end)
+
+    -- Paths are not unique: a virtual copy reports its master's source path.
+    -- Resolving one to the FIRST match instead of the last would silently hand
+    -- a path-addressed write tool a different photo than the catalog's own
+    -- ordering names.
+    it("resolves a duplicate path to the last matching photo", function()
+        local master = fakePhoto(1, "/shared.nef")
+        local virtualCopy = fakePhoto(2, "/shared.nef")
+        local catalog, _ = fakeCatalog({ master, virtualCopy })
+
+        local r = PhotoLookup.resolveMany(catalog, { "/shared.nef" })
+
+        assert.are.equal(virtualCopy, r[1].photo)
+    end)
+
+    it("scans the whole catalog when a path is requested, even after a match", function()
+        local state = { pathReads = 0, visits = 0 }
+        local photos = {}
+        for i = 1, 100 do photos[i] = countingPhoto(i, "/" .. i .. ".jpg", state) end
+        local catalog = fakeCatalog(photos)
+
+        -- The match is the 2nd photo, but a later one could still claim the
+        -- same path, so stopping there would be a guess.
         local r = PhotoLookup.resolveMany(catalog, { "/2.jpg" })
 
         assert.are.equal(photos[2], r[1].photo)
-        assert.are.equal(2, state.pathReads)
+        assert.are.equal(100, state.pathReads)
+        assert.are.equal(100, state.visits)
     end)
 
     it("still scans the whole catalog for an id that matches nothing", function()

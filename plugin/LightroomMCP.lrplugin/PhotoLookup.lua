@@ -9,9 +9,14 @@ local PhotoLookup = {}
 -- Cost matters: on a large catalog this scan dominates every handler that
 -- resolves ids, so it does the least work it can. `getRawMetadata('path')` is
 -- one call per photo and is skipped entirely when every requested id is
--- numeric, and the scan stops as soon as the last requested id is found
--- instead of indexing the whole catalog. An id that matches nothing still
--- costs a full pass -- absence cannot be known before the end.
+-- numeric, and such a batch stops as soon as the last id is found instead of
+-- indexing the whole catalog.
+--
+-- A batch containing a path cannot take either shortcut. Paths are not unique:
+-- a virtual copy reports its master's source path, so the same path can name
+-- several photos. The resolution order is therefore part of the contract --
+-- the LAST photo in catalog order wins -- and that cannot be known before the
+-- scan ends. An id that matches nothing costs a full pass for the same reason.
 function PhotoLookup.resolveMany(catalog, photoIds)
     local results = {}
     local pending = {}
@@ -48,17 +53,16 @@ function PhotoLookup.resolveMany(catalog, photoIds)
         end
 
         if needPathIndex then
+            -- Last match wins: overwrite unconditionally. Stopping early here
+            -- would freeze the first match instead, which for a
+            -- { master, virtual copy } pair sharing one source path resolves a
+            -- different photo than the caller expects.
             local path = p:getRawMetadata('path')
-            if path ~= nil and byPath[path] == nil then
-                byPath[path] = p
-                if pending[path] then
-                    pending[path] = nil
-                    remaining = remaining - 1
-                end
-            end
+            if path ~= nil then byPath[path] = p end
         end
 
-        if remaining <= 0 then break end
+        -- Only a pure-id batch may exit early; local identifiers are unique.
+        if not needPathIndex and remaining <= 0 then break end
     end
 
     for i, id in ipairs(photoIds) do

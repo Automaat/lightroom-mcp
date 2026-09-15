@@ -88,6 +88,40 @@ function CollectionsHandler.createCollection(args)
     }
 end
 
+-- Walks the top-level collections and then every collection set, depth first.
+-- Cheap: the tree is small next to the photo catalog.
+local function findCollection(catalog, name)
+    for _, collection in ipairs(catalog:getChildCollections()) do
+        if collection:getName() == name then
+            return collection
+        end
+    end
+
+    local function findInSet(collSet)
+        for _, coll in ipairs(collSet:getChildCollections()) do
+            if coll:getName() == name then
+                return coll
+            end
+        end
+        for _, childSet in ipairs(collSet:getChildCollectionSets()) do
+            local found = findInSet(childSet)
+            if found then
+                return found
+            end
+        end
+        return nil
+    end
+
+    for _, set in ipairs(catalog:getChildCollectionSets()) do
+        local found = findInSet(set)
+        if found then
+            return found
+        end
+    end
+
+    return nil
+end
+
 function CollectionsHandler.addToCollection(args)
     if not args.collection_name then
         error("collection_name is required")
@@ -102,49 +136,26 @@ function CollectionsHandler.addToCollection(args)
     local missingIds = {}
     local missingCount = 0
 
+    -- Reject an unknown collection BEFORE resolving ids. Resolution scans the
+    -- whole catalog and costs tens of seconds on a large library; spending that
+    -- only to discover a typo'd name pushed the request past the server's
+    -- timeout, so the caller got no answer at all instead of "Collection not
+    -- found".
+    local exists = false
+    catalog:withReadAccessDo(function()
+        exists = findCollection(catalog, args.collection_name) ~= nil
+    end)
+    if not exists then
+        error("Collection not found: " .. args.collection_name)
+    end
+
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
     catalog:withWriteAccessDo("Add Photos to Collection", function()
-        -- Find the collection
-        local targetCollection = nil
-        local collections = catalog:getChildCollections()
-
-        for _, collection in ipairs(collections) do
-            if collection:getName() == args.collection_name then
-                targetCollection = collection
-                break
-            end
-        end
-
-        -- Also search in collection sets
-        if not targetCollection then
-            local collectionSets = catalog:getChildCollectionSets()
-            local function findInSet(collSet)
-                local setCollections = collSet:getChildCollections()
-                for _, coll in ipairs(setCollections) do
-                    if coll:getName() == args.collection_name then
-                        return coll
-                    end
-                end
-
-                local childSets = collSet:getChildCollectionSets()
-                for _, childSet in ipairs(childSets) do
-                    local found = findInSet(childSet)
-                    if found then
-                        return found
-                    end
-                end
-
-                return nil
-            end
-
-            for _, set in ipairs(collectionSets) do
-                targetCollection = findInSet(set)
-                if targetCollection then
-                    break
-                end
-            end
-        end
+        -- Looked up again rather than carried across gates: the check above
+        -- only proved the name resolved then, and the write gate is what makes
+        -- the result safe to act on.
+        local targetCollection = findCollection(catalog, args.collection_name)
 
         if not targetCollection then
             error("Collection not found: " .. args.collection_name)
