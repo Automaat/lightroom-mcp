@@ -12,6 +12,15 @@ local function setup(opts)
 end
 
 describe("HandlerOrganization.setRating", function()
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setRating({ photo_ids = { "1" }, rating = 4 })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
     it("sets rating on found photos", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", rating = 0 })
@@ -57,6 +66,15 @@ describe("HandlerOrganization.setRating", function()
 end)
 
 describe("HandlerOrganization.setKeywords", function()
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "summer" } })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
     it("adds keywords to the photo via createKeyword", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
         local catalog, Handler = setup({ photos = { p1 } })

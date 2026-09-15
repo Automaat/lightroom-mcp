@@ -139,9 +139,20 @@ function M.fakeCatalog(opts)
     -- OUTSIDE the gate; specs assert getQueriedInsideReadAccess() == false.
     local insideReadAccess = false
     local queriedInsideReadAccess = false
+    -- Same nesting, write side. withWriteAccessDo is an EXCLUSIVE gate, so a
+    -- full-catalog scan held inside it serializes every other handler behind a
+    -- scan that writes nothing. Handlers must resolve their photos BEFORE
+    -- opening the gate; specs assert getQueriedInsideWriteAccess() == false.
+    local insideWriteAccess = false
+    local queriedInsideWriteAccess = false
     local selectionCall = nil
+    -- How MANY catalog scans ran, not just where. A handler that can reject bad
+    -- input before scanning should prove it never scanned.
+    local queryCount = 0
     local function markQuery()
+        queryCount = queryCount + 1
         if insideReadAccess then queriedInsideReadAccess = true end
+        if insideWriteAccess then queriedInsideWriteAccess = true end
     end
 
     local function photoMatches(photo, criterion)
@@ -213,8 +224,12 @@ function M.fakeCatalog(opts)
         getSelectionCall = function() return selectionCall end,
         withWriteAccessDo = function(_, _, fn)
             writeAccessCount = writeAccessCount + 1
-            fn()
+            insideWriteAccess = true
+            local ok, err = pcall(fn)
+            insideWriteAccess = false
+            if not ok then error(err, 0) end
         end,
+        getQueriedInsideWriteAccess = function() return queriedInsideWriteAccess end,
         findPhotoByLocalIdentifier = function(_, id)
             local target = tostring(id)
             for _, p in ipairs(photos) do
@@ -242,6 +257,7 @@ function M.fakeCatalog(opts)
         getCreatedKeywords = function() return createdKeywords end,
         getReadAccessCount = function() return readAccessCount end,
         getWriteAccessCount = function() return writeAccessCount end,
+        getQueryCount = function() return queryCount end,
     }
 end
 
