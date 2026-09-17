@@ -405,6 +405,16 @@ describe("HandlerDevelop.exportDevelopPreset", function()
 end)
 
 describe("HandlerDevelop.applyDevelopPreset", function()
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local preset = fakePreset("Vibrant")
+        local catalog, Handler = setup({ photos = { p1 }, folders = { fakeFolder("User", { preset }) } })
+
+        Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Vibrant" })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
     it("applies preset to resolved photos", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
@@ -511,6 +521,19 @@ describe("HandlerDevelop numeric photo ids", function()
 end)
 
 describe("HandlerDevelop.copyDevelopSettings", function()
+    it("resolves targets OUTSIDE the write-access gate", function()
+        local source = helper.fakePhoto({
+            id = "10", path = "/s.jpg",
+            developSettings = { Exposure2012 = 1.0 },
+        })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
+        local catalog, Handler = setup({ photos = { source, t1 } })
+
+        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
     it("copies all settings from source to targets", function()
         local source = helper.fakePhoto({
             id = "10", path = "/s.jpg",
@@ -618,6 +641,15 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 end)
 
 describe("HandlerDevelop.setDevelopSettings", function()
+    it("resolves the photo OUTSIDE the write-access gate", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ photos = { p } })
+
+        Handler.setDevelopSettings({ photo_id = "1", settings = { Exposure2012 = 0.5 } })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
     it("applies settings to the photo", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler = setup({ photos = { p } })

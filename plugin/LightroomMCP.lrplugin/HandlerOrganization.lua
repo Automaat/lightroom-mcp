@@ -48,6 +48,8 @@ function OrganizationHandler.setKeywords(args)
         end
     end
 
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
     catalog:withWriteAccessDo("Set Keywords", function()
         -- createKeyword is not idempotent within one write transaction.
         local keywordObjs = {}
@@ -55,7 +57,6 @@ function OrganizationHandler.setKeywords(args)
             table.insert(keywordObjs, catalog:createKeyword(kw, {}, true, nil, true))
         end
 
-        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, entry in ipairs(resolved) do
             local photo = entry.photo
             if photo then
@@ -116,8 +117,9 @@ function OrganizationHandler.setRating(args)
     local ratingValue = args.rating
     if ratingValue == 0 then ratingValue = nil end
 
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
     catalog:withWriteAccessDo("Set Rating", function()
-        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 entry.photo:setRawMetadata('rating', ratingValue)
