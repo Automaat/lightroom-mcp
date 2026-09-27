@@ -12,8 +12,9 @@ import { NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
 import { parseCli, helpText } from "./cli.js";
 import { VERSION } from "./version.js";
 import { startHeartbeat, probePlugin } from "./heartbeat.js";
-import { PluginLiveness, SHADOW_BRIDGE_MESSAGE } from "./plugin-liveness.js";
+import { PluginLiveness } from "./plugin-liveness.js";
 import { waitUntil } from "./wait-until.js";
+import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock } from "./instance-lock.js";
 import {
   ensurePluginInstalled,
@@ -101,19 +102,24 @@ async function main() {
   });
   const liveness = new PluginLiveness();
   let recoveryTimer: NodeJS.Timeout | null = null;
+  const unresponsive = new UnresponsiveReporter({
+    diagnose: () => diagnoseUnresponsive([REQUEST_PORT, RESPONSE_PORT]),
+    log: (message) => console.error(`[plugin] ${message}`),
+  });
   const probeOnConnect = () => {
     const token = liveness.beginProbe();
     if (token === null) return;
     void probePlugin(dispatcher, PROBE_TIMEOUT_MS).then((answered) => {
       if (!liveness.settleProbe(token, answered)) return;
       if (answered) {
+        unresponsive.clear();
         if (recoveryTimer) {
           clearInterval(recoveryTimer);
           recoveryTimer = null;
         }
         return;
       }
-      console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
+      unresponsive.report();
       // Re-probe faster than the 30s heartbeat so the bridge recovers promptly
       // once the process holding the plugin goes away.
       if (!recoveryTimer) {
@@ -133,6 +139,7 @@ async function main() {
   };
   const stopResponseSocket = () => {
     liveness.reset();
+    unresponsive.clear();
     if (responseConnectTimer) {
       clearTimeout(responseConnectTimer);
       responseConnectTimer = null;
@@ -173,18 +180,22 @@ async function main() {
         return;
       }
       liveness.markUnresponsive();
-      console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
+      unresponsive.report();
     },
-    () => liveness.markResponsive(),
+    () => {
+      liveness.markResponsive();
+      unresponsive.clear();
+    },
   );
 
   const server = createMcpServer({
     dispatcher,
     isReady: () => socketsConnected() && liveness.isUsable(),
-    notReadyMessage: () => (socketsConnected() ? SHADOW_BRIDGE_MESSAGE : NOT_CONNECTED_MESSAGE),
+    notReadyMessage: () => (socketsConnected() ? unresponsive.current() : NOT_CONNECTED_MESSAGE),
     settleReadiness: async () => {
       await waitUntil(socketsConnected, STARTUP_GRACE_MS, CONNECT_POLL_MS);
       await liveness.settled();
+      await unresponsive.settled();
     },
   });
 
