@@ -418,6 +418,28 @@ describe("heartbeat / stale-connection blast radius (PR #151 review)", function(
         assert.are.equal(120, mod.STALE_RESTART_HARD_CAP_SECONDS)
     end)
 
+    describe("logBindFailure", function()
+        local function lastLog()
+            local log = _G.LightroomMCP_State.log
+            return log[#log]
+        end
+
+        it("names the port so a foreign listener is visible in the log", function()
+            local mod = loadInfoProvider()
+            assert.is_true(mod.logBindFailure("RESPONSE", 58764, "failed to open localhost:58764", 1000))
+            assert.truthy(lastLog():find("RESPONSE port 58764 failed to open", 1, true))
+        end)
+
+        it("throttles repeats per side within the interval", function()
+            local mod = loadInfoProvider()
+            local interval = mod.BIND_FAILURE_LOG_INTERVAL_SECONDS
+            assert.is_true(mod.logBindFailure("RESPONSE", 58764, "failed to open", 2000))
+            assert.is_false(mod.logBindFailure("RESPONSE", 58764, "failed to open", 2000 + interval - 1))
+            assert.is_true(mod.logBindFailure("REQUEST", 58763, "failed to open", 2000 + interval - 1))
+            assert.is_true(mod.logBindFailure("RESPONSE", 58764, "failed to open", 2000 + interval))
+        end)
+    end)
+
     describe("shouldRestartForStaleConnection", function()
         it("does not restart while idle is within the soft threshold", function()
             local mod = loadInfoProvider()

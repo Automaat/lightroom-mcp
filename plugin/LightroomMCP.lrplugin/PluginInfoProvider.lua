@@ -92,12 +92,38 @@ local function tokenFilePath()
     return LrPathUtils.child(LrPathUtils.child(tokenDir(), "lightroom-mcp"), "token")
 end
 
+-- "failed to open" is also what LrSocket reports when something else already
+-- listens on the port: another process, or a pre-reload instance of this
+-- plugin that Reload Plug-in left running. Recovery stays the same
+-- (reconnect), but a persistent one must be visible: otherwise the bridge
+-- connects to that listener, requests or responses vanish, and the log shows
+-- nothing (issue #225). Both instances share the log file, so each line
+-- carries its instance's load time.
+local BIND_FAILURE_LOG_INTERVAL_SECONDS = 10
+local LOADED_AT = os.date("%H:%M:%S")
+local lastBindFailureLog = {}
+
+local function isBindFailure(errStr)
+    return errStr:find("failed to open", 1, true) ~= nil
+end
+
 local function addLog(msg)
     table.insert(pluginState.log, os.date("%H:%M:%S") .. " - " .. msg)
     if #pluginState.log > 100 then
         table.remove(pluginState.log, 1)
     end
     Log.info(msg)
+end
+
+local function logBindFailure(side, port, errStr, now)
+    now = now or os.time()
+    local last = lastBindFailureLog[side]
+    if last and now - last < BIND_FAILURE_LOG_INTERVAL_SECONDS then return false end
+    lastBindFailureLog[side] = now
+    addLog(side .. " port " .. tostring(port) .. " failed to open (" .. errStr
+        .. ", instance loaded " .. LOADED_AT .. "); if this repeats, another process"
+        .. " or a leftover pre-reload instance holds it")
+    return true
 end
 
 local function generateToken()
@@ -432,6 +458,9 @@ local function startServer()
                 end,
                 onError = function(_, err)
                     local errStr = tostring(err)
+                    if isBindFailure(errStr) then
+                        logBindFailure("REQUEST", requestPort, errStr)
+                    end
                     if isNoClientError(errStr) then
                         if not pluginState.receiveConnected then
                             pluginState.requestNeedsReconnect = true
@@ -486,6 +515,9 @@ local function startServer()
                 onError = function(_, err)
                     if not isLive() then return end
                     local errStr = tostring(err)
+                    if isBindFailure(errStr) then
+                        logBindFailure("RESPONSE", responsePort, errStr)
+                    end
                     if isNoClientError(errStr) then
                         if not pluginState.sendConnected then
                             pluginState.responseNeedsReconnect = true
@@ -669,6 +701,8 @@ local PluginInfoProvider = {
     resetForReload = resetForReload,
     -- Exposed for PluginInfoProvider_spec.lua only; not used elsewhere in the plugin.
     shouldRestartForStaleConnection = shouldRestartForStaleConnection,
+    logBindFailure = logBindFailure,
+    BIND_FAILURE_LOG_INTERVAL_SECONDS = BIND_FAILURE_LOG_INTERVAL_SECONDS,
     handlePing = DISPATCH.ping,
     HEARTBEAT_INTERVAL_SECONDS = HEARTBEAT_INTERVAL_SECONDS,
     STALE_RECONNECT_SECONDS = STALE_RECONNECT_SECONDS,
