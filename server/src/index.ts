@@ -14,6 +14,7 @@ import { VERSION } from "./version.js";
 import { startHeartbeat, probePlugin } from "./heartbeat.js";
 import { PluginLiveness, SHADOW_BRIDGE_MESSAGE } from "./plugin-liveness.js";
 import { waitUntil } from "./wait-until.js";
+import { diagnoseUnresponsive } from "./port-owner.js";
 import { acquireInstanceLock } from "./instance-lock.js";
 import {
   ensurePluginInstalled,
@@ -101,6 +102,18 @@ async function main() {
   });
   const liveness = new PluginLiveness();
   let recoveryTimer: NodeJS.Timeout | null = null;
+  let unresponsiveMessage = SHADOW_BRIDGE_MESSAGE;
+  let diagnosis: Promise<void> | null = null;
+  const reportUnresponsive = () => {
+    diagnosis ??= diagnoseUnresponsive([REQUEST_PORT, RESPONSE_PORT])
+      .then((message) => {
+        unresponsiveMessage = message;
+        console.error(`[plugin] ${message}`);
+      })
+      .finally(() => {
+        diagnosis = null;
+      });
+  };
   const probeOnConnect = () => {
     const token = liveness.beginProbe();
     if (token === null) return;
@@ -113,7 +126,7 @@ async function main() {
         }
         return;
       }
-      console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
+      reportUnresponsive();
       // Re-probe faster than the 30s heartbeat so the bridge recovers promptly
       // once the process holding the plugin goes away.
       if (!recoveryTimer) {
@@ -173,7 +186,7 @@ async function main() {
         return;
       }
       liveness.markUnresponsive();
-      console.error(`[plugin] ${SHADOW_BRIDGE_MESSAGE}`);
+      reportUnresponsive();
     },
     () => liveness.markResponsive(),
   );
@@ -181,10 +194,11 @@ async function main() {
   const server = createMcpServer({
     dispatcher,
     isReady: () => socketsConnected() && liveness.isUsable(),
-    notReadyMessage: () => (socketsConnected() ? SHADOW_BRIDGE_MESSAGE : NOT_CONNECTED_MESSAGE),
+    notReadyMessage: () => (socketsConnected() ? unresponsiveMessage : NOT_CONNECTED_MESSAGE),
     settleReadiness: async () => {
       await waitUntil(socketsConnected, STARTUP_GRACE_MS, CONNECT_POLL_MS);
       await liveness.settled();
+      await diagnosis;
     },
   });
 
