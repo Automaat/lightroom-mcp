@@ -14,7 +14,7 @@ const COMMAND_TIMEOUT_MS = 3_000;
  * Resolves with stdout even on a non-zero exit that still printed output;
  * lsof exits 1 when nothing matches, which is an answer, not a failure.
  */
-const runCommand: RunCommand = (file, args) =>
+export const runCommand: RunCommand = (file, args) =>
   new Promise((resolve, reject) => {
     execFile(file, args, { timeout: COMMAND_TIMEOUT_MS, windowsHide: true }, (err, stdout) => {
       if (err && !stdout) {
@@ -161,9 +161,16 @@ export const STALE_LISTENER_MESSAGE =
   "A listener left behind by 'Reload Plug-in' keeps the port without serving it. " +
   "Restart Lightroom Classic.";
 
-function describeOwner({ port, listener }: PortOwnership): string {
-  const name = listener?.command ?? "an unknown process";
-  return `port ${port} is held by ${name} (pid ${listener?.pid})`;
+interface ForeignOwnership extends PortOwnership {
+  listener: PortListener;
+}
+
+function isForeign(p: PortOwnership): p is ForeignOwnership {
+  return p.listener !== null && !isLightroom(p.listener);
+}
+
+function describeOwner({ port, listener }: ForeignOwnership): string {
+  return `port ${port} is held by ${listener.command ?? "an unknown process"} (pid ${listener.pid})`;
 }
 
 /**
@@ -174,7 +181,7 @@ function describeOwner({ port, listener }: PortOwnership): string {
  * leftover from 'Reload Plug-in', not another bridge.
  */
 export function describeUnresponsive(ports: PortOwnership[]): string {
-  const foreign = ports.filter((p) => p.listener && !isLightroom(p.listener));
+  const foreign = ports.filter(isForeign);
   if (foreign.length === 0) {
     const ownedByLightroom = ports.every((p) => p.listener && isLightroom(p.listener));
     const noOtherClients = ports.every((p) => p.otherClients?.length === 0);

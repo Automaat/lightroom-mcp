@@ -1,3 +1,4 @@
+import net from 'node:net';
 import { describe, it, expect } from '@jest/globals';
 import {
   describeUnresponsive,
@@ -9,6 +10,7 @@ import {
   parseNetstatClients,
   parseNetstatListeners,
   parseTasklistName,
+  runCommand,
   type PortListener,
   type PortOwnership,
   type RunCommand,
@@ -43,6 +45,7 @@ describe('parseLsofListeners', () => {
     ['no command field', 'p27120\nf65\n', [{ pid: 27120 }]],
     ['nothing listening', '', []],
     ['two listeners', 'p1\ncfoo\np2\ncbar\n', [{ pid: 1, command: 'foo' }, { pid: 2, command: 'bar' }]],
+    ['garbage pid, orphan command', 'pabc\ncfoo\n', []],
   ])('%s', (_name, output, expected) => {
     expect(parseLsofListeners(output)).toEqual(expected);
   });
@@ -73,6 +76,10 @@ describe('parseLsofClients', () => {
     expect(parseLsofClients(LSOF_ESTABLISHED, 58764).map((c) => c.pid)).toEqual([555, 777]);
   });
 
+  it('ignores connections of a garbage pid record', () => {
+    expect(parseLsofClients('pabc\ncnode\nn127.0.0.1:1->127.0.0.1:58764\n', 58764)).toEqual([]);
+  });
+
   it('matches the requested port only', () => {
     expect(parseLsofClients(LSOF_ESTABLISHED, 58763).map((c) => c.pid)).toEqual([777]);
   });
@@ -82,6 +89,10 @@ describe('parseNetstatClients', () => {
   it('returns the pid owning the outbound end of a connection to the port', () => {
     expect(parseNetstatClients(NETSTAT, 58764)).toEqual([7777]);
   });
+
+  it('ignores connections to other ports', () => {
+    expect(parseNetstatClients(NETSTAT, 58763)).toEqual([]);
+  });
 });
 
 describe('findPortClients', () => {
@@ -89,6 +100,12 @@ describe('findPortClients', () => {
     const run = fakeRun({ lsof: LSOF_ESTABLISHED });
 
     await expect(findPortClients(58764, 555, 'darwin', run)).resolves.toEqual([777]);
+  });
+
+  it('reads netstat on Windows', async () => {
+    const run = fakeRun({ netstat: NETSTAT });
+
+    await expect(findPortClients(58764, 1, 'win32', run)).resolves.toEqual([7777]);
   });
 
   it('returns null when it cannot check', async () => {
@@ -147,6 +164,12 @@ describe('describeUnresponsive', () => {
     expect(message).toContain('pid 555');
   });
 
+  it('still reports a foreign listener whose name is unknown', () => {
+    const message = describeUnresponsive([{ port: 58764, listener: { pid: 9 }, otherClients: [] }]);
+
+    expect(message).toContain('port 58764 is held by an unknown process (pid 9)');
+  });
+
   it('names the foreign process holding a plugin port', () => {
     const message = describeUnresponsive([
       { port: 58763, listener: LIGHTROOM, otherClients: [] },
@@ -169,5 +192,45 @@ describe('diagnoseUnresponsive', () => {
     });
 
     expect(message).toContain('port 58764 is held by MIDI2LR');
+  });
+});
+
+describe('runCommand', () => {
+  const node = process.execPath;
+
+  it.each([
+    ['a clean exit', 'process.stdout.write("hi")'],
+    ['a non-zero exit that still printed an answer', 'process.stdout.write("hi"); process.exit(1)'],
+  ])('resolves stdout on %s', async (_name, script) => {
+    await expect(runCommand(node, ['-e', script])).resolves.toBe('hi');
+  });
+
+  it('rejects a failure with no output', async () => {
+    await expect(runCommand(node, ['-e', 'process.exit(1)'])).rejects.toThrow();
+  });
+});
+
+describe('system inspection', () => {
+  function listen(): Promise<{ server: net.Server; port: number }> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.listen(0, '127.0.0.1', () => {
+        resolve({ server, port: (server.address() as net.AddressInfo).port });
+      });
+    });
+  }
+
+  it('finds this process as the listener, or reports unknown where the tool is missing', async () => {
+    const { server, port } = await listen();
+    try {
+      const listener = await findPortListener(port);
+      const clients = await findPortClients(port);
+
+      expect(listener === null || listener.pid === process.pid).toBe(true);
+      expect(clients === null || clients.length === 0).toBe(true);
+      await expect(diagnoseUnresponsive([port])).resolves.toEqual(expect.any(String));
+    } finally {
+      server.close();
+    }
   });
 });
