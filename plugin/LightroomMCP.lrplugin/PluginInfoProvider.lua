@@ -152,6 +152,26 @@ local function writeTokenFile(token)
     return true
 end
 
+local function readTokenFile()
+    local fh = io.open(tokenFilePath(), "r")
+    if not fh then return nil end
+    local content = fh:read("*a")
+    fh:close()
+    return content
+end
+
+-- Reload Plug-in loads a fresh Lua state and does NOT reliably cancel the
+-- previous instance's server task (observed on LrC 15.5.1 macOS: the old
+-- loop kept running and held a port until Lightroom quit). The two instances
+-- share nothing but the disk, and every start rewrites the token file, so a
+-- token that is no longer ours means a newer instance took over. An absent
+-- or unreadable file proves nothing and must not stop a live server.
+local function isSuperseded(myToken, fileToken)
+    return myToken ~= nil and fileToken ~= nil and fileToken ~= "" and fileToken ~= myToken
+end
+
+local SUPERSEDED_CHECK_TICKS = 5
+
 local DISPATCH = {
     -- Heartbeat no-op. The MCP server pings on this action every
     -- HEARTBEAT_INTERVAL_SECONDS (server/src/index.ts) so the plugin can
@@ -364,7 +384,8 @@ local function startServer()
     pluginState.running = true
 
     pluginState.token = generateToken()
-    if writeTokenFile(pluginState.token) then
+    local tokenWritten = writeTokenFile(pluginState.token)
+    if tokenWritten then
         addLog("Token written to " .. tokenFilePath())
     end
 
@@ -540,7 +561,17 @@ local function startServer()
         pluginState.responseSocket = bindResponse(pluginState.responseGen)
         addLog("RESPONSE bound on " .. responsePort .. " gen=" .. pluginState.responseGen)
 
+        -- Without our own token on disk the file still holds a predecessor's,
+        -- which would read as "superseded" and stop this live server.
+        local myToken = tokenWritten and pluginState.token or nil
+        local ticks = 0
         while pluginState.running and not shutdownRequested() do
+            ticks = ticks + 1
+            if ticks % SUPERSEDED_CHECK_TICKS == 0 and isSuperseded(myToken, readTokenFile()) then
+                addLog("Superseded by a newer plugin instance (token file changed), releasing ports")
+                pluginState.running = false
+                break
+            end
             if pluginState.requestNeedsReconnect and pluginState.requestSocket then
                 pluginState.requestNeedsReconnect = false
                 pluginState.requestSocket:reconnect()
@@ -702,6 +733,7 @@ local PluginInfoProvider = {
     -- Exposed for PluginInfoProvider_spec.lua only; not used elsewhere in the plugin.
     shouldRestartForStaleConnection = shouldRestartForStaleConnection,
     logBindFailure = logBindFailure,
+    isSuperseded = isSuperseded,
     BIND_FAILURE_LOG_INTERVAL_SECONDS = BIND_FAILURE_LOG_INTERVAL_SECONDS,
     handlePing = DISPATCH.ping,
     HEARTBEAT_INTERVAL_SECONDS = HEARTBEAT_INTERVAL_SECONDS,

@@ -400,6 +400,86 @@ describe("stale-connection follow-up fixes (PR #151 re-review)", function()
     end)
 end)
 
+describe("superseded instance after Reload Plug-in (issue #225)", function()
+    local realOpen
+    local fileToken
+    local writeFails
+
+    before_each(function()
+        _G.LightroomMCP_State = nil
+        fileToken = nil
+        writeFails = false
+        realOpen = io.open
+        io.open = function(path, mode, ...)
+            if mode and mode:find("w", 1, true) then
+                if writeFails then return nil, "permission denied" end
+                return { write = function(_, data) fileToken = data end, close = function() end }
+            end
+            if path:find("lightroom-mcp/token", 1, true) then
+                if fileToken == nil then return nil end
+                return { read = function() return fileToken end, close = function() end }
+            end
+            return realOpen(path, mode, ...)
+        end
+    end)
+    after_each(function()
+        io.open = realOpen
+    end)
+
+    it("treats only a readable, different token as proof of a newer instance", function()
+        local mod = loadInfoProvider()
+        assert.is_true(mod.isSuperseded("mine", "theirs"))
+        assert.is_false(mod.isSuperseded("mine", "mine"))
+        assert.is_false(mod.isSuperseded("mine", nil))
+        assert.is_false(mod.isSuperseded("mine", ""))
+        assert.is_false(mod.isSuperseded(nil, "theirs"))
+    end)
+
+    -- Drives the monitor loop for up to maxTicks sleeps; `swapAt` rewrites the
+    -- token file mid-run the way a reloaded instance's startServer does.
+    local function runLoop(maxTicks, swapAt)
+        local ticks = 0
+        local cleanups = {}
+        installStubs(nil, nil, {
+            runTask = true,
+            cleanups = cleanups,
+            onSleep = function(state)
+                ticks = ticks + 1
+                if swapAt and ticks == swapAt then fileToken = "newer-instance" end
+                if ticks >= maxTicks then state.running = false end
+            end,
+        })
+        local mod = loadInfoProvider()
+        mod.startServer()
+        return ticks, cleanups
+    end
+
+    it("stops the loop once a newer instance rewrites the token file", function()
+        local ticks = runLoop(50, 2)
+        assert.is_true(ticks < 50)
+        assert.is_false(_G.LightroomMCP_State.running)
+        local log = _G.LightroomMCP_State.log
+        local found = false
+        for _, line in ipairs(log) do
+            if line:find("Superseded by a newer plugin instance", 1, true) then found = true end
+        end
+        assert.is_true(found)
+    end)
+
+    it("keeps serving while the token file still holds its own token", function()
+        local ticks = runLoop(50, nil)
+        assert.are.equal(50, ticks)
+        assert.are.equal(_G.LightroomMCP_State.token, fileToken)
+    end)
+
+    it("never stops itself when its own token write failed", function()
+        writeFails = true
+        fileToken = "predecessor"
+        local ticks = runLoop(50, nil)
+        assert.are.equal(50, ticks)
+    end)
+end)
+
 describe("heartbeat / stale-connection blast radius (PR #151 review)", function()
     before_each(function()
         _G.LightroomMCP_State = nil
