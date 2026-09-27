@@ -39,17 +39,34 @@ export function parseLsofListeners(output: string): PortListener[] {
   return listeners;
 }
 
-/** Extracts the PIDs of LISTENING TCP sockets on `port` from `netstat -ano`. */
-export function parseNetstatListeners(output: string, port: number): number[] {
-  const pids = new Set<number>();
+interface NetstatRow {
+  local: string;
+  foreign: string;
+  pid: number;
+}
+
+/**
+ * Parses TCP rows of `netstat -ano`. The state column is localized (e.g.
+ * ABHÖREN on German Windows), so rows are told apart by address instead.
+ */
+function parseNetstatRows(output: string): NetstatRow[] {
+  const rows: NetstatRow[] = [];
   for (const line of output.split(/\r?\n/)) {
     const cols = line.trim().split(/\s+/);
-    if (cols.length < 5 || cols[0] !== "TCP" || cols[3] !== "LISTENING") continue;
-    if (!cols[1].endsWith(`:${port}`)) continue;
-    const pid = Number(cols[4]);
-    if (Number.isInteger(pid) && pid > 0) pids.add(pid);
+    if (cols.length < 5 || cols[0] !== "TCP") continue;
+    const pid = Number(cols[cols.length - 1]);
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    rows.push({ local: cols[1], foreign: cols[2], pid });
   }
-  return [...pids];
+  return rows;
+}
+
+/** Extracts the PIDs listening on `port` (foreign address `*:0`) from `netstat -ano`. */
+export function parseNetstatListeners(output: string, port: number): number[] {
+  const rows = parseNetstatRows(output).filter(
+    (r) => r.local.endsWith(`:${port}`) && r.foreign.endsWith(":0"),
+  );
+  return [...new Set(rows.map((r) => r.pid))];
 }
 
 /**
@@ -72,23 +89,28 @@ export function parseLsofClients(output: string, port: number): PortListener[] {
   return [...clients.values()];
 }
 
-/** Extracts the PIDs of ESTABLISHED TCP connections to `port` from `netstat -ano`. */
+/** Extracts the PIDs with a connection whose remote end is `port` from `netstat -ano`. */
 export function parseNetstatClients(output: string, port: number): number[] {
-  const pids = new Set<number>();
-  for (const line of output.split(/\r?\n/)) {
-    const cols = line.trim().split(/\s+/);
-    if (cols.length < 5 || cols[0] !== "TCP" || cols[3] !== "ESTABLISHED") continue;
-    if (!cols[2].endsWith(`:${port}`)) continue;
-    const pid = Number(cols[4]);
-    if (Number.isInteger(pid) && pid > 0) pids.add(pid);
-  }
-  return [...pids];
+  const rows = parseNetstatRows(output).filter((r) => r.foreign.endsWith(`:${port}`));
+  return [...new Set(rows.map((r) => r.pid))];
 }
 
-/** Extracts the image name from `tasklist /FO CSV /NH` output. */
-export function parseTasklistName(output: string): string | undefined {
-  const match = /^"([^"]+)"/.exec(output.trim());
-  return match?.[1];
+/** Maps PID to image name from `tasklist /FO CSV /NH` output. */
+export function parseTasklist(output: string): Map<number, string> {
+  const names = new Map<number, string>();
+  for (const line of output.split(/\r?\n/)) {
+    const match = /^"([^"]+)","(\d+)"/.exec(line.trim());
+    if (match) names.set(Number(match[2]), match[1]);
+  }
+  return names;
+}
+
+async function windowsProcessNames(run: RunCommand): Promise<Map<number, string>> {
+  try {
+    return parseTasklist(await run("tasklist", ["/FO", "CSV", "/NH"]));
+  } catch {
+    return new Map();
+  }
 }
 
 /**
@@ -106,10 +128,7 @@ export async function findPortListener(
     if (platform === "win32") {
       const [pid] = parseNetstatListeners(await run("netstat", ["-ano", "-p", "TCP"]), port);
       if (pid === undefined) return null;
-      const name = parseTasklistName(
-        await run("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"]),
-      );
-      return { pid, command: name };
+      return { pid, command: (await windowsProcessNames(run)).get(pid) };
     }
     const [listener] = parseLsofListeners(
       await run("lsof", ["+c", "0", "-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-Fpc"]),
@@ -130,16 +149,20 @@ export async function findPortClients(
   selfPid: number = process.pid,
   platform: NodeJS.Platform = process.platform,
   run: RunCommand = runCommand,
-): Promise<number[] | null> {
+): Promise<PortListener[] | null> {
   try {
-    const pids =
-      platform === "win32"
-        ? parseNetstatClients(await run("netstat", ["-ano", "-p", "TCP"]), port)
-        : parseLsofClients(
-            await run("lsof", ["+c", "0", "-nP", `-iTCP:${port}`, "-sTCP:ESTABLISHED", "-Fpcn"]),
-            port,
-          ).map((c) => c.pid);
-    return pids.filter((pid) => pid !== selfPid);
+    let clients: PortListener[];
+    if (platform === "win32") {
+      const pids = parseNetstatClients(await run("netstat", ["-ano", "-p", "TCP"]), port);
+      const names = pids.length > 0 ? await windowsProcessNames(run) : new Map<number, string>();
+      clients = pids.map((pid) => ({ pid, command: names.get(pid) }));
+    } else {
+      clients = parseLsofClients(
+        await run("lsof", ["+c", "0", "-nP", `-iTCP:${port}`, "-sTCP:ESTABLISHED", "-Fpcn"]),
+        port,
+      );
+    }
+    return clients.filter((c) => c.pid !== selfPid);
   } catch {
     return null;
   }
@@ -152,14 +175,26 @@ function isLightroom(listener: PortListener): boolean {
 export interface PortOwnership {
   port: number;
   listener: PortListener | null;
-  /** PIDs of other processes connected to the port; null when unknown. */
-  otherClients: number[] | null;
+  /** Other processes connected to the port; null when unknown. */
+  otherClients: PortListener[] | null;
 }
 
+const PORT_CHANGE_HINT =
+  "pick free ports in Lightroom's Plug-in Manager and set the same values in " +
+  "LIGHTROOM_MCP_REQUEST_PORT / LIGHTROOM_MCP_RESPONSE_PORT";
+
+/**
+ * Another Lightroom plugin binding the same ports (MIDI2LR does, from inside
+ * Lightroom) is indistinguishable from our own plugin at the socket level, so
+ * every Lightroom-owned verdict has to name it as a possibility.
+ */
+const SAME_PORT_PLUGIN_HINT =
+  "another Lightroom plugin bound to the same ports (MIDI2LR uses 58763/58764)";
+
 export const STALE_LISTENER_MESSAGE =
-  "Lightroom owns the plugin's ports but is not answering, and no other bridge is connected. " +
-  "A listener left behind by 'Reload Plug-in' keeps the port without serving it. " +
-  "Restart Lightroom Classic.";
+  "Lightroom owns the plugin's ports but is not answering, and no other client is connected. " +
+  `Likely causes: ${SAME_PORT_PLUGIN_HINT}, a listener left behind by 'Reload Plug-in', or a stuck plugin. ` +
+  `Restart Lightroom Classic; if that does not help, ${PORT_CHANGE_HINT}.`;
 
 interface ForeignOwnership extends PortOwnership {
   listener: PortListener;
@@ -169,40 +204,47 @@ function isForeign(p: PortOwnership): p is ForeignOwnership {
   return p.listener !== null && !isLightroom(p.listener);
 }
 
+function describeProcess(p: PortListener): string {
+  return `${p.command ?? "an unknown process"} (pid ${p.pid})`;
+}
+
 function describeOwner({ port, listener }: ForeignOwnership): string {
-  return `port ${port} is held by ${listener.command ?? "an unknown process"} (pid ${listener.pid})`;
+  return `port ${port} is held by ${describeProcess(listener)}`;
 }
 
 /**
  * Explains why a connected plugin is not answering. A foreign process bound to
  * a plugin port accepts the bridge's connection itself, so requests or
  * responses silently go to it instead of Lightroom (issue 225). When
- * Lightroom owns every port yet nobody else is connected, the listener is a
- * leftover from 'Reload Plug-in', not another bridge.
+ * Lightroom owns the ports, the listener may still not be ours: another
+ * plugin can hold them, or a pre-reload instance of this one.
  */
 export function describeUnresponsive(ports: PortOwnership[]): string {
   const foreign = ports.filter(isForeign);
-  if (foreign.length === 0) {
-    const ownedByLightroom = ports.every((p) => p.listener && isLightroom(p.listener));
-    const noOtherClients = ports.every((p) => p.otherClients?.length === 0);
-    if (ownedByLightroom && noOtherClients) return STALE_LISTENER_MESSAGE;
-    const others = [...new Set(ports.flatMap((p) => p.otherClients ?? []))];
-    return others.length > 0
-      ? `${SHADOW_BRIDGE_MESSAGE} Other processes connected: pid ${others.join(", ")}.`
-      : SHADOW_BRIDGE_MESSAGE;
+  if (foreign.length > 0) {
+    return (
+      `Connected, but not to Lightroom: ${foreign.map(describeOwner).join("; ")}. ` +
+      "The Lightroom plugin cannot bind a port another process already owns, so the bridge talks to that process instead. " +
+      `Quit it, or ${PORT_CHANGE_HINT}.`
+    );
   }
+  const ownedByLightroom = ports.every((p) => p.listener && isLightroom(p.listener));
+  if (!ownedByLightroom) return SHADOW_BRIDGE_MESSAGE;
+  if (ports.some((p) => p.otherClients === null)) return SHADOW_BRIDGE_MESSAGE;
+  const others = new Map<number, PortListener>();
+  for (const client of ports.flatMap((p) => p.otherClients ?? [])) others.set(client.pid, client);
+  if (others.size === 0) return STALE_LISTENER_MESSAGE;
   return (
-    `Connected, but not to Lightroom: ${foreign.map(describeOwner).join("; ")}. ` +
-    "The Lightroom plugin cannot bind a port another process already owns, so the bridge talks to that process instead. " +
-    "Quit it, or pick free ports in Lightroom's Plug-in Manager and set the same values in " +
-    "LIGHTROOM_MCP_REQUEST_PORT / LIGHTROOM_MCP_RESPONSE_PORT. " +
-    "MIDI2LR uses the same default ports (58763/58764)."
+    "Lightroom owns the plugin's ports but is not answering. Other processes are connected to them: " +
+    `${[...others.values()].map(describeProcess).join(", ")}. ` +
+    "If one is another lightroom-mcp bridge, quit it (pgrep -fl lightroom-mcp). " +
+    `If one belongs to ${SAME_PORT_PLUGIN_HINT}, ${PORT_CHANGE_HINT}.`
   );
 }
 
 export interface PortInspector {
   listener: (port: number) => Promise<PortListener | null>;
-  otherClients: (port: number) => Promise<number[] | null>;
+  otherClients: (port: number) => Promise<PortListener[] | null>;
 }
 
 const systemInspector: PortInspector = {
@@ -222,4 +264,67 @@ export async function diagnoseUnresponsive(
     })),
   );
   return describeUnresponsive(ownership);
+}
+
+export const DIAGNOSIS_REFRESH_MS = 60_000;
+
+/**
+ * Owns the "why is the plugin not answering" verdict for one outage. The
+ * recovery probe fires every few seconds while the plugin is down; each
+ * inspection spawns several lsof/netstat processes, so the verdict is reused
+ * for DIAGNOSIS_REFRESH_MS and only re-derived after that (or after recovery).
+ */
+export class UnresponsiveReporter {
+  private message = SHADOW_BRIDGE_MESSAGE;
+  private diagnosedAt: number | null = null;
+  private inFlight: Promise<void> | null = null;
+
+  private readonly diagnose: () => Promise<string>;
+  private readonly log: (msg: string) => void;
+  private readonly refreshMs: number;
+  private readonly now: () => number;
+
+  constructor(opts: {
+    diagnose: () => Promise<string>;
+    log: (msg: string) => void;
+    refreshMs?: number;
+    now?: () => number;
+  }) {
+    this.diagnose = opts.diagnose;
+    this.log = opts.log;
+    this.refreshMs = opts.refreshMs ?? DIAGNOSIS_REFRESH_MS;
+    this.now = opts.now ?? Date.now;
+  }
+
+  current(): string {
+    return this.message;
+  }
+
+  report(): void {
+    if (this.inFlight) return;
+    if (this.diagnosedAt !== null && this.now() - this.diagnosedAt < this.refreshMs) {
+      this.log(this.message);
+      return;
+    }
+    this.inFlight = this.diagnose()
+      .then((message) => {
+        this.message = message;
+        this.diagnosedAt = this.now();
+        this.log(message);
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
+  }
+
+  /** Resolves once a running diagnosis has produced its verdict. */
+  async settled(): Promise<void> {
+    await this.inFlight;
+  }
+
+  /** Forgets the verdict once the plugin answers again. */
+  clear(): void {
+    this.diagnosedAt = null;
+    this.message = SHADOW_BRIDGE_MESSAGE;
+  }
 }
