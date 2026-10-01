@@ -25,6 +25,103 @@ function readPid(pidFile: string): number | null {
   }
 }
 
+/** Like readPid, but tells a missing lock apart from an unreadable one. */
+function readOwner(lockFile: string): number | null | "missing" {
+  try {
+    fs.statSync(lockFile);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return "missing";
+  }
+  return readPid(lockFile);
+}
+
+const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "ENOSYS", "EOPNOTSUPP"]);
+
+/**
+ * Publishes the pending pid file as the lock; false when a lock already
+ * exists. Filesystems without hard links fall back to exclusive create, which
+ * reopens the brief empty-lock window the link avoids.
+ */
+function publish(pending: string, lockFile: string): boolean {
+  try {
+    fs.linkSync(pending, lockFile);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? "";
+    if (code === "EEXIST") return false;
+    if (!NO_HARD_LINKS.has(code)) throw err;
+  }
+  let fd: number;
+  try {
+    fd = fs.openSync(lockFile, "wx", 0o600);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw err;
+  }
+  try {
+    fs.writeFileSync(fd, `${process.pid}\n`, { encoding: "utf8" });
+  } finally {
+    fs.closeSync(fd);
+  }
+  return true;
+}
+
+/** Thrown when a live process holds the lock; carries its pid for diagnostics. */
+export class LockHeldError extends Error {
+  constructor(
+    readonly pid: number,
+    requestPort: number,
+    responsePort: number,
+  ) {
+    super(
+      `Another Lightroom MCP bridge is already running for ports ${requestPort}/${responsePort} (pid ${pid})`,
+    );
+  }
+}
+
+/** A guard or pid-less lock older than this belongs to a process that died. */
+const STALE_GUARD_MS = 5_000;
+
+function isFresh(file: string): boolean {
+  try {
+    return Date.now() - fs.statSync(file).mtimeMs <= STALE_GUARD_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Removes a dead owner's lock, but only if it still names that owner. The
+ * guard serializes reclaimers: without it, two of them can both see the dead
+ * pid, and the slower one deletes the lock the faster one just took. A lock
+ * that has vanished is never removed: a non-reclaiming bridge may be linking
+ * a fresh one into its place.
+ */
+function reclaimStale(lockFile: string, deadPid: number | null): boolean {
+  const guard = `${lockFile}.reclaim`;
+  try {
+    fs.closeSync(fs.openSync(guard, "wx", 0o600));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    if (!isFresh(guard)) fs.rmSync(guard, { force: true });
+    return false;
+  }
+  try {
+    const current = readOwner(lockFile);
+    const midWrite = current === null && isFresh(lockFile);
+    if (current !== "missing" && current === deadPid && !midWrite) fs.rmSync(lockFile, { force: true });
+  } finally {
+    fs.rmSync(guard, { force: true });
+  }
+  return true;
+}
+
+/**
+ * Takes the per-port-pair bridge lock. The pid is written to a private file
+ * first and hard-linked into place, so the lock never exists without its pid:
+ * an empty lock seen mid-write would look stale and be reclaimed while live.
+ * Throws LockHeldError when a live bridge holds it.
+ */
 export function acquireInstanceLock(
   requestPort: number,
   responsePort: number,
@@ -33,33 +130,24 @@ export function acquireInstanceLock(
   fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
   const lockFile = path.join(baseDir, `bridge-${requestPort}-${responsePort}.lock`);
 
-  while (true) {
-    let fd: number | null = null;
-    try {
-      fd = fs.openSync(lockFile, "wx", 0o600);
-      fs.writeFileSync(fd, `${process.pid}\n`, { encoding: "utf8" });
-      break;
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "EEXIST") {
-        throw err;
+  const pending = `${lockFile}.${process.pid}.tmp`;
+  fs.writeFileSync(pending, `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
+  try {
+    while (!publish(pending, lockFile)) {
+      const existingPid = readOwner(lockFile);
+      if (existingPid === "missing") continue;
+      if (existingPid === null && isFresh(lockFile)) {
+        throw new Error(`Another bridge is still writing the lock for ports ${requestPort}/${responsePort}`);
       }
-
-      const existingPid = readPid(lockFile);
       if (existingPid && pidIsAlive(existingPid)) {
-        throw new Error(
-          `Another Lightroom MCP bridge is already running for ports ${requestPort}/${responsePort} (pid ${existingPid})`,
-        );
+        throw new LockHeldError(existingPid, requestPort, responsePort);
       }
-
-      try {
-        fs.unlinkSync(lockFile);
-      } catch (unlinkErr) {
-        if ((unlinkErr as NodeJS.ErrnoException).code !== "ENOENT") throw unlinkErr;
+      if (!reclaimStale(lockFile, existingPid)) {
+        throw new Error(`Another bridge is reclaiming the stale lock for ports ${requestPort}/${responsePort}`);
       }
-    } finally {
-      if (fd !== null) fs.closeSync(fd);
     }
+  } finally {
+    fs.rmSync(pending, { force: true });
   }
 
   let released = false;

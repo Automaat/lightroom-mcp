@@ -8,7 +8,9 @@ import { Dispatcher } from "./dispatcher.js";
 import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
 import { createMcpServer } from "./create-server.js";
-import { NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
+import { createCallToolHandler, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
+import { Bridge, type Leader } from "./bridge.js";
+import { brokerPath } from "./broker.js";
 import { parseCli, helpText } from "./cli.js";
 import { VERSION } from "./version.js";
 import { startHeartbeat, probePlugin } from "./heartbeat.js";
@@ -82,15 +84,49 @@ async function main() {
     process.exit(1);
   }
 
-  try {
-    acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT);
-  } catch (err) {
-    console.error((err as Error).message);
-    process.exit(1);
-  }
-
   ensurePluginInstalled(here, (m) => console.error(m));
 
+  const bridge = new Bridge({
+    ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
+    acquireLock: () => acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT),
+    startLeader: () => startLeader(REQUEST_PORT, RESPONSE_PORT),
+    readToken: tryReadToken,
+  });
+
+  const server = createMcpServer({ callTool: (name, args) => bridge.callTool(name, args) });
+  server.oninitialized = () => void bridge.start();
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+
+  // Exit when the MCP client goes away. Signal handlers never fire when the
+  // parent dies without signaling (typical on Windows), and the live plugin
+  // sockets plus the heartbeat interval keep the event loop alive — the
+  // orphaned bridge then holds both the single-client plugin connection and
+  // the instance lock, so every future bridge instance fails with "Another
+  // Lightroom MCP bridge is already running". Stdin EOF is the one reliable
+  // cross-platform signal that the client is gone.
+  const exitOnClientGone = (reason: string) => () => {
+    console.error(`Shutting down: ${reason}`);
+    process.exit(0);
+  };
+  process.stdin.once("end", exitOnClientGone("stdin ended (client exited)"));
+  process.stdin.once("close", exitOnClientGone("stdin closed (client exited)"));
+
+  console.error(`Lightroom MCP server v${VERSION} running on stdio`);
+  console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
+  console.error(`Token file: ${tokenFilePath()}`);
+}
+
+function tryReadToken(): string | null {
+  try {
+    return readToken();
+  } catch {
+    return null;
+  }
+}
+
+function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   let requestSocket: PluginSocket;
   let responseSocket: PluginSocket | null = null;
   let responseConnectTimer: NodeJS.Timeout | null = null;
@@ -166,7 +202,7 @@ async function main() {
   const socketsConnected = () =>
     requestSocket.isConnected() && (responseSocket?.isConnected() ?? false);
 
-  startHeartbeat(
+  const heartbeat = startHeartbeat(
     dispatcher,
     HEARTBEAT_INTERVAL_MS,
     (err) => {
@@ -188,7 +224,7 @@ async function main() {
     },
   );
 
-  const server = createMcpServer({
+  const callTool = createCallToolHandler({
     dispatcher,
     isReady: () => socketsConnected() && liveness.isUsable(),
     notReadyMessage: () => (socketsConnected() ? unresponsive.current() : NOT_CONNECTED_MESSAGE),
@@ -199,26 +235,15 @@ async function main() {
     },
   });
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-
-  // Exit when the MCP client goes away. Signal handlers never fire when the
-  // parent dies without signaling (typical on Windows), and the live plugin
-  // sockets plus the heartbeat interval keep the event loop alive — the
-  // orphaned bridge then holds both the single-client plugin connection and
-  // the instance lock, so every future bridge instance fails with "Another
-  // Lightroom MCP bridge is already running". Stdin EOF is the one reliable
-  // cross-platform signal that the client is gone.
-  const exitOnClientGone = (reason: string) => () => {
-    console.error(`Shutting down: ${reason}`);
-    process.exit(0);
+  return {
+    callTool,
+    stop: () => {
+      clearInterval(heartbeat);
+      if (recoveryTimer) clearInterval(recoveryTimer);
+      stopResponseSocket();
+      requestSocket.stop();
+    },
   };
-  process.stdin.once("end", exitOnClientGone("stdin ended (client exited)"));
-  process.stdin.once("close", exitOnClientGone("stdin closed (client exited)"));
-
-  console.error(`Lightroom MCP server v${VERSION} running on stdio`);
-  console.error(`Connecting to plugin: request :${REQUEST_PORT}, response :${RESPONSE_PORT}`);
-  console.error(`Token file: ${tokenFilePath()}`);
 }
 
 function runInstallPlugin(): void {
