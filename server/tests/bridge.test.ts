@@ -141,7 +141,7 @@ describe('broker', () => {
 
   unixOnly('replaces a stale socket file left by a dead owner', async () => {
     const p = ipcPath(tmpDir());
-    fs.writeFileSync(p, '');
+    fs.writeFileSync(p, '', { mode: 0o600, flag: 'wx' });
     const server = new BrokerServer({ path: p, callTool: async () => ok('x'), readToken: () => null });
     await server.listen();
     closers.push(() => server.close());
@@ -317,8 +317,8 @@ describe('Bridge', () => {
   unixOnly('releases the lock and retries when it cannot serve other bridges', async () => {
     const dir = tmpDir();
     const blocker = path.join(dir, 'blocked');
-    fs.mkdirSync(path.join(blocker, 'bridge-58763-58764.sock'), { recursive: true });
-    fs.writeFileSync(path.join(blocker, 'bridge-58763-58764.sock', 'keep'), '');
+    fs.mkdirSync(path.join(blocker, 'bridge-58763-58764.sock'), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(blocker, 'bridge-58763-58764.sock', 'keep'), '', { mode: 0o600, flag: 'wx' });
     const stopped: string[] = [];
     const logs: string[] = [];
     const bridge = new Bridge({
