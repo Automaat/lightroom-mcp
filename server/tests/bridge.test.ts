@@ -4,7 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '../src/bridge.js';
-import { BrokerClient, BrokerServer, OWNER_LOST_MESSAGE, brokerPath } from '../src/broker.js';
+import { BrokerClient, BrokerServer, OWNER_LOST_MESSAGE, brokerPath, signNonce } from '../src/broker.js';
 import { acquireInstanceLock } from '../src/instance-lock.js';
 import type { ToolResponse } from '../src/tool-handler.js';
 
@@ -58,6 +58,11 @@ describe('brokerPath', () => {
     expect(brokerPath(1, 2, '/cfg', 'darwin')).toBe(path.join('/cfg', 'bridge-1-2.sock'));
   });
 
+  it('measures the socket path in bytes, not characters', () => {
+    const p = brokerPath(1, 2, '/' + 'ż'.repeat(45), 'darwin');
+    expect(p.startsWith(os.tmpdir())).toBe(true);
+  });
+
   it('falls back to the temp dir when the config path is too long for a Unix socket', () => {
     const long = '/' + 'a'.repeat(120);
     const p = brokerPath(1, 2, long, 'linux');
@@ -72,9 +77,13 @@ describe('broker', () => {
     while (closers.length > 0) closers.pop()!();
   });
 
-  async function serve(callTool: (name: string, args: unknown) => Promise<ToolResponse>, token = 't') {
+  async function serve(
+    callTool: (name: string, args: unknown) => Promise<ToolResponse>,
+    token = 't',
+    log: (msg: string) => void = () => {},
+  ) {
     const p = ipcPath(tmpDir());
-    const server = new BrokerServer({ path: p, callTool, readToken: () => token, log: () => {} });
+    const server = new BrokerServer({ path: p, callTool, readToken: () => token, log });
     await server.listen();
     closers.push(() => server.close());
     return { p, server };
@@ -85,6 +94,28 @@ describe('broker', () => {
     await client.connect();
     closers.push(() => client.close());
     return client;
+  }
+
+  async function rawHandshake(p: string, token: string) {
+    const sock = net.createConnection(p);
+    closers.push(() => sock.destroy());
+    sock.setEncoding('utf8');
+    const lines: string[] = [];
+    let buffer = '';
+    sock.on('data', (chunk: string) => {
+      buffer += chunk;
+      let idx: number;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        lines.push(buffer.slice(0, idx));
+        buffer = buffer.slice(idx + 1);
+      }
+    });
+    await new Promise<void>((resolve) => sock.once('connect', () => resolve()));
+    sock.write(JSON.stringify({ challenge: 'c' }) + '\n');
+    await waitFor(() => lines.length > 0);
+    const hello = JSON.parse(lines.shift()!) as { nonce: string; proof: string };
+    expect(hello.proof).toBe(signNonce(token, 'owner:c'));
+    return { sock, hello, lines };
   }
 
   it('forwards tool calls and returns the owner response', async () => {
@@ -100,21 +131,26 @@ describe('broker', () => {
     expect(text(b)).toBe('search_photos:{"query":"x"}');
   });
 
-  it('rejects a follower whose token does not match', async () => {
+  it('refuses to connect a follower whose token does not match', async () => {
+    const { p } = await serve(async () => ok('done'));
+
+    await expect(connect(p, 'wrong')).rejects.toThrow(/could not prove/);
+    await expect(connect(p, null)).rejects.toThrow(/could not prove/);
+  });
+
+  it('rejects a call signed with the wrong token', async () => {
     const calls: string[] = [];
     const { p } = await serve(async (name) => {
       calls.push(name);
       return ok('done');
     });
-    const client = await connect(p, 'wrong');
+    const { sock, hello, lines } = await rawHandshake(p, 't');
 
-    const resp = await client.callTool('get_selection', {});
+    sock.write(JSON.stringify({ id: 7, auth: signNonce('wrong', `follower:${hello.nonce}`), name: 'ping' }) + '\n');
 
-    expect(resp.isError).toBe(true);
-    expect(text(resp)).toMatch(/token mismatch/);
-    expect(calls).toEqual([]);
-    const tokenless = await connect(p, null);
-    expect(text(await tokenless.callTool('get_selection', {}))).toMatch(/token mismatch/);
+    await waitFor(() => lines.length > 0);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ id: 7, result: { isError: true } });
+    expect(lines[0]).toMatch(/token mismatch/);
     expect(calls).toEqual([]);
   });
 
@@ -154,45 +190,62 @@ describe('broker', () => {
     'survives a malformed request line %s',
     async (line) => {
       const logs: string[] = [];
-      const p = ipcPath(tmpDir());
-      const server = new BrokerServer({
-        path: p,
-        callTool: async () => ok('x'),
-        readToken: () => null,
-        log: (m) => logs.push(m),
-      });
-      await server.listen();
-      closers.push(() => server.close());
+      const { p } = await serve(async () => ok('x'), 't', (m) => logs.push(m));
+      const { sock } = await rawHandshake(p, 't');
 
-      const raw = net.createConnection(p);
-      closers.push(() => raw.destroy());
-      await new Promise<void>((resolve) => raw.once('connect', () => resolve()));
-      raw.write(line + '\n');
+      sock.write(line + '\n');
 
       await waitFor(() => logs.length > 0);
       expect(logs[0]).toMatch(/malformed request/);
-      const client = await connect(p, null);
+      const client = await connect(p);
       expect(text(await client.callTool('ping', {}))).toBe('x');
     },
   );
 
-  it('never sends the token itself over the channel', async () => {
+  it('drops a follower that opens without a challenge', async () => {
+    const logs: string[] = [];
+    const { p } = await serve(async () => ok('x'), 't', (m) => logs.push(m));
+    const sock = net.createConnection(p);
+    closers.push(() => sock.destroy());
+    const closed = new Promise<void>((resolve) => sock.once('close', () => resolve()));
+    await new Promise<void>((resolve) => sock.once('connect', () => resolve()));
+
+    sock.write('{"id":1,"name":"ping","auth":null}\n');
+
+    await closed;
+    expect(logs[0]).toMatch(/without a challenge/);
+  });
+
+  it('drops a peer that streams an oversized unterminated frame', async () => {
+    const { p } = await serve(async () => ok('x'));
+    const sock = net.createConnection(p);
+    closers.push(() => sock.destroy());
+    sock.on('error', () => {});
+    const closed = new Promise<void>((resolve) => sock.once('close', () => resolve()));
+    await new Promise<void>((resolve) => sock.once('connect', () => resolve()));
+
+    sock.write('x'.repeat(4096));
+
+    await closed;
+  });
+
+  it('refuses an impostor owner without leaking the token', async () => {
     const p = ipcPath(tmpDir());
     const received: string[] = [];
     const squatter = net.createServer((sock) => {
       sock.setEncoding('utf8');
-      sock.write(JSON.stringify({ nonce: 'n' }) + '\n');
-      sock.on('data', (chunk: string) => received.push(chunk));
+      sock.on('data', (chunk: string) => {
+        received.push(chunk);
+        sock.write(JSON.stringify({ nonce: 'n', proof: 'forged' }) + '\n');
+      });
     });
     await new Promise<void>((resolve) => squatter.listen(p, () => resolve()));
     closers.push(() => squatter.close());
-    const client = await connect(p, 'secret-token');
+    const client = new BrokerClient({ path: p, readToken: () => 'secret-token' });
 
-    void client.callTool('get_selected_photos', {});
-
-    await waitFor(() => received.length > 0);
+    await expect(client.connect()).rejects.toThrow(/could not prove/);
+    expect(client.isConnected()).toBe(false);
     expect(received.join('')).not.toContain('secret-token');
-    client.close();
   });
 
   it('gives up on an owner that never greets', async () => {
@@ -390,5 +443,25 @@ describe('Bridge', () => {
 
     expect(text(resp)).toBe(`${NO_OWNER_MESSAGE} Last error: EACCES: permission denied`);
     expect(logs.filter((m) => m.includes('cannot take the bridge lock'))).toHaveLength(1);
+  });
+
+  it('forgets callers that timed out waiting for an owner', async () => {
+    const bridge = new Bridge({
+      ipcPath: ipcPath(tmpDir()),
+      acquireLock: () => {
+        throw new Error('EACCES');
+      },
+      startLeader: () => ({ callTool: async () => ok('x'), stop: () => {} }),
+      readToken: () => null,
+      retryMs: 10,
+      readyWaitMs: 20,
+      log: () => {},
+    });
+    bridges.push(bridge);
+
+    await bridge.callTool('ping', {});
+    await bridge.callTool('ping', {});
+
+    expect(bridge.pendingWaiters()).toBe(0);
   });
 });

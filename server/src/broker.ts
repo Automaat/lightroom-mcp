@@ -4,10 +4,10 @@
  * Cowork/Code shared pool, issue 238). One bridge owns the plugin connection
  * and serves tool calls to the others over this channel.
  *
- * Followers prove they can read the plugin token by signing each call with an
- * HMAC over a per-connection nonce from the owner. The token itself never
- * crosses the channel, so whoever squats the socket or pipe name learns nothing
- * that unlocks the plugin.
+ * Both ends prove they can read the plugin token without sending it: the
+ * follower opens with a challenge the owner must sign, and signs each call
+ * over the owner's nonce. Whoever squats the socket or pipe name can neither
+ * pose as the owner nor learn anything that unlocks the plugin.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -33,6 +33,10 @@ interface BrokerReply {
 /** macOS caps sun_path at 104 bytes, Linux at 108. */
 const MAX_UNIX_SOCKET_PATH = 100;
 
+/** Unterminated input past these sizes is a hostile or broken peer. */
+const MAX_HANDSHAKE_BYTES = 1024;
+export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+
 export function brokerPath(
   requestPort: number,
   responsePort: number,
@@ -44,13 +48,29 @@ export function brokerPath(
     return `\\\\.\\pipe\\lightroom-mcp-${os.userInfo().username}-${name}`;
   }
   const preferred = path.join(baseDir, `${name}.sock`);
-  if (preferred.length <= MAX_UNIX_SOCKET_PATH) return preferred;
+  if (Buffer.byteLength(preferred) <= MAX_UNIX_SOCKET_PATH) return preferred;
   return path.join(os.tmpdir(), `lightroom-mcp-${os.userInfo().uid}-${name}.sock`);
 }
 
 export function signNonce(token: string | null, nonce: string): string | null {
   if (token === null) return null;
   return crypto.createHmac("sha256", token).update(nonce).digest("hex");
+}
+
+function newNonce(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function parseObject(line: string): Record<string, unknown> | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : null;
 }
 
 function authMatches(expected: string | null, actual: string | null): boolean {
@@ -61,14 +81,8 @@ function authMatches(expected: string | null, actual: string | null): boolean {
 }
 
 function parseRequest(line: string): BrokerRequest | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(line);
-  } catch {
-    return null;
-  }
-  if (typeof raw !== "object" || raw === null) return null;
-  const req = raw as Record<string, unknown>;
+  const req = parseObject(line);
+  if (!req) return null;
   if (typeof req.id !== "number" || typeof req.name !== "string") return null;
   if (req.auth !== null && typeof req.auth !== "string") return null;
   return { id: req.id, auth: req.auth, name: req.name, args: req.args };
@@ -78,11 +92,15 @@ function errorResponse(text: string): ToolResponse {
   return { content: [{ type: "text", text }], isError: true };
 }
 
-function onLines(sock: net.Socket, handle: (line: string) => void): void {
+function onLines(sock: net.Socket, handle: (line: string) => void, maxBytes: () => number): void {
   let buffer = "";
   sock.setEncoding("utf8");
   sock.on("data", (chunk: string) => {
     buffer += chunk;
+    if (buffer.indexOf("\n") === -1 && Buffer.byteLength(buffer) > maxBytes()) {
+      sock.destroy();
+      return;
+    }
     let idx: number;
     while ((idx = buffer.indexOf("\n")) !== -1) {
       const line = buffer.slice(0, idx).trim();
@@ -132,13 +150,33 @@ export class BrokerServer {
     this.clients.add(sock);
     sock.on("error", () => {});
     sock.on("close", () => this.clients.delete(sock));
-    const nonce = crypto.randomBytes(32).toString("hex");
-    sock.write(JSON.stringify({ nonce }) + "\n");
-    onLines(sock, (line) => {
-      this.handle(sock, nonce, line).catch((err: unknown) => {
-        this.log(`[broker] failed to serve a follower call: ${String(err)}`);
-      });
-    });
+    const nonce = newNonce();
+    let greeted = false;
+    onLines(
+      sock,
+      (line) => {
+        if (!greeted) {
+          greeted = this.greet(sock, nonce, line);
+          return;
+        }
+        this.handle(sock, nonce, line).catch((err: unknown) => {
+          this.log(`[broker] failed to serve a follower call: ${String(err)}`);
+        });
+      },
+      () => (greeted ? MAX_FRAME_BYTES : MAX_HANDSHAKE_BYTES),
+    );
+  }
+
+  private greet(sock: net.Socket, nonce: string, line: string): boolean {
+    const challenge = parseObject(line)?.challenge;
+    if (typeof challenge !== "string") {
+      this.log("[broker] follower opened without a challenge, dropping it");
+      sock.destroy();
+      return false;
+    }
+    const proof = signNonce(this.opts.readToken(), `owner:${challenge}`);
+    sock.write(JSON.stringify({ nonce, proof }) + "\n");
+    return true;
   }
 
   private async handle(sock: net.Socket, nonce: string, line: string): Promise<void> {
@@ -147,7 +185,7 @@ export class BrokerServer {
       this.log(`[broker] malformed request from follower: ${line.slice(0, 200)}`);
       return;
     }
-    const result = authMatches(signNonce(this.opts.readToken(), nonce), req.auth)
+    const result = authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), req.auth)
       ? await this.opts.callTool(req.name, req.args)
       : errorResponse("Rejected by the Lightroom MCP bridge: token mismatch.");
     if (sock.destroyed) return;
@@ -182,25 +220,35 @@ export class BrokerClient {
 
   constructor(private readonly opts: BrokerClientOptions) {}
 
-  /** Resolves once the owner has sent its nonce; rejects if it never does. */
+  /**
+   * Resolves once the owner has proven it can read the plugin token; rejects
+   * on a bad proof, a hang-up, or no greeting in time.
+   */
   async connect(): Promise<void> {
     const sock = net.createConnection(this.opts.path);
-    let greeted: (nonce: string) => void = () => {};
-    const hello = new Promise<string>((resolve) => (greeted = resolve));
-    onLines(sock, (line) => this.receive(line, greeted));
+    const challenge = newNonce();
+    let greeted: (hello: Record<string, unknown>) => void = () => {};
+    const hello = new Promise<Record<string, unknown>>((resolve) => (greeted = resolve));
+    onLines(sock, (line) => this.receive(line, greeted), () => MAX_FRAME_BYTES);
     try {
-      this.nonce = await new Promise<string>((resolve, reject) => {
+      const greeting = await new Promise<Record<string, unknown>>((resolve, reject) => {
         const timer = setTimeout(
           () => reject(new Error("owning bridge did not greet")),
           this.opts.helloTimeoutMs ?? 2_000,
         );
         sock.once("error", reject);
         sock.once("close", () => reject(new Error("owning bridge closed the connection")));
-        void hello.then((nonce) => {
+        sock.once("connect", () => sock.write(JSON.stringify({ challenge }) + "\n"));
+        void hello.then((msg) => {
           clearTimeout(timer);
-          resolve(nonce);
+          resolve(msg);
         });
       });
+      const proof = typeof greeting.proof === "string" ? greeting.proof : null;
+      if (!authMatches(signNonce(this.opts.readToken(), `owner:${challenge}`), proof)) {
+        throw new Error("owning bridge could not prove it holds the plugin token");
+      }
+      this.nonce = greeting.nonce as string;
     } catch (err) {
       sock.destroy();
       throw err;
@@ -217,17 +265,11 @@ export class BrokerClient {
     this.sock = sock;
   }
 
-  private receive(line: string, greeted: (nonce: string) => void): void {
-    let msg: unknown;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (typeof msg !== "object" || msg === null) return;
-    const data = msg as Record<string, unknown>;
+  private receive(line: string, greeted: (hello: Record<string, unknown>) => void): void {
+    const data = parseObject(line);
+    if (!data) return;
     if (typeof data.nonce === "string") {
-      greeted(data.nonce);
+      greeted(data);
       return;
     }
     if (typeof data.id !== "number") return;
@@ -244,7 +286,12 @@ export class BrokerClient {
     const sock = this.sock;
     if (!sock) return Promise.resolve(errorResponse(OWNER_LOST_MESSAGE));
     const id = this.nextId++;
-    const req: BrokerRequest = { id, auth: signNonce(this.opts.readToken(), this.nonce), name, args };
+    const req: BrokerRequest = {
+      id,
+      auth: signNonce(this.opts.readToken(), `follower:${this.nonce}`),
+      name,
+      args,
+    };
     return new Promise((resolve) => {
       this.pending.set(id, resolve);
       sock.write(JSON.stringify(req) + "\n");

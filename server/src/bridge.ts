@@ -210,14 +210,21 @@ export class Bridge {
 
   private waitForRole(): Promise<void> {
     return new Promise((resolve) => {
-      const timer = setTimeout(done, this.readyWaitMs);
-      const waiter = () => done();
-      function done() {
+      const waiter = () => {
         clearTimeout(timer);
         resolve();
-      }
+      };
+      const timer = setTimeout(() => {
+        this.waiters = this.waiters.filter((w) => w !== waiter);
+        resolve();
+      }, this.readyWaitMs);
       this.waiters.push(waiter);
     });
+  }
+
+  /** Waiters still parked for a role; exposed for leak tests. */
+  pendingWaiters(): number {
+    return this.waiters.length;
   }
 
   private notify(): void {
