@@ -137,3 +137,152 @@ describe("HandlerExport.exportPhotos", function()
         assert.is_false(exportRanInsideReadAccess)
     end)
 end)
+
+describe("HandlerExport.exportPhotoMetadata", function()
+    local JSON = require 'JSON'
+    local createdDirs
+
+    local function setupMetadata(opts)
+        opts = opts or {}
+        createdDirs = {}
+        local catalog = helper.fakeCatalog({ photos = opts.photos or {}, targetPhotos = opts.targetPhotos })
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrLogger = helper.defaultLrLogger(),
+            LrFileUtils = {
+                exists = function(path) return opts.existingDir == path end,
+                createAllDirectories = function(path) table.insert(createdDirs, path) end,
+            },
+            LrPathUtils = {
+                parent = function(path) return (path:match("^(.*)[/\\][^/\\]*$")) end,
+            },
+            LrExportSession = function() return { doExportOnCurrentTask = function() end } end,
+        })
+        package.loaded.HandlerExport = nil
+        return catalog, require 'HandlerExport'
+    end
+
+    local function tempJson()
+        return os.tmpname() .. ".json"
+    end
+
+    local function readJson(path)
+        local file = assert(io.open(path, "r"))
+        local text = file:read("*a")
+        file:close()
+        os.remove(path)
+        return JSON:decode(text)
+    end
+
+    local function photoOne()
+        local places = helper.fakeKeyword("Places")
+        local paris = helper.fakeKeyword("Paris", { parent = places })
+        return helper.fakePhoto({
+            id = 11,
+            uuid = "UUID-11",
+            path = "/p/a.dng",
+            fileName = "a.dng",
+            fileFormat = "DNG",
+            isVirtualCopy = false,
+            dateTimeOriginalISO8601 = "2016-03-13T15:03:39",
+            dimensions = { width = 3648, height = 5472 },
+            croppedDimensions = { width = 3000, height = 4500 },
+            rating = 4,
+            title = "A title",
+            caption = "",
+            gps = { latitude = 51.5, longitude = -0.12 },
+            gpsAltitude = 14,
+            city = "London",
+            keywords = { paris, helper.fakeKeyword("summer") },
+        })
+    end
+
+    it("writes the given photos' metadata, with keyword paths, to the file", function()
+        local p1 = photoOne()
+        local p2 = helper.fakePhoto({ id = 12, path = "/p/b.jpg", fileName = "b.jpg", keywords = {} })
+        local _, Handler = setupMetadata({ photos = { p1, p2 } })
+        local out = tempJson()
+
+        local r = Handler.exportPhotoMetadata({ photo_ids = { 11, 12 }, destination = out })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.exported)
+        assert.are.same({}, r.missing)
+
+        local data = readJson(out)
+        assert.are.equal(1, data.version)
+        assert.are.equal(2, data.count)
+        local a = data.photos[1]
+        assert.are.equal(11, a.id)
+        assert.are.equal("UUID-11", a.uuid)
+        assert.are.equal("/p/a.dng", a.path)
+        assert.are.equal("a.dng", a.filename)
+        assert.are.equal("2016-03-13T15:03:39", a.captureTime)
+        assert.are.same({ width = 3648, height = 5472 }, a.dimensions)
+        assert.are.same({ width = 3000, height = 4500 }, a.croppedDimensions)
+        assert.are.equal(4, a.rating)
+        assert.are.equal("A title", a.title)
+        assert.are.same({ latitude = 51.5, longitude = -0.12, altitude = 14 }, a.gps)
+        assert.are.equal("London", a.location.city)
+        assert.are.same({ "Paris", "summer" }, a.keywords)
+        assert.are.same({ "Places|Paris", "summer" }, a.keywordPaths)
+        assert.is_nil(a.developSettings)
+
+        local b = data.photos[2]
+        assert.are.equal(12, b.id)
+        assert.is_nil(b.gps)
+        assert.is_nil(b.location)
+        assert.are.same({}, b.keywordPaths)
+    end)
+
+    it("exports the current selection when photo_ids is omitted", function()
+        local p1 = photoOne()
+        local p2 = helper.fakePhoto({ id = 12, path = "/p/b.jpg", fileName = "b.jpg", keywords = {} })
+        local catalog, Handler = setupMetadata({ photos = { p1, p2 }, targetPhotos = { p2 } })
+        local out = tempJson()
+
+        local r = Handler.exportPhotoMetadata({ destination = out })
+
+        assert.are.equal(1, r.exported)
+        assert.are.equal(12, readJson(out).photos[1].id)
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("reports unknown ids and still writes the photos it found", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() } })
+        local out = tempJson()
+
+        local r = Handler.exportPhotoMetadata({ photo_ids = { 11, "nope" }, destination = out })
+
+        assert.are.equal(1, r.exported)
+        assert.are.same({ "nope" }, r.missing)
+        assert.are.equal(1, readJson(out).count)
+    end)
+
+    it("creates the destination folder when it does not exist", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() } })
+        local out = tempJson()
+        local dir = out:match("^(.*)[/\\][^/\\]*$")
+
+        Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
+        os.remove(out)
+
+        assert.are.same({ dir }, createdDirs)
+    end)
+
+    it("validates destination and photo_ids, and refuses an empty export", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() }, targetPhotos = {} })
+
+        assert.has_error(function() Handler.exportPhotoMetadata({}) end, "destination is required")
+        assert.has_error(function() Handler.exportPhotoMetadata({ destination = "/tmp/out.txt" }) end,
+            "destination must be a .json file path")
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = {} })
+        end, "photo_ids must be a non-empty array when given")
+        assert.has_error(function() Handler.exportPhotoMetadata({ destination = "/tmp/out.json" }) end,
+            "No photos found to export metadata for")
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = { "nope" } })
+        end, "No photos found to export metadata for")
+    end)
+end)

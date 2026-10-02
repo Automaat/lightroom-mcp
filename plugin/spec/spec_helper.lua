@@ -57,6 +57,7 @@ for _, key in ipairs({
     -- File / catalog
     "fileName", "fileSize", "fileFormat", "path", "dimensions",
     "rating", "colorNameForLabel", "pickStatus", "keywords",
+    "uuid", "isVirtualCopy", "croppedDimensions", "dateTimeOriginalISO8601",
     -- EXIF
     "dateTimeOriginal", "dateTimeDigitized", "cameraMake", "cameraModel",
     "cameraSerialNumber", "lens", "isoSpeedRating", "focalLength",

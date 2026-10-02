@@ -46,6 +46,7 @@ const STARTUP_GRACE_MS = 3_000;
 const CONNECT_POLL_MS = 50;
 const ACTION_TIMEOUTS_MS: Record<string, number> = {
   export_photos: LONG_RUNNING_TIMEOUT_MS,
+  export_photo_metadata: LONG_RUNNING_TIMEOUT_MS,
   import_photos: LONG_RUNNING_TIMEOUT_MS,
   ping: PING_TIMEOUT_MS,
 };

@@ -409,6 +409,25 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "export_photo_metadata",
+    luaHandler: "HandlerExport.exportPhotoMetadata",
+    description:
+      "Write catalog metadata for many photos to a JSON file on disk: file, capture time, dimensions, rating, title/caption, GPS, location, keywords and keywordPaths (no develop settings). Exports the given photos, or the current selection (the filmstrip if nothing is selected) when photo_ids is omitted. Use instead of calling get_photo_metadata once per photo.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths (default: current selection)"),
+        destination: {
+          type: "string",
+          pattern: "\\.[jJ][sS][oO][nN]$",
+          description: "Path of the .json file to write (overwritten if it exists)",
+        },
+      },
+      required: ["destination"],
+    },
+  },
+  {
     name: "list_develop_presets",
     luaHandler: "HandlerDevelop.listDevelopPresets",
     description: "List Lightroom-visible Develop presets and plugin-managed preset checkpoints",
