@@ -22,6 +22,7 @@ const EXPECTED_TOOL_NAMES = [
   'set_rating',
   'import_photos',
   'export_photos',
+  'export_photo_metadata',
   'list_develop_presets',
   'get_develop_preset',
   'compare_develop_presets',
@@ -33,8 +34,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 20 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(20);
+  it('contains exactly 21 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(21);
   });
 
   it('tool names are unique', () => {
@@ -93,6 +94,7 @@ describe('tool required fields', () => {
     ['set_rating', ['photo_ids', 'rating']],
     ['import_photos', ['source_path']],
     ['export_photos', ['photo_ids', 'destination']],
+    ['export_photo_metadata', ['destination']],
     ['compare_develop_presets', ['base', 'candidate']],
     ['create_develop_preset', ['photo_id', 'preset_name', 'settings']],
     ['export_develop_preset', ['destination_dir']],
@@ -143,6 +145,7 @@ describe('photo array schema', () => {
     ['set_keywords', 'photo_ids'],
     ['set_rating', 'photo_ids'],
     ['export_photos', 'photo_ids'],
+    ['export_photo_metadata', 'photo_ids'],
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {

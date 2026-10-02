@@ -83,6 +83,10 @@
       "description": "Export photos with format/quality/dimensions."
     },
     {
+      "name": "export_photo_metadata",
+      "description": "Write metadata for many photos to a JSON file."
+    },
+    {
       "name": "list_develop_presets",
       "description": "List available Develop presets."
     },

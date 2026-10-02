@@ -193,6 +193,7 @@ local DISPATCH = {
     set_rating = HandlerOrganization.setRating,
     import_photos = HandlerImport.importPhotos,
     export_photos = HandlerExport.exportPhotos,
+    export_photo_metadata = HandlerExport.exportPhotoMetadata,
     get_selected_photos = HandlerSelection.getSelectedPhotos,
     -- Test-only, no matching MCP tool contract: only the raw TCP probe
     -- (manual-test.mjs / the e2e playbook) can reach it. See HandlerSelection.

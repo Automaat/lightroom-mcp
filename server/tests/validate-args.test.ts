@@ -43,6 +43,12 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('set_gps', { ...base, clear_altitude: true })).toBeNull();
   });
 
+  it('rejects a control character that would cut the .json path short', () => {
+    expect(validateToolArgs('export_photo_metadata', { destination: '/u/.zshrc\u0000.json' })).toContain('destination');
+    expect(validateToolArgs('export_photo_metadata', { destination: '/u/a\nb.json' })).toContain('destination');
+    expect(validateToolArgs('export_photo_metadata', { destination: '/u/zdjęcia 東京.json' })).toBeNull();
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 

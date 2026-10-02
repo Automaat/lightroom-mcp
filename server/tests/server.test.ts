@@ -45,10 +45,10 @@ describe('createMcpServer', () => {
   });
 
   describe('ListTools', () => {
-    it('returns all 20 tools', async () => {
+    it('returns all 21 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(20);
+      expect(tools).toHaveLength(21);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
