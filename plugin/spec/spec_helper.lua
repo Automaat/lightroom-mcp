@@ -102,6 +102,32 @@ function M.fakePhoto(meta)
     }
 end
 
+-- Build a fake keyword. opts: parent (fake keyword), synonyms, includeOnExport.
+-- Registers itself with its parent so getChildren() sees it, as a keyword that
+-- already exists in the catalog would be.
+function M.fakeKeyword(name, opts)
+    opts = opts or {}
+    local children = {}
+    local kw = {
+        getName = function() return name end,
+        getParent = function() return opts.parent end,
+        getChildren = function() return children end,
+        getSynonyms = function() return opts.synonyms or {} end,
+        getAttributes = function()
+            return {
+                keywordName = name,
+                synonyms = opts.synonyms or {},
+                includeOnExport = opts.includeOnExport ~= false,
+            }
+        end,
+        __addChild = function(_, child) table.insert(children, child) end,
+    }
+    if opts.parent and not opts.detached then
+        opts.parent:__addChild(kw)
+    end
+    return kw
+end
+
 -- Build a fake collection.
 function M.fakeCollection(name, photos)
     photos = photos or {}
@@ -124,6 +150,7 @@ end
 --   photos: array of fake photos
 --   collections: array of fake collections
 --   collectionSets: array of fake collection sets
+--   keywords: array of top-level fake keywords
 function M.fakeCatalog(opts)
     opts = opts or {}
     local photos = opts.photos or {}
@@ -243,8 +270,17 @@ function M.fakeCatalog(opts)
             table.insert(collections, c)
             return c
         end,
-        createKeyword = function(_, name)
-            local kw = { getName = function() return name end }
+        getKeywords = function() return opts.keywords or {} end,
+        -- Like the SDK inside one write transaction, a keyword created here is
+        -- NOT visible to getKeywords()/getChildren() afterwards (detached), so
+        -- a handler that creates the same level twice shows up as a duplicate.
+        createKeyword = function(_, name, synonyms, includeOnExport, parent)
+            local kw = M.fakeKeyword(name, {
+                parent = parent,
+                synonyms = synonyms,
+                includeOnExport = includeOnExport,
+                detached = true,
+            })
             table.insert(createdKeywords, kw)
             return kw
         end,

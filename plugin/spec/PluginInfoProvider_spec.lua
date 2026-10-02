@@ -5,7 +5,7 @@ local helper = require 'spec_helper'
 -- module body + resetForReload + PluginInit wiring; none of it binds a
 -- socket at load time (binding happens only inside startServer).
 local HANDLER_MODULES = {
-    'JSON', 'HandlerSearch', 'HandlerCollections', 'HandlerMetadata',
+    'JSON', 'HandlerSearch', 'HandlerCollections', 'HandlerKeywords', 'HandlerMetadata',
     'HandlerOrganization', 'HandlerImport', 'HandlerExport',
     'HandlerSelection', 'HandlerDevelop',
 }

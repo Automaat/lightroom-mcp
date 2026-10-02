@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 
+local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 
@@ -60,11 +61,16 @@ function MetadataHandler.getPhotoMetadata(args)
         end
 
         -- Get keywords
+        -- `keywords` stays leaf names; `keywordPaths` is the same list as
+        -- full parent-first paths, which is what tells two keywords of the
+        -- same name apart ("Orientation|portrait" vs "Type|portrait").
         local keywords = {}
+        local keywordPaths = {}
         local photoKeywords = photo:getRawMetadata('keywords')
         if photoKeywords then
             for _, kw in ipairs(photoKeywords) do
                 table.insert(keywords, kw:getName())
+                table.insert(keywordPaths, KeywordTree.pathOf(kw))
             end
         end
 
@@ -91,6 +97,7 @@ function MetadataHandler.getPhotoMetadata(args)
             colorLabel = photo:getRawMetadata('colorNameForLabel'),
             pickStatus = photo:getRawMetadata('pickStatus'),
             keywords = keywords,
+            keywordPaths = keywordPaths,
             -- Title / caption / headline (IPTC content description).
             title = photo:getFormattedMetadata('title'),
             caption = photo:getFormattedMetadata('caption'),

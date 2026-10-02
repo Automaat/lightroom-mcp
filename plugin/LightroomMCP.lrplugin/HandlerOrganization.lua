@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 
+local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 
@@ -10,6 +11,54 @@ local function validateKeywordLimit(keywords, fieldName)
     if keywords and #keywords > MAX_KEYWORDS_PER_REQUEST then
         error(fieldName .. " must contain at most " .. MAX_KEYWORDS_PER_REQUEST .. " keywords")
     end
+end
+
+-- Splits the requested keywords into plain names and hierarchy paths.
+-- A string containing "|" is a parent-first path ("Places|Europe|Paris");
+-- anything else is a plain name, handled exactly as before paths existed.
+local function parseKeywordList(keywords)
+    local entries = {}
+    local seen = {}
+    for _, kw in ipairs(keywords or {}) do
+        local entry
+        if KeywordTree.isPath(kw) then
+            local parts = KeywordTree.split(kw)
+            entry = { parts = parts, key = KeywordTree.join(parts) }
+        else
+            entry = { name = kw, key = kw }
+        end
+        if not seen[entry.key] then
+            seen[entry.key] = true
+            table.insert(entries, entry)
+        end
+    end
+    return entries
+end
+
+-- create_missing = false: every keyword to add must already exist. Returns a
+-- list of problems (empty when all resolve) without touching the catalog.
+local function findUnresolvable(catalog, addEntries)
+    local problems = {}
+    for _, entry in ipairs(addEntries) do
+        if entry.parts then
+            if not KeywordTree.resolve(catalog, entry.parts) then
+                table.insert(problems, "not found: " .. entry.key)
+            end
+        else
+            local matches = KeywordTree.findByName(catalog, entry.name)
+            if #matches == 0 then
+                table.insert(problems, "not found: " .. entry.name)
+            elseif #matches > 1 then
+                local paths = {}
+                for _, match in ipairs(matches) do
+                    table.insert(paths, match.path)
+                end
+                table.insert(problems, "ambiguous: " .. entry.name
+                    .. " (" .. table.concat(paths, ", ") .. ")")
+            end
+        end
+    end
+    return problems
 end
 
 function OrganizationHandler.setKeywords(args)
@@ -27,34 +76,89 @@ function OrganizationHandler.setKeywords(args)
         error("add_keywords or remove_keywords is required")
     end
 
+    if args.create_missing ~= nil and type(args.create_missing) ~= "boolean" then
+        error("create_missing must be a boolean")
+    end
+    -- Default true: a plain name that does not exist yet is created, as it
+    -- always was.
+    local createMissing = args.create_missing ~= false
+
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
 
-    local addKeywordNames = {}
-    local addSet = {}
-    if args.add_keywords then
-        for _, kw in ipairs(args.add_keywords) do
-            if not addSet[kw] then
-                addSet[kw] = true
-                table.insert(addKeywordNames, kw)
-            end
+    local addEntries = parseKeywordList(args.add_keywords)
+
+    local removeNames = {}
+    local removePaths = {}
+    local hasRemovePaths = false
+    for _, entry in ipairs(parseKeywordList(args.remove_keywords)) do
+        if entry.parts then
+            removePaths[entry.key] = true
+            hasRemovePaths = true
+        else
+            removeNames[entry.name] = true
         end
     end
 
-    local removeSet = {}
-    if args.remove_keywords then
-        for _, kw in ipairs(args.remove_keywords) do
-            removeSet[kw] = true
+    -- Reject unknown or ambiguous keywords BEFORE resolving ids or opening the
+    -- write gate, so a strict call that cannot be honoured changes nothing.
+    if not createMissing and #addEntries > 0 then
+        local problems = {}
+        catalog:withReadAccessDo(function()
+            problems = findUnresolvable(catalog, addEntries)
+        end)
+        if #problems > 0 then
+            error("Keywords not resolved (create_missing is false): "
+                .. table.concat(problems, "; "))
         end
     end
 
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
     catalog:withWriteAccessDo("Set Keywords", function()
-        -- createKeyword is not idempotent within one write transaction.
+        -- createKeyword is not idempotent within one write transaction, and a
+        -- keyword created here is not visible to getChildren() until the
+        -- transaction ends, so levels created for one path are remembered for
+        -- the next ("A|B" then "A|C" must share one new "A").
+        local createdByPath = {}
+
+        local function resolveOrCreatePath(parts)
+            local parent = nil
+            local prefix = ""
+            for _, name in ipairs(parts) do
+                local path = prefix .. name
+                local keyword = createdByPath[path]
+                if not keyword then
+                    keyword = KeywordTree.findChild(catalog, parent, name)
+                end
+                if not keyword then
+                    if not createMissing then
+                        error("Keyword not found: " .. KeywordTree.join(parts))
+                    end
+                    keyword = catalog:createKeyword(name, {}, true, parent, true)
+                    createdByPath[path] = keyword
+                end
+                parent = keyword
+                prefix = path .. KeywordTree.SEPARATOR
+            end
+            return parent
+        end
+
         local keywordObjs = {}
-        for _, kw in ipairs(addKeywordNames) do
-            table.insert(keywordObjs, catalog:createKeyword(kw, {}, true, nil, true))
+        for _, entry in ipairs(addEntries) do
+            if entry.parts then
+                table.insert(keywordObjs, resolveOrCreatePath(entry.parts))
+            elseif createMissing then
+                table.insert(keywordObjs, catalog:createKeyword(entry.name, {}, true, nil, true))
+            else
+                -- Looked up again rather than carried across gates: the check
+                -- above only proved the name resolved then.
+                local matches = KeywordTree.findByName(catalog, entry.name)
+                if #matches ~= 1 then
+                    error("Keyword not resolved: " .. entry.name)
+                end
+                table.insert(keywordObjs, matches[1].keyword)
+            end
         end
 
         for _, entry in ipairs(resolved) do
@@ -64,11 +168,14 @@ function OrganizationHandler.setKeywords(args)
                     photo:addKeyword(kwObj)
                 end
 
-                if next(removeSet) then
+                if next(removeNames) or hasRemovePaths then
                     local existingKeywords = photo:getRawMetadata('keywords')
                     if existingKeywords then
                         for _, kw in ipairs(existingKeywords) do
-                            if removeSet[kw:getName()] then
+                            -- A plain name removes every keyword so named; a
+                            -- path removes only the keyword at that place.
+                            if removeNames[kw:getName()]
+                                or (hasRemovePaths and removePaths[KeywordTree.pathOf(kw)]) then
                                 photo:removeKeyword(kw)
                             end
                         end

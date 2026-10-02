@@ -108,6 +108,187 @@ describe("HandlerOrganization.setKeywords", function()
         assert.are.equal(1, r.updated)
     end)
 
+    -- Catalog tree used by the hierarchy specs:
+    --   Places > Europe > Paris
+    --   Orientation > portrait
+    --   Type > portrait
+    --   summer
+    local function tree()
+        local places = helper.fakeKeyword("Places")
+        local europe = helper.fakeKeyword("Europe", { parent = places })
+        local paris = helper.fakeKeyword("Paris", { parent = europe })
+        local orientation = helper.fakeKeyword("Orientation")
+        local orientationPortrait = helper.fakeKeyword("portrait", { parent = orientation })
+        local kind = helper.fakeKeyword("Type")
+        local typePortrait = helper.fakeKeyword("portrait", { parent = kind })
+        local summer = helper.fakeKeyword("summer")
+        return {
+            top = { places, orientation, kind, summer },
+            places = places, europe = europe, paris = paris,
+            orientationPortrait = orientationPortrait, typePortrait = typePortrait,
+            summer = summer,
+        }
+    end
+
+    local function added(photo)
+        return photo:getRawMetadata("__addedKeywords") or {}
+    end
+
+    local function removed(photo)
+        return photo:getRawMetadata("__removedKeywords") or {}
+    end
+
+    it("adds an existing keyword addressed by its hierarchy path", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        local r = Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places|Europe|Paris" } })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ t.paris }, added(p1))
+        assert.are.equal(0, #catalog.getCreatedKeywords())
+    end)
+
+    it("tells same-named keywords apart by path", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local _, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Type|portrait" } })
+
+        assert.are.same({ t.typePortrait }, added(p1))
+    end)
+
+    it("ignores spaces around the path separator", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local _, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places | Europe | Paris" } })
+
+        assert.are.same({ t.paris }, added(p1))
+    end)
+
+    it("creates only the missing levels of a path, under the existing parent", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places|Europe|Rome|Trastevere" } })
+
+        local created = catalog.getCreatedKeywords()
+        assert.are.equal(2, #created)
+        assert.are.equal("Rome", created[1]:getName())
+        assert.are.equal(t.europe, created[1]:getParent())
+        assert.are.equal("Trastevere", created[2]:getName())
+        assert.are.equal(created[1], created[2]:getParent())
+        assert.are.same({ created[2] }, added(p1))
+    end)
+
+    it("creates a shared new parent once for several paths", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Animals|cat", "Animals|dog" } })
+
+        local created = catalog.getCreatedKeywords()
+        assert.are.equal(3, #created)
+        assert.are.equal("Animals", created[1]:getName())
+        assert.are.equal(created[1], created[2]:getParent())
+        assert.are.equal(created[1], created[3]:getParent())
+    end)
+
+    it("rejects a path with an empty level", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        assert.has_error(function()
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Places||Paris" } })
+        end, "Invalid keyword path (empty level): Places||Paris")
+        assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+
+    describe("with create_missing = false", function()
+        it("adds existing keywords by path and by unambiguous name", function()
+            local t = tree()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+            Handler.setKeywords({
+                photo_ids = { "1" },
+                add_keywords = { "Places|Europe|Paris", "summer", "Europe" },
+                create_missing = false,
+            })
+
+            assert.are.same({ t.paris, t.summer, t.europe }, added(p1))
+            assert.are.equal(0, #catalog.getCreatedKeywords())
+        end)
+
+        it("rejects unknown and ambiguous keywords without writing anything", function()
+            local t = tree()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+            assert.has_error(function()
+                Handler.setKeywords({
+                    photo_ids = { "1" },
+                    add_keywords = { "summer", "Places|Asia", "winter", "portrait" },
+                    create_missing = false,
+                })
+            end, "Keywords not resolved (create_missing is false): not found: Places|Asia; "
+                .. "not found: winter; ambiguous: portrait (Orientation|portrait, Type|portrait)")
+
+            assert.are.equal(0, catalog.getWriteAccessCount())
+            assert.are.equal(0, catalog.getQueryCount())
+            assert.are.equal(0, #catalog.getCreatedKeywords())
+            assert.are.same({}, added(p1))
+        end)
+
+        it("still allows removals", function()
+            local t = tree()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = { t.summer } })
+            local _, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "summer" }, create_missing = false })
+
+            assert.are.same({ t.summer }, removed(p1))
+        end)
+    end)
+
+    it("rejects a create_missing that is not a boolean", function()
+        local _, Handler = setup({})
+        assert.has_error(function()
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "a" }, create_missing = "no" })
+        end, "create_missing must be a boolean")
+    end)
+
+    it("removes by path only the keyword at that place", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({
+            id = "1", path = "/a.jpg",
+            keywords = { t.orientationPortrait, t.typePortrait, t.paris },
+        })
+        local _, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "Type|portrait" } })
+
+        assert.are.same({ t.typePortrait }, removed(p1))
+    end)
+
+    it("removes by plain name every keyword so named", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({
+            id = "1", path = "/a.jpg",
+            keywords = { t.orientationPortrait, t.typePortrait, t.paris },
+        })
+        local _, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "portrait" } })
+
+        assert.are.same({ t.orientationPortrait, t.typePortrait }, removed(p1))
+    end)
+
     it("requires photo_ids", function()
         local _, Handler = setup({})
         assert.has_error(function() Handler.setKeywords({}) end)

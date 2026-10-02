@@ -17,6 +17,7 @@ const EXPECTED_TOOL_NAMES = [
   'create_collection',
   'add_to_collection',
   'set_keywords',
+  'list_keywords',
   'set_rating',
   'import_photos',
   'export_photos',
@@ -31,8 +32,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 18 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(18);
+  it('contains exactly 19 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(19);
   });
 
   it('tool names are unique', () => {
@@ -104,6 +105,7 @@ describe('tool required fields', () => {
     'search_photos',
     'get_selected_photos',
     'list_collections',
+    'list_keywords',
     'list_develop_presets',
     'get_develop_preset',
   ])(
@@ -121,6 +123,14 @@ describe('set_keywords schema', () => {
 
     expect(properties.add_keywords.maxItems).toBe(1000);
     expect(properties.remove_keywords.maxItems).toBe(1000);
+  });
+
+  it('offers create_missing as an optional boolean', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_keywords');
+    const properties = tool?.inputSchema.properties as Record<string, { type?: string }>;
+
+    expect(properties.create_missing.type).toBe('boolean');
+    expect(tool?.inputSchema.required).toEqual(['photo_ids']);
   });
 });
 
