@@ -170,3 +170,105 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.has_error(function() Handler.getPhotoMetadata({}) end)
     end)
 end)
+
+describe("HandlerMetadata.setGps", function()
+    it("writes latitude and longitude to found photos", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", gps = { latitude = 1, longitude = 2 } })
+        local _, Handler = setup({ p1, p2 })
+
+        local r = Handler.setGps({ photo_ids = { "1", "2" }, latitude = 48.5818, longitude = 7.7509 })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.updated)
+        assert.are.same({ latitude = 48.5818, longitude = 7.7509 }, p1:getRawMetadata("gps"))
+        assert.are.same({ latitude = 48.5818, longitude = 7.7509 }, p2:getRawMetadata("gps"))
+    end)
+
+    it("leaves altitude alone unless one is given", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", gpsAltitude = 12 })
+        local _, Handler = setup({ p1 })
+
+        Handler.setGps({ photo_ids = { "1" }, latitude = 0, longitude = 0 })
+        assert.are.equal(12, p1:getRawMetadata("gpsAltitude"))
+
+        local r = Handler.setGps({ photo_ids = { "1" }, latitude = 0, longitude = 0, altitude = 140.5 })
+        assert.are.equal(140.5, p1:getRawMetadata("gpsAltitude"))
+        assert.are.equal(140.5, r.altitude)
+    end)
+
+    it("clears altitude with clear_altitude", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", gpsAltitude = 3000 })
+        local _, Handler = setup({ p1 })
+
+        local r = Handler.setGps({ photo_ids = { "1" }, latitude = 54.4, longitude = 18.6, clear_altitude = true })
+
+        assert.is_nil(p1:getRawMetadata("gpsAltitude"))
+        assert.is_true(r.altitude_cleared)
+        assert.is_nil(r.altitude)
+    end)
+
+    it("rejects an out-of-range altitude and a conflicting or bad clear_altitude", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", gpsAltitude = 12 })
+        local catalog, Handler = setup({ p1 })
+        local base = { photo_ids = { "1" }, latitude = 1, longitude = 1 }
+        local function with(extra)
+            local args = {}
+            for k, v in pairs(base) do args[k] = v end
+            for k, v in pairs(extra) do args[k] = v end
+            return args
+        end
+
+        assert.has_error(function() Handler.setGps(with({ altitude = math.huge })) end,
+            "altitude must be a number between -20000 and 100000 (metres)")
+        assert.has_error(function() Handler.setGps(with({ altitude = -20001 })) end,
+            "altitude must be a number between -20000 and 100000 (metres)")
+        assert.has_error(function() Handler.setGps(with({ altitude = 5, clear_altitude = true })) end,
+            "altitude and clear_altitude cannot be used together")
+        assert.has_error(function() Handler.setGps(with({ clear_altitude = "yes" })) end,
+            "clear_altitude must be a boolean")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.equal(12, p1:getRawMetadata("gpsAltitude"))
+    end)
+
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ p1 })
+
+        Handler.setGps({ photo_ids = { "1" }, latitude = 1, longitude = 1 })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("reports unknown photos instead of claiming a silent success", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ p1 })
+
+        local r = Handler.setGps({ photo_ids = { "1", "missing" }, latitude = 1, longitude = 1 })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "missing" }, r.missing)
+    end)
+
+    it("rejects missing, non-numeric and out-of-range coordinates before scanning", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ p1 })
+
+        assert.has_error(function() Handler.setGps({ latitude = 1, longitude = 1 }) end)
+        assert.has_error(function() Handler.setGps({ photo_ids = { "1" }, longitude = 1 }) end,
+            "latitude must be a number between -90 and 90")
+        assert.has_error(function() Handler.setGps({ photo_ids = { "1" }, latitude = "1", longitude = 1 }) end,
+            "latitude must be a number between -90 and 90")
+        assert.has_error(function() Handler.setGps({ photo_ids = { "1" }, latitude = 90.1, longitude = 1 }) end,
+            "latitude must be a number between -90 and 90")
+        assert.has_error(function() Handler.setGps({ photo_ids = { "1" }, latitude = 1, longitude = -181 }) end,
+            "longitude must be a number between -180 and 180")
+        assert.has_error(function()
+            Handler.setGps({ photo_ids = { "1" }, latitude = 1, longitude = 1, altitude = "high" })
+        end, "altitude must be a number between -20000 and 100000 (metres)")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.is_nil(p1:getRawMetadata("gps"))
+    end)
+end)
