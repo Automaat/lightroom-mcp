@@ -47,6 +47,10 @@
       "description": "Detailed EXIF + develop metadata for a photo."
     },
     {
+      "name": "set_gps",
+      "description": "Set the GPS position of photos."
+    },
+    {
       "name": "list_collections",
       "description": "List all collections and collection sets."
     },

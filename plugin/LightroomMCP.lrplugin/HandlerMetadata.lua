@@ -166,4 +166,63 @@ function MetadataHandler.getPhotoMetadata(args)
     return photoData
 end
 
+local function requireCoordinate(value, name, limit)
+    -- Comparing a string to a number raises a raw Lua type error that leaks
+    -- the handler's file and line to the client, so check the type first.
+    if type(value) ~= "number" or value ~= value or value < -limit or value > limit then
+        error(string.format("%s must be a number between -%d and %d", name, limit, limit))
+    end
+end
+
+-- Writes a GPS position (decimal degrees) to photos, replacing any position
+-- they already have. Altitude is only touched when given.
+function MetadataHandler.setGps(args)
+    if not args.photo_ids or #args.photo_ids == 0 then
+        error("photo_ids is required")
+    end
+    requireCoordinate(args.latitude, "latitude", 90)
+    requireCoordinate(args.longitude, "longitude", 180)
+    if args.altitude ~= nil and (type(args.altitude) ~= "number" or args.altitude ~= args.altitude) then
+        error("altitude must be a number (metres)")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local updatedCount = 0
+    local missingIds = {}
+    local missingCount = 0
+
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    catalog:withWriteAccessDo("Set GPS", function()
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                entry.photo:setRawMetadata('gps', {
+                    latitude = args.latitude,
+                    longitude = args.longitude,
+                })
+                if args.altitude ~= nil then
+                    entry.photo:setRawMetadata('gpsAltitude', args.altitude)
+                end
+                updatedCount = updatedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
+            end
+        end
+    end)
+
+    Log.info(string.format("Set GPS to %s, %s for %d photos",
+        tostring(args.latitude), tostring(args.longitude), updatedCount))
+
+    return {
+        success = true,
+        updated = updatedCount,
+        latitude = args.latitude,
+        longitude = args.longitude,
+        missing = missingIds,
+        message = string.format("Set GPS for %d photos (%d ids not found)",
+            updatedCount, missingCount)
+    }
+end
+
 return MetadataHandler
