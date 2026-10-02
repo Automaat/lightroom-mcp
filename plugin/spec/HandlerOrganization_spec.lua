@@ -1,4 +1,5 @@
 local helper = require 'spec_helper'
+local KeywordTree
 
 local function setup(opts)
     opts = opts or {}
@@ -8,6 +9,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerOrganization = nil
+    KeywordTree = require 'KeywordTree'
     return catalog, require 'HandlerOrganization'
 end
 
@@ -199,6 +201,72 @@ describe("HandlerOrganization.setKeywords", function()
         assert.are.equal(created[1], created[3]:getParent())
     end)
 
+    it("creates each new level in its own write transaction", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B|C" } })
+
+        -- One per level, then one for the photo.
+        assert.are.equal(4, catalog.getWriteAccessCount())
+        local created = catalog.getCreatedKeywords()
+        assert.are.equal(3, #created)
+        assert.are.same({ created[3] }, added(p1))
+        assert.are.equal("A|B|C", KeywordTree.pathOf(created[3]))
+    end)
+
+    for _, order in ipairs({ { "Animals", "Animals|cat" }, { "Animals|cat", "Animals" } }) do
+        it("creates a new name once when given plain and as a path's first level: "
+            .. table.concat(order, ", "), function()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 } })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = order })
+
+            local created = catalog.getCreatedKeywords()
+            assert.are.equal(2, #created)
+            local animals = catalog:getKeywords()
+            assert.are.equal(1, #animals)
+            assert.are.equal("Animals|cat", KeywordTree.pathOf(animals[1]:getChildren()[1]))
+            assert.are.equal(2, #added(p1))
+        end)
+    end
+
+    it("creates a name differing only in case once", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "Summer", "summer", "A|b", "a|B" } })
+
+        assert.are.equal(3, #catalog.getCreatedKeywords())
+        assert.are.equal(2, #added(p1))
+    end)
+
+    it("matches existing keywords ignoring case", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "places|EUROPE|paris", "SUMMER", "places|Rome" } })
+
+        local created = catalog.getCreatedKeywords()
+        assert.are.equal(1, #created)
+        assert.are.equal(t.places, created[1]:getParent())
+        assert.are.same({ t.paris, t.summer, created[1] }, added(p1))
+    end)
+
+    it("keeps the committed levels when the photo write fails", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        p1.addKeyword = function() error("write failed") end
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        assert.has_error(function()
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "A|B" } })
+        end)
+        -- The levels were committed before the photo write; they stay, empty.
+        assert.are.equal(2, #catalog.getCreatedKeywords())
+    end)
+
     it("rejects a path with an empty level", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
         local catalog, Handler = setup({ photos = { p1 } })
@@ -223,6 +291,22 @@ describe("HandlerOrganization.setKeywords", function()
 
             assert.are.same({ t.paris, t.summer, t.europe }, added(p1))
             assert.are.equal(0, #catalog.getCreatedKeywords())
+        end)
+
+        it("matches paths and names ignoring case", function()
+            local t = tree()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+            Handler.setKeywords({
+                photo_ids = { "1" },
+                add_keywords = { "places|europe|PARIS", "Summer" },
+                create_missing = false,
+            })
+
+            assert.are.same({ t.paris, t.summer }, added(p1))
+            assert.are.equal(0, #catalog.getCreatedKeywords())
+            assert.are.equal(1, catalog.getWriteAccessCount())
         end)
 
         it("rejects unknown and ambiguous keywords without writing anything", function()
@@ -272,6 +356,42 @@ describe("HandlerOrganization.setKeywords", function()
         local _, Handler = setup({ photos = { p1 }, keywords = t.top })
 
         Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "Type|portrait" } })
+
+        assert.are.same({ t.typePortrait }, removed(p1))
+    end)
+
+    it("removes plain names differing only in case as two exact removals", function()
+        local upper = helper.fakeKeyword("Paris")
+        local lower = helper.fakeKeyword("paris", { parent = helper.fakeKeyword("Cities") })
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = { upper, lower } })
+        local _, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "Paris", "paris" } })
+
+        assert.are.same({ upper, lower }, removed(p1))
+    end)
+
+    it("trims plain names and rejects a blank one", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { " summer ", "summer" } })
+
+        local created = catalog.getCreatedKeywords()
+        assert.are.equal(1, #created)
+        assert.are.equal("summer", created[1]:getName())
+        assert.are.same({ created[1] }, added(p1))
+        assert.has_error(function()
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "  " } })
+        end, "Invalid keyword (empty): '  '")
+    end)
+
+    it("removes by path ignoring case", function()
+        local t = tree()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = { t.orientationPortrait, t.typePortrait } })
+        local _, Handler = setup({ photos = { p1 }, keywords = t.top })
+
+        Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "type|PORTRAIT" } })
 
         assert.are.same({ t.typePortrait }, removed(p1))
     end)

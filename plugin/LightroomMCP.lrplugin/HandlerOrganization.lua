@@ -20,15 +20,28 @@ local function parseKeywordList(keywords)
     local entries = {}
     local seen = {}
     for _, kw in ipairs(keywords or {}) do
-        local entry
+        local entry, dedupeKey
         if KeywordTree.isPath(kw) then
             local parts = KeywordTree.split(kw)
             entry = { parts = parts, key = KeywordTree.join(parts) }
+            -- Lightroom matches paths case-insensitively, so "A|B" and "a|b"
+            -- address one keyword.
+            dedupeKey = KeywordTree.fold(entry.key)
         else
-            entry = { name = kw, key = kw }
+            -- Trimmed like a path level, so the keyword created for it is found
+            -- again by name.
+            local name = KeywordTree.trim(kw)
+            if name == "" then
+                error("Invalid keyword (empty): '" .. kw .. "'")
+            end
+            entry = { name = name, key = name }
+            -- Exact: a plain-name remove matches exact case, so "Paris" and
+            -- "paris" are two removals. Case variants of an add are deduped
+            -- where they are created.
+            dedupeKey = "=" .. name
         end
-        if not seen[entry.key] then
-            seen[entry.key] = true
+        if not seen[dedupeKey] then
+            seen[dedupeKey] = true
             table.insert(entries, entry)
         end
     end
@@ -59,6 +72,59 @@ local function findUnresolvable(catalog, addEntries)
         end
     end
     return problems
+end
+
+-- Creates every missing level of `pathsToEnsure` (lists of names). Lightroom
+-- rejects a parent created earlier in the same write transaction ("bad
+-- argument #2 to 'format'"), so each depth gets its own transaction, run after
+-- the level above it is committed and visible to getChildren().
+local function createMissingLevels(catalog, pathsToEnsure)
+    local function prefixOf(parts, depth)
+        local prefix = {}
+        for i = 1, depth do
+            prefix[i] = parts[i]
+        end
+        return prefix
+    end
+
+    local maxDepth = 0
+    for _, parts in ipairs(pathsToEnsure) do
+        maxDepth = math.max(maxDepth, #parts)
+    end
+
+    for depth = 1, maxDepth do
+        local missing = {}
+        catalog:withReadAccessDo(function()
+            local seen = {}
+            for _, parts in ipairs(pathsToEnsure) do
+                if #parts >= depth then
+                    local folded = KeywordTree.fold(KeywordTree.join(prefixOf(parts, depth)))
+                    if not seen[folded] then
+                        seen[folded] = true
+                        local parent = nil
+                        if depth > 1 then
+                            local parentParts = prefixOf(parts, depth - 1)
+                            parent = KeywordTree.resolve(catalog, parentParts)
+                            if not parent then
+                                error("Keyword level was not created: " .. KeywordTree.join(parentParts))
+                            end
+                        end
+                        if not KeywordTree.findChild(catalog, parent, parts[depth]) then
+                            table.insert(missing, { parent = parent, name = parts[depth] })
+                        end
+                    end
+                end
+            end
+        end)
+
+        if #missing > 0 then
+            catalog:withWriteAccessDo("Create Keywords", function()
+                for _, level in ipairs(missing) do
+                    catalog:createKeyword(level.name, {}, true, level.parent, true)
+                end
+            end)
+        end
+    end
 end
 
 function OrganizationHandler.setKeywords(args)
@@ -93,7 +159,7 @@ function OrganizationHandler.setKeywords(args)
     local hasRemovePaths = false
     for _, entry in ipairs(parseKeywordList(args.remove_keywords)) do
         if entry.parts then
-            removePaths[entry.key] = true
+            removePaths[KeywordTree.fold(entry.key)] = true
             hasRemovePaths = true
         else
             removeNames[entry.name] = true
@@ -115,49 +181,39 @@ function OrganizationHandler.setKeywords(args)
 
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
-    catalog:withWriteAccessDo("Set Keywords", function()
-        -- createKeyword is not idempotent within one write transaction, and a
-        -- keyword created here is not visible to getChildren() until the
-        -- transaction ends, so levels created for one path are remembered for
-        -- the next ("A|B" then "A|C" must share one new "A").
-        local createdByPath = {}
-
-        local function resolveOrCreatePath(parts)
-            local parent = nil
-            local prefix = ""
-            for _, name in ipairs(parts) do
-                local path = prefix .. name
-                local keyword = createdByPath[path]
-                if not keyword then
-                    keyword = KeywordTree.findChild(catalog, parent, name)
-                end
-                if not keyword then
-                    if not createMissing then
-                        error("Keyword not found: " .. KeywordTree.join(parts))
-                    end
-                    keyword = catalog:createKeyword(name, {}, true, parent, true)
-                    createdByPath[path] = keyword
-                end
-                parent = keyword
-                prefix = path .. KeywordTree.SEPARATOR
-            end
-            return parent
-        end
-
-        local keywordObjs = {}
+    -- A plain name is created at the top level, as it always was.
+    if createMissing and #addEntries > 0 then
+        local pathsToEnsure = {}
         for _, entry in ipairs(addEntries) do
+            table.insert(pathsToEnsure, entry.parts or { entry.name })
+        end
+        createMissingLevels(catalog, pathsToEnsure)
+    end
+
+    catalog:withWriteAccessDo("Set Keywords", function()
+        local keywordObjs = {}
+        local seenKeywords = {}
+        for _, entry in ipairs(addEntries) do
+            local keyword
             if entry.parts then
-                table.insert(keywordObjs, resolveOrCreatePath(entry.parts))
+                keyword = KeywordTree.resolve(catalog, entry.parts)
             elseif createMissing then
-                table.insert(keywordObjs, catalog:createKeyword(entry.name, {}, true, nil, true))
+                keyword = KeywordTree.findChild(catalog, nil, entry.name)
             else
                 -- Looked up again rather than carried across gates: the check
                 -- above only proved the name resolved then.
                 local matches = KeywordTree.findByName(catalog, entry.name)
-                if #matches ~= 1 then
-                    error("Keyword not resolved: " .. entry.name)
+                if #matches == 1 then
+                    keyword = matches[1].keyword
                 end
-                table.insert(keywordObjs, matches[1].keyword)
+            end
+            if not keyword then
+                error("Keyword not resolved: " .. entry.key)
+            end
+            -- "Summer" and "summer" resolve to one keyword.
+            if not seenKeywords[keyword] then
+                seenKeywords[keyword] = true
+                table.insert(keywordObjs, keyword)
             end
         end
 
@@ -174,8 +230,9 @@ function OrganizationHandler.setKeywords(args)
                         for _, kw in ipairs(existingKeywords) do
                             -- A plain name removes every keyword so named; a
                             -- path removes only the keyword at that place.
-                            if removeNames[kw:getName()]
-                                or (hasRemovePaths and removePaths[KeywordTree.pathOf(kw)]) then
+                            local byPath = hasRemovePaths
+                                and removePaths[KeywordTree.fold(KeywordTree.pathOf(kw))]
+                            if removeNames[kw:getName()] or byPath then
                                 photo:removeKeyword(kw)
                             end
                         end

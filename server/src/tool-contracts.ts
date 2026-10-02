@@ -284,7 +284,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "set_keywords",
     luaHandler: "HandlerOrganization.setKeywords",
     description:
-      "Add or remove keywords from photos. A keyword is a plain name, or a parent-first hierarchy path with '|' between levels (e.g. 'Places|Europe|Paris') to address a nested keyword; see list_keywords for the paths that exist. A plain name is created at the top level if it does not exist, and a path creates any missing levels, unless create_missing is false.",
+      "Add or remove keywords from photos. A keyword is a plain name, or a parent-first hierarchy path with '|' between levels (e.g. 'Places|Europe|Paris') to address a nested keyword; see list_keywords for the paths that exist. A plain name is created at the top level if it does not exist, and a path creates any missing levels, unless create_missing is false. Names and paths match existing keywords ignoring case.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

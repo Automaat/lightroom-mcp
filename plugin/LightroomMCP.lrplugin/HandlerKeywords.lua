@@ -33,7 +33,7 @@ function KeywordsHandler.listKeywords(args)
         if type(args.query) ~= "string" or args.query:match("^%s*$") then
             error("query must be a non-empty string")
         end
-        query = args.query:lower()
+        query = KeywordTree.fold(args.query)
     end
 
     if args.paths_only ~= nil and type(args.paths_only) ~= "boolean" then
@@ -43,9 +43,9 @@ function KeywordsHandler.listKeywords(args)
 
     local function matches(name, synonyms)
         if not query then return true end
-        if name:lower():find(query, 1, true) then return true end
+        if KeywordTree.fold(name):find(query, 1, true) then return true end
         for _, synonym in ipairs(synonyms) do
-            if synonym:lower():find(query, 1, true) then return true end
+            if KeywordTree.fold(synonym):find(query, 1, true) then return true end
         end
         return false
     end

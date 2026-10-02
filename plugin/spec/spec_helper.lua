@@ -16,9 +16,16 @@ if not package.path:find(pluginRoot, 1, true) then
 end
 
 -- Install a mock `import` global. Subsequent `import 'X'` calls return the mock for X.
+-- Pure helper namespaces every spec gets unless it installs its own. lower is
+-- ASCII-only here; Lightroom's folds Unicode.
+local defaultImports = {
+    LrStringUtils = { lower = string.lower },
+}
+
 function M.installImport(modules)
     _G.import = function(name)
         local m = modules[name]
+        if m == nil then m = defaultImports[name] end
         if m == nil then
             error("No mock installed for import('" .. tostring(name) .. "')", 2)
         end
@@ -158,6 +165,8 @@ function M.fakeCatalog(opts)
     local collectionSets = opts.collectionSets or {}
     local createdCollections = {}
     local createdKeywords = {}
+    local topKeywords = opts.keywords or {}
+    local pendingKeywords = {}
     local readAccessCount = 0
     local writeAccessCount = 0
     -- Tracks whether a catalog query (getTargetPhotos/findPhotos/getAllPhotos)
@@ -252,9 +261,22 @@ function M.fakeCatalog(opts)
         withWriteAccessDo = function(_, _, fn)
             writeAccessCount = writeAccessCount + 1
             insideWriteAccess = true
+            pendingKeywords = {}
             local ok, err = pcall(fn)
             insideWriteAccess = false
+            -- Keywords created in the transaction become visible once it
+            -- commits; a failed transaction leaves none behind.
+            local pending = pendingKeywords
+            pendingKeywords = {}
             if not ok then error(err, 0) end
+            for _, kw in ipairs(pending) do
+                createdKeywords[#createdKeywords + 1] = kw
+                if kw:getParent() then
+                    kw:getParent():__addChild(kw)
+                else
+                    table.insert(topKeywords, kw)
+                end
+            end
         end,
         getQueriedInsideWriteAccess = function() return queriedInsideWriteAccess end,
         findPhotoByLocalIdentifier = function(_, id)
@@ -270,18 +292,37 @@ function M.fakeCatalog(opts)
             table.insert(collections, c)
             return c
         end,
-        getKeywords = function() return opts.keywords or {} end,
-        -- Like the SDK inside one write transaction, a keyword created here is
-        -- NOT visible to getKeywords()/getChildren() afterwards (detached), so
-        -- a handler that creates the same level twice shows up as a duplicate.
-        createKeyword = function(_, name, synonyms, includeOnExport, parent)
+        getKeywords = function() return topKeywords end,
+        -- Models the SDK behaviour the handlers have to work around: a keyword
+        -- created in a write transaction is invisible to getKeywords() and
+        -- getChildren() until it commits, cannot be used as a parent before
+        -- then, and creating the same name twice in one transaction asserts.
+        -- returnExisting matches committed keywords ignoring case.
+        createKeyword = function(_, name, synonyms, includeOnExport, parent, returnExisting)
+            if not insideWriteAccess then
+                error("createKeyword outside withWriteAccessDo")
+            end
+            for _, kw in ipairs(pendingKeywords) do
+                if kw == parent then
+                    error("bad argument #2 to 'format' (number expected, got string)")
+                end
+                if kw:getParent() == parent and kw:getName():lower() == name:lower() then
+                    error("createKeyword: " .. name .. " already created in this transaction")
+                end
+            end
+            if returnExisting then
+                local siblings = parent and parent:getChildren() or topKeywords
+                for _, kw in ipairs(siblings) do
+                    if kw:getName():lower() == name:lower() then return kw end
+                end
+            end
             local kw = M.fakeKeyword(name, {
                 parent = parent,
                 synonyms = synonyms,
                 includeOnExport = includeOnExport,
                 detached = true,
             })
-            table.insert(createdKeywords, kw)
+            table.insert(pendingKeywords, kw)
             return kw
         end,
         addPhoto = function(_, path)

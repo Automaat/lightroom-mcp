@@ -4,13 +4,23 @@
 -- "Places|Europe|Paris". "|" is the separator Lightroom itself uses for
 -- hierarchies in the Keywording panel, so it cannot occur inside a keyword
 -- name and a string containing it is unambiguously a path.
+local LrStringUtils = import 'LrStringUtils'
+
 local KeywordTree = {}
 
 KeywordTree.SEPARATOR = "|"
 
-local function trim(s)
+-- Lightroom treats keyword names case-insensitively (createKeyword with
+-- returnExisting matches "paris" to "Paris"), so every name comparison here
+-- does too. LrStringUtils.lower folds non-ASCII letters; string.lower does not.
+function KeywordTree.fold(s)
+    return LrStringUtils.lower(s)
+end
+
+function KeywordTree.trim(s)
     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
+local trim = KeywordTree.trim
 
 function KeywordTree.isPath(name)
     return type(name) == "string" and name:find(KeywordTree.SEPARATOR, 1, true) ~= nil
@@ -53,8 +63,9 @@ function KeywordTree.children(catalog, parent)
 end
 
 function KeywordTree.findChild(catalog, parent, name)
+    local folded = KeywordTree.fold(name)
     for _, child in ipairs(KeywordTree.children(catalog, parent)) do
-        if child:getName() == name then
+        if KeywordTree.fold(child:getName()) == folded then
             return child
         end
     end
@@ -79,13 +90,14 @@ end
 -- calls page through the tree in a stable order. `visit(keyword, path)`.
 function KeywordTree.walk(catalog, root, visit)
     local function descend(parent, prefix)
-        -- Names are read BEFORE sorting: getName() yields inside Lightroom,
-        -- and yielding from a table.sort comparator (a C call) raises
-        -- "Yielding is not allowed within a C or metamethod call".
+        -- Names are read BEFORE sorting: LrKeyword getters can yield, which is
+        -- fine inside an access gate (they are not catalog queries) but not
+        -- from a table.sort comparator, a C call that raises "Yielding is
+        -- not allowed within a C or metamethod call".
         local kids = {}
         for _, child in ipairs(KeywordTree.children(catalog, parent)) do
             local name = child:getName()
-            kids[#kids + 1] = { keyword = child, name = name, lower = name:lower() }
+            kids[#kids + 1] = { keyword = child, name = name, lower = KeywordTree.fold(name) }
         end
         table.sort(kids, function(a, b)
             if a.lower ~= b.lower then return a.lower < b.lower end
@@ -107,9 +119,10 @@ end
 
 -- Every keyword, at any depth, whose own name is `name`.
 function KeywordTree.findByName(catalog, name)
+    local folded = KeywordTree.fold(name)
     local matches = {}
     KeywordTree.walk(catalog, nil, function(keyword, path)
-        if keyword:getName() == name then
+        if KeywordTree.fold(keyword:getName()) == folded then
             matches[#matches + 1] = { keyword = keyword, path = path }
         end
     end)

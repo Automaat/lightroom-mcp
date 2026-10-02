@@ -121,6 +121,32 @@ describe("HandlerKeywords.listKeywords", function()
             "paths_only must be a boolean")
     end)
 
+    it("resolves parent ignoring case", function()
+        local _, Handler = setup(tree())
+
+        local r = Handler.listKeywords({ parent = "places|EUROPE" })
+
+        assert.are.same({ "Places|Europe|Berlin", "Places|Europe|Paris" }, paths(r))
+    end)
+
+    it("folds query case with LrStringUtils.lower, not string.lower", function()
+        local catalog = helper.fakeCatalog({ keywords = { helper.fakeKeyword("Zürich"), helper.fakeKeyword("Bern") } })
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrLogger = helper.defaultLrLogger(),
+            -- Stand-in for Lightroom's Unicode-aware lower.
+            LrStringUtils = { lower = function(s) return (s:lower():gsub("Ü", "ü")) end },
+        })
+        package.loaded.HandlerKeywords = nil
+        package.loaded.KeywordTree = nil
+        local Handler = require 'HandlerKeywords'
+
+        local r = Handler.listKeywords({ query = "ZÜRICH" })
+
+        package.loaded.KeywordTree = nil
+        assert.are.same({ "Zürich" }, paths(r))
+    end)
+
     it("errors on an unknown parent", function()
         local _, Handler = setup(tree())
 
