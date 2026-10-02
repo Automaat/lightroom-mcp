@@ -13,6 +13,7 @@ const EXPECTED_TOOL_NAMES = [
   'search_photos',
   'get_selected_photos',
   'get_photo_metadata',
+  'set_gps',
   'list_collections',
   'create_collection',
   'add_to_collection',
@@ -33,8 +34,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 20 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(20);
+  it('contains exactly 21 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(21);
   });
 
   it('tool names are unique', () => {
@@ -86,6 +87,7 @@ describe('tool required fields', () => {
 
   it.each<[string, string[]]>([
     ['get_photo_metadata', ['photo_id']],
+    ['set_gps', ['photo_ids', 'latitude', 'longitude']],
     ['create_collection', ['name']],
     ['add_to_collection', ['collection_name', 'photo_ids']],
     ['set_keywords', ['photo_ids']],
@@ -139,6 +141,7 @@ describe('set_keywords schema', () => {
 describe('photo array schema', () => {
   it.each([
     ['add_to_collection', 'photo_ids'],
+    ['set_gps', 'photo_ids'],
     ['set_keywords', 'photo_ids'],
     ['set_rating', 'photo_ids'],
     ['export_photos', 'photo_ids'],
