@@ -150,11 +150,20 @@ describe("HandlerExport.exportPhotoMetadata", function()
             LrApplication = { activeCatalog = function() return catalog end },
             LrLogger = helper.defaultLrLogger(),
             LrFileUtils = {
-                exists = function(path) return opts.existingDir == path end,
+                exists = function(path)
+                    if opts.existingDir == path then return "directory" end
+                    if opts.missingDir == path then return false end
+                    local f = io.open(path, "r")
+                    if f then f:close() return "file" end
+                    return false
+                end,
                 createAllDirectories = function(path) table.insert(createdDirs, path) end,
+                delete = function(path) os.remove(path) end,
             },
             LrPathUtils = {
                 parent = function(path) return (path:match("^(.*)[/\\][^/\\]*$")) end,
+                child = function(dir, name) return dir .. "/" .. name end,
+                getStandardFilePath = function() return opts.home or "/home/u" end,
             },
             LrExportSession = function() return { doExportOnCurrentTask = function() end } end,
         })
@@ -163,7 +172,9 @@ describe("HandlerExport.exportPhotoMetadata", function()
     end
 
     local function tempJson()
-        return os.tmpname() .. ".json"
+        local base = os.tmpname()
+        os.remove(base)
+        return base .. ".json"
     end
 
     local function readJson(path)
@@ -260,9 +271,9 @@ describe("HandlerExport.exportPhotoMetadata", function()
     end)
 
     it("creates the destination folder when it does not exist", function()
-        local _, Handler = setupMetadata({ photos = { photoOne() } })
         local out = tempJson()
         local dir = out:match("^(.*)[/\\][^/\\]*$")
+        local _, Handler = setupMetadata({ photos = { photoOne() }, missingDir = dir })
 
         Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
         os.remove(out)
@@ -283,6 +294,141 @@ describe("HandlerExport.exportPhotoMetadata", function()
             "No photos found to export metadata for")
         assert.has_error(function()
             Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = { "nope" } })
-        end, "No photos found to export metadata for")
+        end, "No photos found to export metadata for (not found: nope)")
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "out.json", photo_ids = { 11 } })
+        end, "destination must be an absolute path")
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "/tmp/.zshrc\0.json", photo_ids = { 11 } })
+        end, "destination must not contain control characters")
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "/tmp/a\nb.json", photo_ids = { 11 } })
+        end, "destination must not contain control characters")
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = { 11 }, overwrite = "yes" })
+        end, "overwrite must be a boolean")
+    end)
+
+    it("refuses to replace an existing file unless overwrite is true", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() } })
+        local out = tempJson()
+        local f = assert(io.open(out, "w"))
+        f:write("previous")
+        f:close()
+
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
+        end, "destination already exists: " .. out .. " (pass overwrite: true to replace it)")
+        local kept = assert(io.open(out, "r"))
+        assert.are.equal("previous", kept:read("*a"))
+        kept:close()
+
+        Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out, overwrite = true })
+
+        assert.are.equal(1, readJson(out).count)
+    end)
+
+    it("refuses a file that appears at the destination while photos are read", function()
+        local catalog, Handler = setupMetadata({ photos = { photoOne() } })
+        local out = tempJson()
+        local read = catalog.withReadAccessDo
+        catalog.withReadAccessDo = function(self, fn)
+            read(self, fn)
+            local f = assert(io.open(out, "w"))
+            f:write("raced")
+            f:close()
+        end
+
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = out })
+        end, "destination already exists: " .. out .. " (pass overwrite: true to replace it)")
+        local kept = assert(io.open(out, "r"))
+        assert.are.equal("raced", kept:read("*a"))
+        kept:close()
+        os.remove(out)
+    end)
+
+    it("accepts only Windows absolute paths on Windows", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() }, targetPhotos = {} })
+        _G.WIN_ENV = true
+        local results = {}
+        for _, path in ipairs({ "C:\\x.json", "C:/x.json", "\\\\srv\\s\\x.json", "C:x.json", "/x.json" }) do
+            local ok, err = pcall(Handler.exportPhotoMetadata, { destination = path })
+            results[path] = ok or tostring(err):match("absolute path") == nil
+        end
+        _G.WIN_ENV = nil
+
+        -- Accepted paths get past the path check and fail later on the empty selection.
+        assert.are.same({
+            ["C:\\x.json"] = true,
+            ["C:/x.json"] = true,
+            ["\\\\srv\\s\\x.json"] = true,
+            ["C:x.json"] = false,
+            ["/x.json"] = false,
+        }, results)
+    end)
+
+    it("removes a partial file it created when the write fails", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() } })
+        local out = tempJson()
+        local realOpen = io.open
+        io.open = function(path, mode)
+            local f = realOpen(path, mode)
+            if path ~= out or not f then return f end
+            return setmetatable({
+                write = function(_, text) f:write(text:sub(1, 5)) return nil, "No space left on device" end,
+                close = function() return f:close() end,
+            }, {})
+        end
+
+        local ok, err = pcall(Handler.exportPhotoMetadata, { photo_ids = { 11 }, destination = out })
+        io.open = realOpen
+
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("No space left on device", 1, true))
+        assert.is_nil(realOpen(out, "r"))
+    end)
+
+    it("refuses a directory as destination", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() }, existingDir = "/data/dir.json" })
+
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = "/data/dir.json", overwrite = true })
+        end, "destination is a directory: /data/dir.json")
+    end)
+
+    it("expands ~/ to the home folder", function()
+        local out = tempJson()
+        local home, name = out:match("^(.*)/([^/]*)$")
+        local _, Handler = setupMetadata({ photos = { photoOne() }, home = home })
+
+        local r = Handler.exportPhotoMetadata({ photo_ids = { 11 }, destination = "~/" .. name })
+
+        assert.are.equal(out, r.destination)
+        assert.are.equal(1, readJson(out).count)
+    end)
+
+    it("writes a photo named twice, by id and by path, once", function()
+        local _, Handler = setupMetadata({ photos = { photoOne() } })
+        local out = tempJson()
+
+        local r = Handler.exportPhotoMetadata({ photo_ids = { 11, 11, "/p/a.dng" }, destination = out })
+
+        assert.are.equal(1, r.exported)
+        assert.are.equal(1, readJson(out).count)
+    end)
+
+    it("refuses a selection larger than the per-call cap before reading it", function()
+        local many = {}
+        for i = 1, 1001 do
+            many[i] = helper.fakePhoto({ id = i, path = "/p/" .. i .. ".jpg" })
+        end
+        local catalog, Handler = setupMetadata({ photos = {}, targetPhotos = many })
+
+        assert.has_error(function()
+            Handler.exportPhotoMetadata({ destination = "/tmp/out.json" })
+        end, "1001 photos are selected (or in the filmstrip); export at most 1000 at a time "
+            .. "by selecting fewer or passing photo_ids")
+        assert.are.equal(0, catalog.getReadAccessCount())
     end)
 end)
