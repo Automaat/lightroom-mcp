@@ -132,33 +132,45 @@ describe("HandlerKeywords.listKeywords", function()
 
     it("never calls into the SDK from inside table.sort", function()
         -- LrKeyword methods yield inside Lightroom, and a yield from a
-        -- table.sort comparator is an error there. Model that: getName()
-        -- yields, and the handler runs in a coroutine as it does in the plugin.
-        local function yielding(keyword)
-            local getName = keyword.getName
-            keyword.getName = function(...)
-                coroutine.yield()
-                return getName(...)
+        -- table.sort comparator raises "Yielding is not allowed within a C or
+        -- metamethod call" there. Record any SDK call made while a sort is
+        -- running. (Not modelled with coroutines: Lua 5.1 cannot yield across
+        -- the pcall in the fake catalog's access gates.)
+        local insideSort = false
+        local calledInsideSort = {}
+        local function watch(keyword)
+            for _, method in ipairs({ "getName", "getParent", "getChildren", "getSynonyms", "getAttributes" }) do
+                local original = keyword[method]
+                keyword[method] = function(...)
+                    if insideSort then
+                        table.insert(calledInsideSort, method)
+                    end
+                    return original(...)
+                end
             end
             for _, child in ipairs(keyword:getChildren()) do
-                yielding(child)
+                watch(child)
             end
         end
         local keywords = tree()
         for _, keyword in ipairs(keywords) do
-            yielding(keyword)
+            watch(keyword)
         end
         local _, Handler = setup(keywords)
 
-        local result
-        local co = coroutine.create(function() result = Handler.listKeywords({}) end)
-        local ok, err = true, nil
-        while ok and coroutine.status(co) ~= "dead" do
-            ok, err = coroutine.resume(co)
+        local realSort = table.sort
+        table.sort = function(...)
+            insideSort = true
+            local ok, err = pcall(realSort, ...)
+            insideSort = false
+            if not ok then error(err, 0) end
         end
+        local ok, result = pcall(Handler.listKeywords, {})
+        table.sort = realSort
 
-        assert.is_true(ok, tostring(err))
+        assert.is_true(ok, tostring(result))
         assert.are.equal(6, result.count)
+        assert.are.same({}, calledInsideSort)
     end)
 
     it("handles an empty catalog and missing args", function()
