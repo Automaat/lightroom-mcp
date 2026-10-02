@@ -243,7 +243,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "set_gps",
     luaHandler: "HandlerMetadata.setGps",
     description:
-      "Set the GPS position of photos in decimal degrees, replacing any position they already have. Altitude is left unchanged unless given.",
+      "Set the GPS position of photos in decimal degrees, replacing any position they already have. Altitude is left unchanged unless altitude is given or clear_altitude is true.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -261,7 +261,16 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           maximum: 180,
           description: "Longitude in decimal degrees (east positive)",
         },
-        altitude: { type: "number", description: "Altitude in metres (optional)" },
+        altitude: {
+          type: "number",
+          minimum: -20000,
+          maximum: 100000,
+          description: "Altitude in metres (optional)",
+        },
+        clear_altitude: {
+          type: "boolean",
+          description: "Remove the photos' altitude (default false). Cannot be combined with altitude.",
+        },
       },
       required: ["photo_ids", "latitude", "longitude"],
     },

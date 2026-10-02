@@ -181,16 +181,30 @@ local function requireCoordinate(value, name, limit)
     end
 end
 
+-- Bounds the schema enforces too; also rule out Infinity, which JSON carries
+-- to the plugin as null and would otherwise drop silently.
+local MIN_ALTITUDE = -20000
+local MAX_ALTITUDE = 100000
+
 -- Writes a GPS position (decimal degrees) to photos, replacing any position
--- they already have. Altitude is only touched when given.
+-- they already have. Altitude is only touched when given or cleared.
 function MetadataHandler.setGps(args)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
     requireCoordinate(args.latitude, "latitude", 90)
     requireCoordinate(args.longitude, "longitude", 180)
-    if args.altitude ~= nil and (type(args.altitude) ~= "number" or args.altitude ~= args.altitude) then
-        error("altitude must be a number (metres)")
+    if args.altitude ~= nil and (type(args.altitude) ~= "number" or args.altitude ~= args.altitude
+        or args.altitude < MIN_ALTITUDE or args.altitude > MAX_ALTITUDE) then
+        error(string.format("altitude must be a number between %d and %d (metres)",
+            MIN_ALTITUDE, MAX_ALTITUDE))
+    end
+    if args.clear_altitude ~= nil and type(args.clear_altitude) ~= "boolean" then
+        error("clear_altitude must be a boolean")
+    end
+    local clearAltitude = args.clear_altitude == true
+    if clearAltitude and args.altitude ~= nil then
+        error("altitude and clear_altitude cannot be used together")
     end
 
     local catalog = LrApplication.activeCatalog()
@@ -209,6 +223,8 @@ function MetadataHandler.setGps(args)
                 })
                 if args.altitude ~= nil then
                     entry.photo:setRawMetadata('gpsAltitude', args.altitude)
+                elseif clearAltitude then
+                    entry.photo:setRawMetadata('gpsAltitude', nil)
                 end
                 updatedCount = updatedCount + 1
             else
@@ -226,6 +242,8 @@ function MetadataHandler.setGps(args)
         updated = updatedCount,
         latitude = args.latitude,
         longitude = args.longitude,
+        altitude = args.altitude,
+        altitude_cleared = clearAltitude or nil,
         missing = missingIds,
         message = string.format("Set GPS for %d photos (%d ids not found)",
             updatedCount, missingCount)

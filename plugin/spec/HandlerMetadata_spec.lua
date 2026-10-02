@@ -192,8 +192,44 @@ describe("HandlerMetadata.setGps", function()
         Handler.setGps({ photo_ids = { "1" }, latitude = 0, longitude = 0 })
         assert.are.equal(12, p1:getRawMetadata("gpsAltitude"))
 
-        Handler.setGps({ photo_ids = { "1" }, latitude = 0, longitude = 0, altitude = 140.5 })
+        local r = Handler.setGps({ photo_ids = { "1" }, latitude = 0, longitude = 0, altitude = 140.5 })
         assert.are.equal(140.5, p1:getRawMetadata("gpsAltitude"))
+        assert.are.equal(140.5, r.altitude)
+    end)
+
+    it("clears altitude with clear_altitude", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", gpsAltitude = 3000 })
+        local _, Handler = setup({ p1 })
+
+        local r = Handler.setGps({ photo_ids = { "1" }, latitude = 54.4, longitude = 18.6, clear_altitude = true })
+
+        assert.is_nil(p1:getRawMetadata("gpsAltitude"))
+        assert.is_true(r.altitude_cleared)
+        assert.is_nil(r.altitude)
+    end)
+
+    it("rejects an out-of-range altitude and a conflicting or bad clear_altitude", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", gpsAltitude = 12 })
+        local catalog, Handler = setup({ p1 })
+        local base = { photo_ids = { "1" }, latitude = 1, longitude = 1 }
+        local function with(extra)
+            local args = {}
+            for k, v in pairs(base) do args[k] = v end
+            for k, v in pairs(extra) do args[k] = v end
+            return args
+        end
+
+        assert.has_error(function() Handler.setGps(with({ altitude = math.huge })) end,
+            "altitude must be a number between -20000 and 100000 (metres)")
+        assert.has_error(function() Handler.setGps(with({ altitude = -20001 })) end,
+            "altitude must be a number between -20000 and 100000 (metres)")
+        assert.has_error(function() Handler.setGps(with({ altitude = 5, clear_altitude = true })) end,
+            "altitude and clear_altitude cannot be used together")
+        assert.has_error(function() Handler.setGps(with({ clear_altitude = "yes" })) end,
+            "clear_altitude must be a boolean")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.equal(12, p1:getRawMetadata("gpsAltitude"))
     end)
 
     it("resolves photos OUTSIDE the write-access gate", function()
@@ -230,7 +266,7 @@ describe("HandlerMetadata.setGps", function()
             "longitude must be a number between -180 and 180")
         assert.has_error(function()
             Handler.setGps({ photo_ids = { "1" }, latitude = 1, longitude = 1, altitude = "high" })
-        end, "altitude must be a number (metres)")
+        end, "altitude must be a number between -20000 and 100000 (metres)")
 
         assert.are.equal(0, catalog.getQueryCount())
         assert.is_nil(p1:getRawMetadata("gps"))

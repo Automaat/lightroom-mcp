@@ -34,6 +34,15 @@ describe('validateToolArgs', () => {
     })).toContain('on_existing');
   });
 
+  it('rejects a non-finite altitude that JSON would turn into null', () => {
+    const base = { photo_ids: [914], latitude: 1, longitude: 1 };
+
+    expect(validateToolArgs('set_gps', { ...base, altitude: Infinity })).toContain('altitude');
+    expect(validateToolArgs('set_gps', { ...base, altitude: -Infinity })).toContain('altitude');
+    expect(validateToolArgs('set_gps', { ...base, altitude: 8848 })).toBeNull();
+    expect(validateToolArgs('set_gps', { ...base, clear_altitude: true })).toBeNull();
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 
