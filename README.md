@@ -158,12 +158,13 @@ If you'd rather drop the plugin in by hand:
 | --- | --- |
 | `search_photos` | Search by filename / keywords / rating / date range. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
+| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |
 | `add_to_collection` | Add photos to a named collection. |
-| `set_keywords` | Add or remove keywords on photos. |
+| `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
+| `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `set_rating` | Set 0-5 star rating on photos. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |

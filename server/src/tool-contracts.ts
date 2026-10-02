@@ -229,7 +229,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "get_photo_metadata",
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Get detailed metadata for a specific photo: EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings",
+      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -310,16 +310,56 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "set_keywords",
     luaHandler: "HandlerOrganization.setKeywords",
-    description: "Add or remove keywords from photos",
+    description:
+      "Add or remove keywords from photos. A keyword is a plain name, or a parent-first hierarchy path with '|' between levels (e.g. 'Places|Europe|Paris') to address a nested keyword; see list_keywords for the paths that exist. A plain name is created at the top level if it does not exist, and a path creates any missing levels, unless create_missing is false. Names and paths match existing keywords ignoring case.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
-        add_keywords: stringArray("Keywords to add", MAX_KEYWORDS),
-        remove_keywords: stringArray("Keywords to remove", MAX_KEYWORDS),
+        add_keywords: stringArray(
+          "Keywords to add: plain names or 'Parent|Child' hierarchy paths",
+          MAX_KEYWORDS,
+        ),
+        remove_keywords: stringArray(
+          "Keywords to remove: a plain name removes every keyword with that name, a 'Parent|Child' path removes only that one",
+          MAX_KEYWORDS,
+        ),
+        create_missing: {
+          type: "boolean",
+          description:
+            "Default true. When false, nothing is created: every keyword to add must already exist, a plain name must match exactly one keyword anywhere in the hierarchy, and the call fails without changing anything if any keyword is unknown or ambiguous.",
+        },
       },
       required: ["photo_ids"],
+    },
+  },
+  {
+    name: "list_keywords",
+    luaHandler: "HandlerKeywords.listKeywords",
+    description:
+      "List the catalog's keyword hierarchy as full parent-first paths ('Places|Europe|Paris') with synonyms and the include-on-export flag (paginated, default limit 100). The paths can be passed to set_keywords. For a large hierarchy, narrow with parent or query, or use paths_only for a much smaller response.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        parent: {
+          type: "string",
+          minLength: 1,
+          description: "Only list keywords below this keyword path (optional)",
+        },
+        query: {
+          type: "string",
+          minLength: 1,
+          description: "Only list keywords whose name or a synonym contains this text, ignoring case (optional)",
+        },
+        paths_only: {
+          type: "boolean",
+          description: "Return each keyword as just its path string instead of an object (default false)",
+        },
+        limit: { type: "number", description: "Max keywords to return (default 100)", minimum: 0 },
+        offset: { type: "number", description: "Number of keywords to skip (default 0)", minimum: 0 },
+      },
     },
   },
   {

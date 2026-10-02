@@ -16,9 +16,16 @@ if not package.path:find(pluginRoot, 1, true) then
 end
 
 -- Install a mock `import` global. Subsequent `import 'X'` calls return the mock for X.
+-- Pure helper namespaces every spec gets unless it installs its own. lower is
+-- ASCII-only here; Lightroom's folds Unicode.
+local defaultImports = {
+    LrStringUtils = { lower = string.lower },
+}
+
 function M.installImport(modules)
     _G.import = function(name)
         local m = modules[name]
+        if m == nil then m = defaultImports[name] end
         if m == nil then
             error("No mock installed for import('" .. tostring(name) .. "')", 2)
         end
@@ -102,6 +109,32 @@ function M.fakePhoto(meta)
     }
 end
 
+-- Build a fake keyword. opts: parent (fake keyword), synonyms, includeOnExport.
+-- Registers itself with its parent so getChildren() sees it, as a keyword that
+-- already exists in the catalog would be.
+function M.fakeKeyword(name, opts)
+    opts = opts or {}
+    local children = {}
+    local kw = {
+        getName = function() return name end,
+        getParent = function() return opts.parent end,
+        getChildren = function() return children end,
+        getSynonyms = function() return opts.synonyms or {} end,
+        getAttributes = function()
+            return {
+                keywordName = name,
+                synonyms = opts.synonyms or {},
+                includeOnExport = opts.includeOnExport ~= false,
+            }
+        end,
+        __addChild = function(_, child) table.insert(children, child) end,
+    }
+    if opts.parent and not opts.detached then
+        opts.parent:__addChild(kw)
+    end
+    return kw
+end
+
 -- Build a fake collection.
 function M.fakeCollection(name, photos)
     photos = photos or {}
@@ -124,6 +157,7 @@ end
 --   photos: array of fake photos
 --   collections: array of fake collections
 --   collectionSets: array of fake collection sets
+--   keywords: array of top-level fake keywords
 function M.fakeCatalog(opts)
     opts = opts or {}
     local photos = opts.photos or {}
@@ -131,6 +165,8 @@ function M.fakeCatalog(opts)
     local collectionSets = opts.collectionSets or {}
     local createdCollections = {}
     local createdKeywords = {}
+    local topKeywords = opts.keywords or {}
+    local pendingKeywords = {}
     local readAccessCount = 0
     local writeAccessCount = 0
     -- Tracks whether a catalog query (getTargetPhotos/findPhotos/getAllPhotos)
@@ -225,9 +261,22 @@ function M.fakeCatalog(opts)
         withWriteAccessDo = function(_, _, fn)
             writeAccessCount = writeAccessCount + 1
             insideWriteAccess = true
+            pendingKeywords = {}
             local ok, err = pcall(fn)
             insideWriteAccess = false
+            -- Keywords created in the transaction become visible once it
+            -- commits; a failed transaction leaves none behind.
+            local pending = pendingKeywords
+            pendingKeywords = {}
             if not ok then error(err, 0) end
+            for _, kw in ipairs(pending) do
+                createdKeywords[#createdKeywords + 1] = kw
+                if kw:getParent() then
+                    kw:getParent():__addChild(kw)
+                else
+                    table.insert(topKeywords, kw)
+                end
+            end
         end,
         getQueriedInsideWriteAccess = function() return queriedInsideWriteAccess end,
         findPhotoByLocalIdentifier = function(_, id)
@@ -243,9 +292,37 @@ function M.fakeCatalog(opts)
             table.insert(collections, c)
             return c
         end,
-        createKeyword = function(_, name)
-            local kw = { getName = function() return name end }
-            table.insert(createdKeywords, kw)
+        getKeywords = function() return topKeywords end,
+        -- Models the SDK behaviour the handlers have to work around: a keyword
+        -- created in a write transaction is invisible to getKeywords() and
+        -- getChildren() until it commits, cannot be used as a parent before
+        -- then, and creating the same name twice in one transaction asserts.
+        -- returnExisting matches committed keywords ignoring case.
+        createKeyword = function(_, name, synonyms, includeOnExport, parent, returnExisting)
+            if not insideWriteAccess then
+                error("createKeyword outside withWriteAccessDo")
+            end
+            for _, kw in ipairs(pendingKeywords) do
+                if kw == parent then
+                    error("bad argument #2 to 'format' (number expected, got string)")
+                end
+                if kw:getParent() == parent and kw:getName():lower() == name:lower() then
+                    error("createKeyword: " .. name .. " already created in this transaction")
+                end
+            end
+            if returnExisting then
+                local siblings = parent and parent:getChildren() or topKeywords
+                for _, kw in ipairs(siblings) do
+                    if kw:getName():lower() == name:lower() then return kw end
+                end
+            end
+            local kw = M.fakeKeyword(name, {
+                parent = parent,
+                synonyms = synonyms,
+                includeOnExport = includeOnExport,
+                detached = true,
+            })
+            table.insert(pendingKeywords, kw)
             return kw
         end,
         addPhoto = function(_, path)

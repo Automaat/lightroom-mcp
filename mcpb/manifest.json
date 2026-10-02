@@ -64,7 +64,11 @@
     },
     {
       "name": "set_keywords",
-      "description": "Add or remove keywords on photos."
+      "description": "Add or remove keywords on photos, by name or hierarchy path."
+    },
+    {
+      "name": "list_keywords",
+      "description": "List the keyword hierarchy as full paths."
     },
     {
       "name": "set_rating",
