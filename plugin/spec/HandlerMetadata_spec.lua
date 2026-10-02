@@ -20,8 +20,8 @@ describe("HandlerMetadata.getPhotoMetadata", function()
             colorNameForLabel = "red",
             pickStatus = 1,
             keywords = {
-                { getName = function() return "summer" end },
-                { getName = function() return "beach" end },
+                helper.fakeKeyword("summer"),
+                helper.fakeKeyword("beach", { parent = helper.fakeKeyword("Places") }),
             },
             cameraMake = "Canon",
             cameraModel = "R5",
@@ -47,6 +47,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.same({ 0, 0, 64, 48, 255, 255 }, r.developSettings.toneCurve)
         assert.are.same({ 0, 0, 255, 250 }, r.developSettings.toneCurveRed)
         assert.are.same({ "summer", "beach" }, r.keywords)
+        assert.are.same({ "summer", "Places|beach" }, r.keywordPaths)
     end)
 
     it("exposes HSL develop settings with SDK keys", function()
