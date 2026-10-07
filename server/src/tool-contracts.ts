@@ -240,6 +240,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_photo_preview",
+    luaHandler: "HandlerPreview.getPhotoPreview",
+    description:
+      "Get a JPEG preview of a photo, returned as an image, so you can see what it shows. Lightroom renders it with the photo's current develop settings, so raw files work. size is the smallest longest edge you will accept: Lightroom returns the smallest preview it has at least that big, so the image is often larger. width and height report what came back.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        size: {
+          type: "number",
+          description: "Minimum longest edge in pixels (64-2048, default 512)",
+          minimum: 64,
+          maximum: 2048,
+        },
+      },
+      required: ["photo_id"],
+    },
+  },
+  {
     name: "set_gps",
     luaHandler: "HandlerMetadata.setGps",
     description:

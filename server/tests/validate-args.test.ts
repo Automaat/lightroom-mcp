@@ -49,6 +49,13 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('export_photo_metadata', { destination: '/u/zdjęcia 東京.json' })).toBeNull();
   });
 
+  it('bounds the preview size', () => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914 })).toBeNull();
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: 2048 })).toBeNull();
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: 4096 })).toContain('size');
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: '1024' })).toContain('size');
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 

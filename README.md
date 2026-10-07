@@ -159,6 +159,7 @@ If you'd rather drop the plugin in by hand:
 | `search_photos` | Search by filename / keywords / rating / date range. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
+| `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |

@@ -47,6 +47,10 @@
       "description": "Detailed EXIF + develop metadata for a photo."
     },
     {
+      "name": "get_photo_preview",
+      "description": "Get a JPEG preview of a photo as an image."
+    },
+    {
       "name": "set_gps",
       "description": "Set the GPS position of photos."
     },
