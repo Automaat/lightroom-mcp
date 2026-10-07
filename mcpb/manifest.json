@@ -79,6 +79,10 @@
       "description": "List the keyword hierarchy as full paths."
     },
     {
+      "name": "rename_keyword",
+      "description": "Rename a keyword everywhere it is used."
+    },
+    {
       "name": "set_rating",
       "description": "Set star rating on photos."
     },

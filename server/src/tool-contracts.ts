@@ -417,6 +417,29 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "rename_keyword",
+    luaHandler: "HandlerKeywords.renameKeyword",
+    description:
+      "Rename a keyword in place: every photo tagged with it shows the new name, and its parent, children and synonyms are unchanged. keyword is a plain name, which must match exactly one keyword, or a 'Parent|Child' path (see list_keywords). Fails if a sibling already has the new name, ignoring case, since keywords cannot be merged; a change of case alone is allowed.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        keyword: {
+          type: "string",
+          minLength: 1,
+          description: "Keyword to rename: a plain name or a 'Parent|Child' path",
+        },
+        new_name: {
+          type: "string",
+          minLength: 1,
+          description: "New name for that keyword (a single name, not a path)",
+        },
+      },
+      required: ["keyword", "new_name"],
+    },
+  },
+  {
     name: "set_rating",
     luaHandler: "HandlerOrganization.setRating",
     description: "Set star rating for photos",

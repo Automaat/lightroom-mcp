@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
 local KeywordTree = require 'KeywordTree'
 local Log = require 'Log'
@@ -95,6 +96,116 @@ function KeywordsHandler.listKeywords(args)
         count = total,
         keywords = slice,
         has_more = (offset + #slice) < total,
+    }
+end
+
+-- Renames one keyword in place: every photo tagged with it shows the new name,
+-- and its parent, children and synonyms are unchanged. A plain name must match
+-- exactly one keyword; a "Parent|Child" path addresses it directly.
+function KeywordsHandler.renameKeyword(args)
+    if type(args.keyword) ~= "string" or args.keyword:match("^%s*$") then
+        error("keyword is required")
+    end
+    if type(args.new_name) ~= "string" or args.new_name:match("^%s*$") then
+        error("new_name is required")
+    end
+
+    -- Trimmed like a level of a path, so the keyword is found again by name.
+    local newName = KeywordTree.trim(args.new_name)
+    if KeywordTree.isPath(newName) then
+        error("new_name must be a single keyword name, not a path: " .. newName)
+    end
+
+    local parts = nil
+    local oldName = nil
+    if KeywordTree.isPath(args.keyword) then
+        parts = KeywordTree.split(args.keyword)
+    else
+        oldName = KeywordTree.trim(args.keyword)
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local keyword, oldPath, newPath, photoCount, tempName
+
+    catalog:withWriteAccessDo("Rename Keyword", function()
+        if parts then
+            keyword = KeywordTree.resolve(catalog, parts)
+            if not keyword then
+                error("Keyword not found: " .. KeywordTree.join(parts))
+            end
+        else
+            local matches = KeywordTree.findByName(catalog, oldName)
+            if #matches == 0 then
+                error("Keyword not found: " .. oldName)
+            elseif #matches > 1 then
+                local found = {}
+                for _, match in ipairs(matches) do
+                    table.insert(found, match.path)
+                end
+                error("Keyword is ambiguous, give its path: " .. oldName
+                    .. " (" .. table.concat(found, ", ") .. ")")
+            end
+            keyword = matches[1].keyword
+        end
+
+        local currentName = keyword:getName()
+        if currentName == newName then
+            error("Keyword is already named '" .. newName .. "'")
+        end
+
+        -- Lightroom matches names ignoring case, so a sibling "callie" would
+        -- clash with "Callie"; the keyword itself does not.
+        local parent = keyword:getParent()
+        local clash = KeywordTree.findChild(catalog, parent, newName)
+        if clash and clash ~= keyword then
+            error("A keyword named '" .. clash:getName() .. "' already exists at "
+                .. KeywordTree.pathOf(clash) .. "; rename cannot merge keywords")
+        end
+
+        oldPath = KeywordTree.pathOf(keyword)
+        -- Built rather than read back: until this transaction commits,
+        -- getName() still returns the old name.
+        newPath = parent and (KeywordTree.pathOf(parent) .. KeywordTree.SEPARATOR .. newName) or newName
+        photoCount = #(keyword:getPhotos() or {})
+
+        -- Lightroom silently ignores a rename that changes only the case, so
+        -- that goes through a temporary name, committed first.
+        if KeywordTree.fold(currentName) == KeywordTree.fold(newName) then
+            tempName = newName .. " (renaming)"
+            local n = 1
+            while KeywordTree.findChild(catalog, parent, tempName) do
+                n = n + 1
+                tempName = string.format("%s (renaming %d)", newName, n)
+            end
+            keyword:setAttributes({ keywordName = tempName })
+        else
+            keyword:setAttributes({ keywordName = newName })
+        end
+    end)
+
+    if tempName then
+        -- LrTasks.pcall, not pcall: a write gate yields, and Lua 5.1's pcall
+        -- cannot yield, so withWriteAccessDo fails inside it with "must be
+        -- called from within an LrTask".
+        local ok, err = LrTasks.pcall(function()
+            catalog:withWriteAccessDo("Rename Keyword", function()
+                keyword:setAttributes({ keywordName = newName })
+            end)
+        end)
+        if not ok then
+            error(string.format("Keyword '%s' was left named '%s' while changing its case: %s",
+                oldPath, tempName, tostring(err)))
+        end
+    end
+
+    Log.info(string.format("Renamed keyword %s to %s (%d photos)", oldPath, newPath, photoCount))
+
+    return {
+        success = true,
+        old_path = oldPath,
+        new_path = newPath,
+        photo_count = photoCount,
+        message = string.format("Renamed keyword '%s' to '%s' (%d photos)", oldPath, newPath, photoCount)
     }
 end
 

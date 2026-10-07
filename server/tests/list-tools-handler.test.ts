@@ -21,6 +21,7 @@ const EXPECTED_TOOL_NAMES = [
   'add_to_collection',
   'set_keywords',
   'list_keywords',
+  'rename_keyword',
   'set_rating',
   'set_flag',
   'import_photos',
@@ -37,8 +38,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 24 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(24);
+  it('contains exactly 25 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(25);
   });
 
   it('tool names are unique', () => {
@@ -98,6 +99,7 @@ describe('tool required fields', () => {
     ['set_keywords', ['photo_ids']],
     ['set_rating', ['photo_ids', 'rating']],
     ['set_flag', ['photo_ids', 'flag']],
+    ['rename_keyword', ['keyword', 'new_name']],
     ['import_photos', ['source_path']],
     ['export_photos', ['photo_ids', 'destination']],
     ['export_photo_metadata', ['destination']],
