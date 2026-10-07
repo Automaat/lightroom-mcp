@@ -59,6 +59,10 @@
       "description": "Set the IPTC location fields of photos."
     },
     {
+      "name": "set_metadata",
+      "description": "Set title, caption, headline, creator and copyright fields of photos."
+    },
+    {
       "name": "list_collections",
       "description": "List all collections and collection sets."
     },

@@ -191,6 +191,7 @@ local DISPATCH = {
     get_photo_preview = HandlerPreview.getPhotoPreview,
     set_gps = HandlerMetadata.setGps,
     set_location = HandlerMetadata.setLocation,
+    set_metadata = HandlerMetadata.setMetadata,
     set_keywords = HandlerOrganization.setKeywords,
     list_keywords = HandlerKeywords.listKeywords,
     set_rating = HandlerOrganization.setRating,

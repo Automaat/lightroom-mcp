@@ -321,6 +321,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_metadata",
+    luaHandler: "HandlerMetadata.setMetadata",
+    description:
+      "Set IPTC description and rights fields of photos (title, caption, headline, creator, copyright notice, rights usage terms, copyright info URL, creator website), as get_photo_metadata reports them. Fields left out are unchanged; an empty string clears a field. Give at least one field. Copyright status cannot be set.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        title: { type: "string", description: "Title" },
+        caption: { type: "string", description: "Caption (IPTC description)" },
+        headline: { type: "string", description: "Headline" },
+        creator: { type: "string", description: "Creator (photographer)" },
+        copyright: { type: "string", description: "Copyright notice, e.g. '© 2026 Jane Doe'" },
+        rights_usage_terms: { type: "string", description: "Rights usage terms" },
+        copyright_info_url: { type: "string", description: "Copyright info URL, e.g. a licensing page" },
+        creator_url: { type: "string", description: "Creator's website (IPTC creator contact info)" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "list_collections",
     luaHandler: "HandlerCollections.listCollections",
     description: "List all collections in Lightroom catalog (paginated, default limit 100)",

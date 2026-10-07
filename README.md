@@ -163,6 +163,7 @@ If you'd rather drop the plugin in by hand:
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
+| `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |
 | `add_to_collection` | Add photos to a named collection. |
