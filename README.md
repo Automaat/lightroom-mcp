@@ -160,6 +160,7 @@ If you'd rather drop the plugin in by hand:
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
+| `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |
 | `add_to_collection` | Add photos to a named collection. |

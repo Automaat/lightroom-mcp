@@ -250,4 +250,73 @@ function MetadataHandler.setGps(args)
     }
 end
 
+-- Tool argument -> SDK field, in the order get_photo_metadata reports them.
+-- "Sublocation" is the SDK `location` field.
+local LOCATION_FIELDS = {
+    { arg = "sublocation", key = "location" },
+    { arg = "city", key = "city" },
+    { arg = "state_province", key = "stateProvince" },
+    { arg = "country", key = "country" },
+    { arg = "iso_country_code", key = "isoCountryCode" },
+}
+
+-- Writes the IPTC location fields of photos. Fields left out are unchanged;
+-- an empty string clears a field. GPS is set_gps's job and is not touched.
+function MetadataHandler.setLocation(args)
+    if not args.photo_ids or #args.photo_ids == 0 then
+        error("photo_ids is required")
+    end
+
+    local changes = {}
+    for _, field in ipairs(LOCATION_FIELDS) do
+        local value = args[field.arg]
+        if value ~= nil then
+            if type(value) ~= "string" then
+                error(field.arg .. " must be a string")
+            end
+            -- An empty string is passed through: it is what clears the
+            -- field. Lightroom stores nil on these fields as the text "nil".
+            changes[#changes + 1] = { arg = field.arg, key = field.key, value = value }
+        end
+    end
+    if #changes == 0 then
+        error("give at least one of sublocation, city, state_province, country, iso_country_code")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local updatedCount = 0
+    local missingIds = {}
+    local missingCount = 0
+
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    catalog:withWriteAccessDo("Set Location", function()
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                for _, change in ipairs(changes) do
+                    entry.photo:setRawMetadata(change.key, change.value)
+                end
+                updatedCount = updatedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
+            end
+        end
+    end)
+
+    local fields = {}
+    for i, change in ipairs(changes) do fields[i] = change.arg end
+
+    Log.info(string.format("Set location (%s) for %d photos", table.concat(fields, ", "), updatedCount))
+
+    return {
+        success = true,
+        updated = updatedCount,
+        fields = fields,
+        missing = missingIds,
+        message = string.format("Set location for %d photos (%d ids not found)",
+            updatedCount, missingCount)
+    }
+end
+
 return MetadataHandler
