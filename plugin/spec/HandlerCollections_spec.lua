@@ -161,3 +161,135 @@ describe("HandlerCollections.addToCollection", function()
         assert.has_error(function() Handler.addToCollection({ collection_name = "X" }) end)
     end)
 end)
+
+describe("HandlerCollections.removeFromCollection", function()
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local target = helper.fakeCollection("Target", { p1 })
+        local catalog, Handler = setup({ photos = { p1 }, collections = { target } })
+
+        Handler.removeFromCollection({ collection_name = "Target", photo_ids = { "1" } })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("removes member photos and leaves the rest of the collection", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+        local p3 = helper.fakePhoto({ id = "3", path = "/c.jpg" })
+        local target = helper.fakeCollection("Target", { p1, p2, p3 })
+        local _, Handler = setup({ photos = { p1, p2, p3 }, collections = { target } })
+
+        local r = Handler.removeFromCollection({ collection_name = "Target", photo_ids = { "1", "3" } })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.removed)
+        assert.are.same({ p2 }, target.getPhotos())
+    end)
+
+    it("counts photos that were not in the collection instead of claiming them removed", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+        local target = helper.fakeCollection("Target", { p1 })
+        local _, Handler = setup({ photos = { p1, p2 }, collections = { target } })
+
+        local r = Handler.removeFromCollection({ collection_name = "Target", photo_ids = { "1", "2" } })
+
+        assert.are.equal(1, r.removed)
+        assert.are.equal(1, r.not_in_collection)
+        assert.are.same({ p1 }, target.getRemovedPhotos())
+    end)
+
+    it("finds a collection inside a collection set", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local nested = helper.fakeCollection("Inside", { p1 })
+        local outerSet = {
+            getName = function() return "Outer" end,
+            getChildCollections = function() return { nested } end,
+            getChildCollectionSets = function() return {} end,
+        }
+        local _, Handler = setup({ photos = { p1 }, collectionSets = { outerSet } })
+
+        local r = Handler.removeFromCollection({ collection_name = "Inside", photo_ids = { "1" } })
+
+        assert.are.equal(1, r.removed)
+    end)
+
+    it("reports ids that matched no photo", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local target = helper.fakeCollection("Target", { p1 })
+        local _, Handler = setup({ photos = { p1 }, collections = { target } })
+
+        local r = Handler.removeFromCollection({ collection_name = "Target", photo_ids = { "1", "ghost" } })
+
+        assert.are.equal(1, r.removed)
+        assert.are.same({ "ghost" }, r.missing)
+        assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+    end)
+
+    it("rejects an unknown or smart collection without scanning the catalog", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local smart = helper.fakeCollection("Five Stars", { p1 }, { smart = true })
+        local catalog, Handler = setup({ photos = { p1 }, collections = { smart } })
+
+        assert.has_error(function()
+            Handler.removeFromCollection({ collection_name = "Nope", photo_ids = { "1" } })
+        end, "Collection not found: Nope")
+        assert.has_error(function()
+            Handler.removeFromCollection({ collection_name = "Five Stars", photo_ids = { "1" } })
+        end, "Cannot remove photos from a smart collection: Five Stars")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.same({}, smart.getRemovedPhotos())
+    end)
+
+    it("errors without required args", function()
+        local _, Handler = setup({})
+        assert.has_error(function() Handler.removeFromCollection({ photo_ids = { "1" } }) end,
+            "collection_name is required")
+        assert.has_error(function() Handler.removeFromCollection({ collection_name = "X" }) end,
+            "photo_ids is required")
+    end)
+end)
+
+describe("HandlerCollections.deleteCollection", function()
+    it("deletes the named collection and reports how many photos it held", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+        local target = helper.fakeCollection("Temp", { p1, p2 })
+        local other = helper.fakeCollection("Keep", { p1 })
+        local _, Handler = setup({ photos = { p1, p2 }, collections = { target, other } })
+
+        local r = Handler.deleteCollection({ collection_name = "Temp" })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.photo_count)
+        assert.is_true(target.isDeleted())
+        assert.is_false(other.isDeleted())
+    end)
+
+    it("refuses to guess when several collections share the name", function()
+        local top = helper.fakeCollection("Temp", {})
+        local nested = helper.fakeCollection("Temp", {})
+        local outerSet = {
+            getName = function() return "Outer" end,
+            getChildCollections = function() return { nested } end,
+            getChildCollectionSets = function() return {} end,
+        }
+        local _, Handler = setup({ collections = { top }, collectionSets = { outerSet } })
+
+        assert.has_error(function() Handler.deleteCollection({ collection_name = "Temp" }) end,
+            "2 collections are named 'Temp'; rename one before deleting")
+        assert.is_false(top.isDeleted())
+        assert.is_false(nested.isDeleted())
+    end)
+
+    it("errors on an unknown collection or a missing name", function()
+        local _, Handler = setup({})
+        assert.has_error(function() Handler.deleteCollection({ collection_name = "Nope" }) end,
+            "Collection not found: Nope")
+        assert.has_error(function() Handler.deleteCollection({}) end, "collection_name is required")
+        assert.has_error(function() Handler.deleteCollection({ collection_name = "" }) end,
+            "collection_name is required")
+    end)
+end)

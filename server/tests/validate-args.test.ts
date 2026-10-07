@@ -74,6 +74,12 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: '1024' })).toContain('size');
   });
 
+  it('requires a collection name to delete and nothing else', () => {
+    expect(validateToolArgs('delete_collection', { collection_name: 'Temp' })).toBeNull();
+    expect(validateToolArgs('delete_collection', {})).toContain("required property 'collection_name'");
+    expect(validateToolArgs('delete_collection', { collection_name: 'Temp', photo_ids: [914] })).toContain('photo_ids');
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 
