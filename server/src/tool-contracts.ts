@@ -391,6 +391,25 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_flag",
+    luaHandler: "HandlerOrganization.setFlag",
+    description:
+      "Set the pick flag of photos: pick, reject, or none to remove the flag. get_photo_metadata reports it as pickStatus (1, -1 or 0).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        flag: {
+          type: "string",
+          enum: ["pick", "reject", "none"],
+          description: "pick, reject, or none (unflagged)",
+        },
+      },
+      required: ["photo_ids", "flag"],
+    },
+  },
+  {
     name: "import_photos",
     luaHandler: "HandlerImport.importPhotos",
     description: "Import photos into Lightroom catalog",
