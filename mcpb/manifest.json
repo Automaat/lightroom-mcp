@@ -79,6 +79,10 @@
       "description": "Set star rating on photos."
     },
     {
+      "name": "set_flag",
+      "description": "Flag photos as pick or reject, or remove the flag."
+    },
+    {
       "name": "import_photos",
       "description": "Import photos into the catalog."
     },

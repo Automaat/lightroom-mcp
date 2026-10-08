@@ -49,6 +49,15 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('export_photo_metadata', { destination: '/u/zdjęcia 東京.json' })).toBeNull();
   });
 
+  it('accepts only pick, reject or none as a flag', () => {
+    const base = { photo_ids: [914] };
+
+    expect(validateToolArgs('set_flag', { ...base, flag: 'pick' })).toBeNull();
+    expect(validateToolArgs('set_flag', { ...base, flag: 'none' })).toBeNull();
+    expect(validateToolArgs('set_flag', { ...base, flag: 'rejected' })).toContain('flag');
+    expect(validateToolArgs('set_flag', { ...base, flag: -1 })).toContain('flag');
+  });
+
   it('accepts IPTC location strings and rejects other types or unknown fields', () => {
     const base = { photo_ids: [914] };
 

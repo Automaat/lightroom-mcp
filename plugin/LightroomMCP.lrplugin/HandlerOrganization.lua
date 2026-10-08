@@ -307,4 +307,50 @@ function OrganizationHandler.setRating(args)
     }
 end
 
+-- Tool flag name -> SDK pickStatus (the value get_photo_metadata reports).
+local PICK_STATUS = { pick = 1, none = 0, reject = -1 }
+
+function OrganizationHandler.setFlag(args)
+    if not args.photo_ids or #args.photo_ids == 0 then
+        error("photo_ids is required")
+    end
+
+    -- Indexing the table with a non-string would silently miss, so name the
+    -- accepted values instead of reporting a bare "unknown flag".
+    local pickStatus = type(args.flag) == "string" and PICK_STATUS[args.flag] or nil
+    if pickStatus == nil then
+        error("flag must be one of: pick, reject, none")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local updatedCount = 0
+    local missingIds = {}
+    local missingCount = 0
+
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    catalog:withWriteAccessDo("Set Flag", function()
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                entry.photo:setRawMetadata('pickStatus', pickStatus)
+                updatedCount = updatedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
+            end
+        end
+    end)
+
+    Log.info(string.format("Set flag to %s for %d photos", args.flag, updatedCount))
+
+    return {
+        success = true,
+        updated = updatedCount,
+        flag = args.flag,
+        missing = missingIds,
+        message = string.format("Set flag to %s for %d photos (%d ids not found)",
+            args.flag, updatedCount, missingCount)
+    }
+end
+
 return OrganizationHandler
