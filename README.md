@@ -4,6 +4,7 @@ Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** p
 
 [![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
 [![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-mskalski-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mskalski)
 
 > **Works with:** Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, VS Code.
 > **Needs:** Lightroom Classic on macOS or Windows. Nothing else — no programming required.
