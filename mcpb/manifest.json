@@ -51,6 +51,10 @@
       "description": "Set the GPS position of photos."
     },
     {
+      "name": "set_location",
+      "description": "Set the IPTC location fields of photos."
+    },
+    {
       "name": "list_collections",
       "description": "List all collections and collection sets."
     },

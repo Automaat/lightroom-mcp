@@ -58,6 +58,15 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('set_flag', { ...base, flag: -1 })).toContain('flag');
   });
 
+  it('accepts IPTC location strings and rejects other types or unknown fields', () => {
+    const base = { photo_ids: [914] };
+
+    expect(validateToolArgs('set_location', { ...base, city: 'Kansas City', iso_country_code: 'US' })).toBeNull();
+    expect(validateToolArgs('set_location', { ...base, sublocation: '' })).toBeNull();
+    expect(validateToolArgs('set_location', { ...base, city: 42 })).toContain('city');
+    expect(validateToolArgs('set_location', { ...base, state: 'Missouri' })).toContain('state');
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 
