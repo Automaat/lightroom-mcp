@@ -12,23 +12,29 @@ local function previewPhoto(meta, thumbnail)
     return photo
 end
 
--- SOI, an APP0 segment to skip, then SOF0 for a 855x570 image.
-local function fakeJpeg()
+-- SOI, an APP0 segment to skip, then SOF0 for a width x height image
+-- (855x570 by default).
+local function fakeJpeg(width, height)
+    width, height = width or 855, height or 570
     local app0 = string.char(0xFF, 0xE0, 0x00, 0x10) .. string.rep("\0", 14)
-    local sof0 = string.char(0xFF, 0xC0, 0x00, 0x11, 0x08, 0x02, 0x3A, 0x03, 0x57) .. string.rep("\0", 10)
+    local sof0 = string.char(0xFF, 0xC0, 0x00, 0x11, 0x08,
+        math.floor(height / 256), height % 256, math.floor(width / 256), width % 256) .. string.rep("\0", 10)
     return string.char(0xFF, 0xD8) .. app0 .. sof0
 end
 
 local function setup(photos, onSleep)
     local catalog = helper.fakeCatalog({ photos = photos or {} })
-    local sleeps = { count = 0 }
+    -- now is a fake clock: each sleep advances it, and tests can jump it.
+    local sleeps = { count = 0, now = 0 }
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
+        LrDate = { currentTime = function() return sleeps.now end },
         LrLogger = helper.defaultLrLogger(),
         LrStringUtils = { encodeBase64 = function(s) return "b64(" .. s .. ")" end },
         LrTasks = {
-            sleep = function()
+            sleep = function(seconds)
                 sleeps.count = sleeps.count + 1
+                sleeps.now = sleeps.now + seconds
                 if onSleep then onSleep(sleeps.count) end
             end,
         },
@@ -125,6 +131,32 @@ describe("HandlerPreview.getPhotoPreview", function()
         assert.are.equal(2048, r.requested_size)
     end)
 
+    it("asks for smaller previews while the longest edge is over 2000px", function()
+        local edges = {}
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, w, _, cb)
+            edges[#edges + 1] = w
+            cb(w > 1500 and fakeJpeg(3420, 2280) or fakeJpeg(1710, 1140))
+        end)
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoPreview({ photo_id = "1", size = 2048 })
+
+        assert.are.same({ 2048, 1024 }, edges)
+        assert.are.equal(1710, r.width)
+        assert.are.equal(1140, r.height)
+    end)
+
+    it("returns an image over 2000px when even the smallest preview is that big", function()
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, _, _, cb)
+            cb(fakeJpeg(2400, 1600))
+        end)
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoPreview({ photo_id = "1", size = 64 })
+
+        assert.are.equal(2400, r.width)
+    end)
+
     it("gives up when even the smallest preview is over the size limit", function()
         local big = string.rep("x", 3.5 * 1024 * 1024 + 1)
         local edges = {}
@@ -156,6 +188,19 @@ describe("HandlerPreview.getPhotoPreview", function()
         assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1" }) end,
             "Preview not ready after 20s")
         assert.is_true(sleeps.count >= 400)
+    end)
+
+    it("counts time outside the sleeps against the deadline", function()
+        local sleeps
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function()
+            sleeps.now = sleeps.now + 19.99
+        end)
+        local _, Handler
+        _, Handler, sleeps = setup({ photo })
+
+        assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1" }) end,
+            "Preview not ready after 20s")
+        assert.is_true(sleeps.count <= 1)
     end)
 
     it("reports an unknown photo", function()

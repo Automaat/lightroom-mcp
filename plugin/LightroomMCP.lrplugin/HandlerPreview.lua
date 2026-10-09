@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local LrDate = import 'LrDate'
 local LrStringUtils = import 'LrStringUtils'
 local LrTasks = import 'LrTasks'
 
@@ -20,6 +21,8 @@ local POLL_SECONDS = 0.05
 -- Claude rejects images over 5 MB of base64 (3.75 MB raw). size is only a
 -- minimum, so a high-resolution raw can come back bigger than that.
 local MAX_BYTES = 3.5 * 1024 * 1024
+-- Claude rejects images over 2000px once a request holds more than 20 images.
+local MAX_EDGE = 2000
 
 -- Width and height from the first start-of-frame marker, or nil if the data
 -- is not a JPEG this can read. Lightroom does not report the size it chose.
@@ -63,9 +66,9 @@ function PreviewHandler.getPhotoPreview(args)
         error("Photo not found: " .. tostring(args.photo_id))
     end
 
-    -- One deadline across every attempt, so retries stay under the server's
-    -- timeout too.
-    local waited = 0
+    -- Wall-clock deadline across every attempt: sleeps can overshoot and the
+    -- request call itself takes time, so counting sleeps undercounts.
+    local deadline = LrDate.currentTime() + TIMEOUT_SECONDS
     local function render(edge)
         -- requestJpegThumbnail is asynchronous and may call back before it
         -- returns. The request object must stay referenced until the callback
@@ -77,9 +80,8 @@ function PreviewHandler.getPhotoPreview(args)
         end)
 
         -- Reading `request` each pass is what keeps it alive while we wait.
-        while request and not done and waited < TIMEOUT_SECONDS do
+        while request and not done and LrDate.currentTime() < deadline do
             LrTasks.sleep(POLL_SECONDS)
-            waited = waited + POLL_SECONDS
         end
 
         if not done then
@@ -91,10 +93,16 @@ function PreviewHandler.getPhotoPreview(args)
         return data
     end
 
+    local function tooBig(data)
+        if #data > MAX_BYTES then return true end
+        local w, h = jpegDimensions(data)
+        return w ~= nil and math.max(w, h) > MAX_EDGE
+    end
+
     -- A smaller request makes Lightroom fall back to a smaller cached preview.
     local edge = size
     local jpeg = render(edge)
-    while #jpeg > MAX_BYTES and edge > MIN_SIZE do
+    while tooBig(jpeg) and edge > MIN_SIZE do
         edge = math.max(MIN_SIZE, math.floor(edge / 2))
         jpeg = render(edge)
     end

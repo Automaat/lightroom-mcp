@@ -243,7 +243,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "get_photo_preview",
     luaHandler: "HandlerPreview.getPhotoPreview",
     description:
-      "Get a JPEG preview of a photo, returned as an image, so you can see what it shows. Lightroom renders it with the photo's current develop settings, so raw files work. size is the smallest longest edge you will accept: Lightroom returns the smallest preview it has at least that big, so the image is often larger. An image over 3.5 MB is replaced by the next smaller preview. width and height report what came back.",
+      "Get a JPEG preview of a photo, returned as an image, so you can see what it shows. Lightroom renders it with the photo's current develop settings, so raw files work. size is the smallest longest edge you will accept: Lightroom returns the smallest preview it has at least that big, so the image is often larger. An image over 3.5 MB or 2000px is replaced by the next smaller preview. width and height report what came back.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
