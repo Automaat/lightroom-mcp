@@ -45,6 +45,30 @@ describe('createCallToolHandler', () => {
     expect(JSON.parse(result.content[0].text)).toEqual({ count: 3, items: ['a', 'b'] });
   });
 
+  it('returns an image result as JSON text followed by an image block', async () => {
+    const handler = makeHandler({
+      call: async () => ({
+        id: '1',
+        result: { photo_id: 914, bytes: 3, image: { mime_type: 'image/jpeg', data: 'QUJD' } },
+      }),
+    });
+    const result = await handler('get_photo_preview', { photo_id: 914 });
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0].text)).toEqual({ photo_id: 914, bytes: 3 });
+    expect(result.content[1]).toEqual({ type: 'image', data: 'QUJD', mimeType: 'image/jpeg' });
+    expect(result.content).toHaveLength(2);
+  });
+
+  it('leaves a result whose image field is not image data as plain JSON', async () => {
+    const result = { name: 'Portfolio', image: 'cover.jpg' };
+    const handler = makeHandler({ call: async () => ({ id: '1', result }) });
+    const res = await handler('list_collections', {});
+
+    expect(res.content).toHaveLength(1);
+    expect(JSON.parse(res.content[0].text)).toEqual(result);
+  });
+
   it('returns isError with prefixed message on plugin error response', async () => {
     const handler = makeHandler({
       call: async () => ({ id: '1', error: 'Unknown action' }),

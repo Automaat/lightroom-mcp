@@ -17,6 +17,7 @@ local HandlerOrganization = require 'HandlerOrganization'
 local HandlerImport = require 'HandlerImport'
 local HandlerExport = require 'HandlerExport'
 local HandlerSelection = require 'HandlerSelection'
+local HandlerPreview = require 'HandlerPreview'
 local HandlerDevelop = require 'HandlerDevelop'
 local Log = require 'Log'
 
@@ -187,6 +188,7 @@ local DISPATCH = {
     create_collection = HandlerCollections.createCollection,
     add_to_collection = HandlerCollections.addToCollection,
     get_photo_metadata = HandlerMetadata.getPhotoMetadata,
+    get_photo_preview = HandlerPreview.getPhotoPreview,
     set_gps = HandlerMetadata.setGps,
     set_location = HandlerMetadata.setLocation,
     set_keywords = HandlerOrganization.setKeywords,
