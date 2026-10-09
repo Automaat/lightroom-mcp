@@ -296,6 +296,31 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_location",
+    luaHandler: "HandlerMetadata.setLocation",
+    description:
+      "Set the IPTC location fields of photos (sublocation, city, state/province, country, ISO country code), as get_photo_metadata reports them. Fields left out are unchanged; an empty string clears a field. Give at least one field. GPS is not touched (use set_gps).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        sublocation: {
+          type: "string",
+          description: "Sublocation: a venue, landmark or neighbourhood (e.g. 'Sydney Opera House')",
+        },
+        city: { type: "string", description: "City" },
+        state_province: { type: "string", description: "State or province" },
+        country: { type: "string", description: "Country name" },
+        iso_country_code: {
+          type: "string",
+          description: "ISO 3166 country code (e.g. 'US', 'AU')",
+        },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "list_collections",
     luaHandler: "HandlerCollections.listCollections",
     description: "List all collections in Lightroom catalog (paginated, default limit 100)",
@@ -408,6 +433,25 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_ids", "rating"],
+    },
+  },
+  {
+    name: "set_flag",
+    luaHandler: "HandlerOrganization.setFlag",
+    description:
+      "Set the pick flag of photos: pick, reject, or none to remove the flag. get_photo_metadata reports it as pickStatus (1, -1 or 0).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        flag: {
+          type: "string",
+          enum: ["pick", "reject", "none"],
+          description: "pick, reject, or none (unflagged)",
+        },
+      },
+      required: ["photo_ids", "flag"],
     },
   },
   {

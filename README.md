@@ -4,6 +4,7 @@ Lets Claude (and other AI assistants) talk to your **Adobe Lightroom Classic** p
 
 [![npm](https://img.shields.io/npm/v/@mskalski/lightroom-mcp.svg)](https://www.npmjs.com/package/@mskalski/lightroom-mcp)
 [![release](https://img.shields.io/github/v/release/Automaat/lightroom-mcp.svg)](https://github.com/Automaat/lightroom-mcp/releases/latest)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-mskalski-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/mskalski)
 
 > **Works with:** Claude Desktop, Claude Code, Codex CLI, Cursor, Windsurf, VS Code.
 > **Needs:** Lightroom Classic on macOS or Windows. Nothing else — no programming required.
@@ -161,12 +162,14 @@ If you'd rather drop the plugin in by hand:
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
+| `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |
 | `add_to_collection` | Add photos to a named collection. |
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `set_rating` | Set 0-5 star rating on photos. |
+| `set_flag` | Flag photos as pick or reject, or remove the flag. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |

@@ -272,3 +272,98 @@ describe("HandlerMetadata.setGps", function()
         assert.is_nil(p1:getRawMetadata("gps"))
     end)
 end)
+
+describe("HandlerMetadata.setLocation", function()
+    it("writes the given IPTC location fields to found photos", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", city = "Paris" })
+        local _, Handler = setup({ p1, p2 })
+
+        local r = Handler.setLocation({
+            photo_ids = { "1", "2" },
+            sublocation = "Nelson-Atkins Museum of Art",
+            city = "Kansas City",
+            state_province = "Missouri",
+            country = "United States",
+            iso_country_code = "US",
+        })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.updated)
+        assert.are.same({ "sublocation", "city", "state_province", "country", "iso_country_code" }, r.fields)
+        for _, p in ipairs({ p1, p2 }) do
+            assert.are.equal("Nelson-Atkins Museum of Art", p:getRawMetadata("location"))
+            assert.are.equal("Kansas City", p:getRawMetadata("city"))
+            assert.are.equal("Missouri", p:getRawMetadata("stateProvince"))
+            assert.are.equal("United States", p:getRawMetadata("country"))
+            assert.are.equal("US", p:getRawMetadata("isoCountryCode"))
+        end
+    end)
+
+    it("leaves fields that are not given unchanged", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", city = "Sydney", country = "Australia" })
+        local _, Handler = setup({ p1 })
+
+        local r = Handler.setLocation({ photo_ids = { "1" }, sublocation = "Bondi Beach" })
+
+        assert.are.same({ "sublocation" }, r.fields)
+        assert.are.equal("Bondi Beach", p1:getRawMetadata("location"))
+        assert.are.equal("Sydney", p1:getRawMetadata("city"))
+        assert.are.equal("Australia", p1:getRawMetadata("country"))
+    end)
+
+    it("clears a field given as an empty string", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", location = "Old venue", city = "Berlin" })
+        local _, Handler = setup({ p1 })
+
+        Handler.setLocation({ photo_ids = { "1" }, sublocation = "" })
+
+        -- Not nil: Lightroom stores nil on these fields as the text "nil".
+        assert.are.equal("", p1:getRawMetadata("location"))
+        assert.are.equal("Berlin", p1:getRawMetadata("city"))
+    end)
+
+    it("does not touch GPS", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", gps = { latitude = 1, longitude = 2 } })
+        local _, Handler = setup({ p1 })
+
+        Handler.setLocation({ photo_ids = { "1" }, city = "Rotorua" })
+
+        assert.are.same({ latitude = 1, longitude = 2 }, p1:getRawMetadata("gps"))
+    end)
+
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ p1 })
+
+        Handler.setLocation({ photo_ids = { "1" }, city = "Memphis" })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("reports unknown photos instead of claiming a silent success", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ p1 })
+
+        local r = Handler.setLocation({ photo_ids = { "1", "missing" }, city = "Munich" })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "missing" }, r.missing)
+    end)
+
+    it("rejects missing ids, no fields and non-string values before scanning", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", city = "Salzburg" })
+        local catalog, Handler = setup({ p1 })
+
+        assert.has_error(function() Handler.setLocation({ city = "Vienna" }) end, "photo_ids is required")
+        assert.has_error(function() Handler.setLocation({ photo_ids = { "1" } }) end,
+            "give at least one of sublocation, city, state_province, country, iso_country_code")
+        assert.has_error(function() Handler.setLocation({ photo_ids = { "1" }, city = 42 }) end,
+            "city must be a string")
+        assert.has_error(function() Handler.setLocation({ photo_ids = { "1" }, iso_country_code = true }) end,
+            "iso_country_code must be a string")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.equal("Salzburg", p1:getRawMetadata("city"))
+    end)
+end)

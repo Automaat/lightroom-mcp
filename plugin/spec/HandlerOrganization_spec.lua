@@ -67,6 +67,63 @@ describe("HandlerOrganization.setRating", function()
     end)
 end)
 
+describe("HandlerOrganization.setFlag", function()
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 0 })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setFlag({ photo_ids = { "1" }, flag = "pick" })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("maps pick, reject and none to the SDK pickStatus", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 0 })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", pickStatus = 1 })
+        local _, Handler = setup({ photos = { p1, p2 } })
+
+        local r = Handler.setFlag({ photo_ids = { "1", "2" }, flag = "reject" })
+        assert.is_true(r.success)
+        assert.are.equal(2, r.updated)
+        assert.are.equal("reject", r.flag)
+        assert.are.equal(-1, p1:getRawMetadata("pickStatus"))
+        assert.are.equal(-1, p2:getRawMetadata("pickStatus"))
+
+        Handler.setFlag({ photo_ids = { "1" }, flag = "pick" })
+        assert.are.equal(1, p1:getRawMetadata("pickStatus"))
+
+        Handler.setFlag({ photo_ids = { "1" }, flag = "none" })
+        assert.are.equal(0, p1:getRawMetadata("pickStatus"))
+    end)
+
+    it("requires photo_ids and a known flag before scanning", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 1 })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        assert.has_error(function() Handler.setFlag({ flag = "pick" }) end, "photo_ids is required")
+        assert.has_error(function() Handler.setFlag({ photo_ids = { "1" } }) end,
+            "flag must be one of: pick, reject, none")
+        assert.has_error(function() Handler.setFlag({ photo_ids = { "1" }, flag = "rejected" }) end,
+            "flag must be one of: pick, reject, none")
+        assert.has_error(function() Handler.setFlag({ photo_ids = { "1" }, flag = 1 }) end,
+            "flag must be one of: pick, reject, none")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.equal(1, p1:getRawMetadata("pickStatus"))
+    end)
+
+    it("reports unknown photos instead of claiming a silent success", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 0 })
+        local _, Handler = setup({ photos = { p1 } })
+
+        local r = Handler.setFlag({ photo_ids = { "1", "missing" }, flag = "pick" })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "missing" }, r.missing)
+        assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+    end)
+end)
+
 describe("HandlerOrganization.setKeywords", function()
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })

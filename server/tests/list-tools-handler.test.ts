@@ -15,12 +15,14 @@ const EXPECTED_TOOL_NAMES = [
   'get_photo_metadata',
   'get_photo_preview',
   'set_gps',
+  'set_location',
   'list_collections',
   'create_collection',
   'add_to_collection',
   'set_keywords',
   'list_keywords',
   'set_rating',
+  'set_flag',
   'import_photos',
   'export_photos',
   'export_photo_metadata',
@@ -35,8 +37,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 22 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(22);
+  it('contains exactly 24 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(24);
   });
 
   it('tool names are unique', () => {
@@ -90,10 +92,12 @@ describe('tool required fields', () => {
     ['get_photo_metadata', ['photo_id']],
     ['get_photo_preview', ['photo_id']],
     ['set_gps', ['photo_ids', 'latitude', 'longitude']],
+    ['set_location', ['photo_ids']],
     ['create_collection', ['name']],
     ['add_to_collection', ['collection_name', 'photo_ids']],
     ['set_keywords', ['photo_ids']],
     ['set_rating', ['photo_ids', 'rating']],
+    ['set_flag', ['photo_ids', 'flag']],
     ['import_photos', ['source_path']],
     ['export_photos', ['photo_ids', 'destination']],
     ['export_photo_metadata', ['destination']],
@@ -144,8 +148,10 @@ describe('photo array schema', () => {
   it.each([
     ['add_to_collection', 'photo_ids'],
     ['set_gps', 'photo_ids'],
+    ['set_location', 'photo_ids'],
     ['set_keywords', 'photo_ids'],
     ['set_rating', 'photo_ids'],
+    ['set_flag', 'photo_ids'],
     ['export_photos', 'photo_ids'],
     ['export_photo_metadata', 'photo_ids'],
     ['apply_develop_preset', 'photo_ids'],

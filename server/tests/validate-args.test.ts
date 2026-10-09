@@ -49,6 +49,24 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('export_photo_metadata', { destination: '/u/zdjęcia 東京.json' })).toBeNull();
   });
 
+  it('accepts only pick, reject or none as a flag', () => {
+    const base = { photo_ids: [914] };
+
+    expect(validateToolArgs('set_flag', { ...base, flag: 'pick' })).toBeNull();
+    expect(validateToolArgs('set_flag', { ...base, flag: 'none' })).toBeNull();
+    expect(validateToolArgs('set_flag', { ...base, flag: 'rejected' })).toContain('flag');
+    expect(validateToolArgs('set_flag', { ...base, flag: -1 })).toContain('flag');
+  });
+
+  it('accepts IPTC location strings and rejects other types or unknown fields', () => {
+    const base = { photo_ids: [914] };
+
+    expect(validateToolArgs('set_location', { ...base, city: 'Kansas City', iso_country_code: 'US' })).toBeNull();
+    expect(validateToolArgs('set_location', { ...base, sublocation: '' })).toBeNull();
+    expect(validateToolArgs('set_location', { ...base, city: 42 })).toContain('city');
+    expect(validateToolArgs('set_location', { ...base, state: 'Missouri' })).toContain('state');
+  });
+
   it('bounds the preview size', () => {
     expect(validateToolArgs('get_photo_preview', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: 2048 })).toBeNull();
