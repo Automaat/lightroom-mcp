@@ -17,6 +17,9 @@ local MAX_SIZE = 2048
 -- here rather than as a bare server-side timeout.
 local TIMEOUT_SECONDS = 20
 local POLL_SECONDS = 0.05
+-- Claude rejects images over 5 MB of base64 (3.75 MB raw). size is only a
+-- minimum, so a high-resolution raw can come back bigger than that.
+local MAX_BYTES = 3.5 * 1024 * 1024
 
 -- Width and height from the first start-of-frame marker, or nil if the data
 -- is not a JPEG this can read. Lightroom does not report the size it chose.
@@ -60,27 +63,44 @@ function PreviewHandler.getPhotoPreview(args)
         error("Photo not found: " .. tostring(args.photo_id))
     end
 
-    -- requestJpegThumbnail is asynchronous and may call back before it
-    -- returns. The request object must stay referenced until the callback
-    -- fires, or Lightroom can cancel it.
-    local done, jpeg, failure = false, nil, nil
-    local request = photo:requestJpegThumbnail(size, size, function(data, errorMessage)
-        if done then return end
-        done, jpeg, failure = true, data, errorMessage
-    end)
-
-    -- Reading `request` each pass is what keeps it alive while we wait.
+    -- One deadline across every attempt, so retries stay under the server's
+    -- timeout too.
     local waited = 0
-    while request and not done and waited < TIMEOUT_SECONDS do
-        LrTasks.sleep(POLL_SECONDS)
-        waited = waited + POLL_SECONDS
+    local function render(edge)
+        -- requestJpegThumbnail is asynchronous and may call back before it
+        -- returns. The request object must stay referenced until the callback
+        -- fires, or Lightroom can cancel it.
+        local done, data, failure = false, nil, nil
+        local request = photo:requestJpegThumbnail(edge, edge, function(jpegData, errorMessage)
+            if done then return end
+            done, data, failure = true, jpegData, errorMessage
+        end)
+
+        -- Reading `request` each pass is what keeps it alive while we wait.
+        while request and not done and waited < TIMEOUT_SECONDS do
+            LrTasks.sleep(POLL_SECONDS)
+            waited = waited + POLL_SECONDS
+        end
+
+        if not done then
+            error(string.format("Preview not ready after %ds", TIMEOUT_SECONDS))
+        end
+        if not data then
+            error("Preview failed: " .. tostring(failure or "no image data"))
+        end
+        return data
     end
 
-    if not done then
-        error(string.format("Preview not ready after %ds", TIMEOUT_SECONDS))
+    -- A smaller request makes Lightroom fall back to a smaller cached preview.
+    local edge = size
+    local jpeg = render(edge)
+    while #jpeg > MAX_BYTES and edge > MIN_SIZE do
+        edge = math.max(MIN_SIZE, math.floor(edge / 2))
+        jpeg = render(edge)
     end
-    if not jpeg then
-        error("Preview failed: " .. tostring(failure or "no image data"))
+    if #jpeg > MAX_BYTES then
+        error(string.format("Preview is %d bytes, over the %d byte limit even at size %d",
+            #jpeg, MAX_BYTES, MIN_SIZE))
     end
 
     local width, height = jpegDimensions(jpeg)

@@ -109,6 +109,36 @@ describe("HandlerPreview.getPhotoPreview", function()
         assert.are.same({ 700, 700 }, meta.__requested)
     end)
 
+    it("asks for smaller previews until the image fits the size limit", function()
+        local big = string.rep("x", 3.5 * 1024 * 1024 + 1)
+        local edges = {}
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, w, _, cb)
+            edges[#edges + 1] = w
+            cb(w > 500 and big or "SMALL")
+        end)
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoPreview({ photo_id = "1", size = 2048 })
+
+        assert.are.same({ 2048, 1024, 512, 256 }, edges)
+        assert.are.equal("b64(SMALL)", r.image.data)
+        assert.are.equal(2048, r.requested_size)
+    end)
+
+    it("gives up when even the smallest preview is over the size limit", function()
+        local big = string.rep("x", 3.5 * 1024 * 1024 + 1)
+        local edges = {}
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, w, _, cb)
+            edges[#edges + 1] = w
+            cb(big)
+        end)
+        local _, Handler = setup({ photo })
+
+        assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1", size = 300 }) end,
+            "Preview is 3670017 bytes, over the 3670016 byte limit even at size 64")
+        assert.are.same({ 300, 150, 75, 64 }, edges)
+    end)
+
     it("reports the renderer's error instead of an empty image", function()
         local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, _, _, cb)
             cb(nil, "file is offline")
