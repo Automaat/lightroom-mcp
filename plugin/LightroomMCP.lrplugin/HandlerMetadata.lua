@@ -137,6 +137,8 @@ function MetadataHandler.getPhotoMetadata(args)
                 notice = photo:getFormattedMetadata('copyright'),
                 status = photo:getFormattedMetadata('copyrightState'),
                 rightsUsageTerms = photo:getFormattedMetadata('rightsUsageTerms'),
+                infoUrl = photo:getFormattedMetadata('copyrightInfoUrl'),
+                creatorUrl = photo:getFormattedMetadata('creatorUrl'),
             }),
             developSettings = {
                 whiteBalance = developSettings.WhiteBalance,
@@ -315,6 +317,80 @@ function MetadataHandler.setLocation(args)
         fields = fields,
         missing = missingIds,
         message = string.format("Set location for %d photos (%d ids not found)",
+            updatedCount, missingCount)
+    }
+end
+
+-- Tool argument -> SDK field, in the order get_photo_metadata reports them.
+local TEXT_FIELDS = {
+    { arg = "title", key = "title" },
+    { arg = "caption", key = "caption" },
+    { arg = "headline", key = "headline" },
+    { arg = "creator", key = "creator" },
+    { arg = "copyright", key = "copyright" },
+    { arg = "rights_usage_terms", key = "rightsUsageTerms" },
+    { arg = "copyright_info_url", key = "copyrightInfoUrl" },
+    { arg = "creator_url", key = "creatorUrl" },
+}
+
+-- Writes IPTC description and rights fields of photos. Fields left out are
+-- unchanged; an empty string clears a field. Copyright status is left out on
+-- purpose: Lightroom accepted "copyrighted" for copyrightState but rolled the
+-- whole write back for "unknown" and "public domain", after reporting success.
+function MetadataHandler.setMetadata(args)
+    if not args.photo_ids or #args.photo_ids == 0 then
+        error("photo_ids is required")
+    end
+
+    local changes = {}
+    local fields = {}
+    for _, field in ipairs(TEXT_FIELDS) do
+        local value = args[field.arg]
+        if value ~= nil then
+            if type(value) ~= "string" then
+                error(field.arg .. " must be a string")
+            end
+            -- An empty string is passed through: it is what clears the
+            -- field. Lightroom stores nil on these fields as the text "nil".
+            changes[#changes + 1] = { key = field.key, value = value }
+            fields[#fields + 1] = field.arg
+        end
+    end
+
+    if #changes == 0 then
+        error("give at least one of title, caption, headline, creator, copyright, rights_usage_terms, "
+            .. "copyright_info_url, creator_url")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local updatedCount = 0
+    local missingIds = {}
+    local missingCount = 0
+
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    catalog:withWriteAccessDo("Set Metadata", function()
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                for _, change in ipairs(changes) do
+                    entry.photo:setRawMetadata(change.key, change.value)
+                end
+                updatedCount = updatedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
+            end
+        end
+    end)
+
+    Log.info(string.format("Set metadata (%s) for %d photos", table.concat(fields, ", "), updatedCount))
+
+    return {
+        success = true,
+        updated = updatedCount,
+        fields = fields,
+        missing = missingIds,
+        message = string.format("Set metadata for %d photos (%d ids not found)",
             updatedCount, missingCount)
     }
 end

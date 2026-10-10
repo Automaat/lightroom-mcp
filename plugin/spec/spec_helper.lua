@@ -67,7 +67,7 @@ for _, key in ipairs({
     -- IPTC content / location / rights
     "title", "caption", "headline", "location", "city", "stateProvince",
     "country", "isoCountryCode", "creator", "copyright", "copyrightState",
-    "rightsUsageTerms",
+    "rightsUsageTerms", "copyrightInfoUrl", "creatorUrl",
 }) do
     VALID_METADATA_KEYS[key] = true
 end

@@ -367,3 +367,94 @@ describe("HandlerMetadata.setLocation", function()
         assert.are.equal("Salzburg", p1:getRawMetadata("city"))
     end)
 end)
+
+describe("HandlerMetadata.setMetadata", function()
+    it("writes every given field to found photos", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", title = "Old" })
+        local _, Handler = setup({ p1, p2 })
+
+        local r = Handler.setMetadata({
+            photo_ids = { "1", "2" },
+            title = "Dunluce Castle",
+            caption = "Ruins on the Causeway Coast",
+            headline = "Northern Ireland",
+            creator = "Matthew Pearon",
+            copyright = "© 2025 Matthew Pearon; All rights reserved.",
+            rights_usage_terms = "No reuse without permission",
+            copyright_info_url = "https://example.com/licensing",
+            creator_url = "https://example.com",
+        })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.updated)
+        assert.are.same({ "title", "caption", "headline", "creator", "copyright",
+            "rights_usage_terms", "copyright_info_url", "creator_url" }, r.fields)
+        for _, p in ipairs({ p1, p2 }) do
+            assert.are.equal("Dunluce Castle", p:getRawMetadata("title"))
+            assert.are.equal("Ruins on the Causeway Coast", p:getRawMetadata("caption"))
+            assert.are.equal("Northern Ireland", p:getRawMetadata("headline"))
+            assert.are.equal("Matthew Pearon", p:getRawMetadata("creator"))
+            assert.are.equal("© 2025 Matthew Pearon; All rights reserved.", p:getRawMetadata("copyright"))
+            assert.are.equal("No reuse without permission", p:getRawMetadata("rightsUsageTerms"))
+            assert.are.equal("https://example.com/licensing", p:getRawMetadata("copyrightInfoUrl"))
+            assert.are.equal("https://example.com", p:getRawMetadata("creatorUrl"))
+        end
+    end)
+
+    it("leaves fields that are not given unchanged", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", title = "Keep", copyright = "© 2024" })
+        local _, Handler = setup({ p1 })
+
+        Handler.setMetadata({ photo_ids = { "1" }, creator = "Matthew Pearon" })
+
+        assert.are.equal("Keep", p1:getRawMetadata("title"))
+        assert.are.equal("© 2024", p1:getRawMetadata("copyright"))
+        assert.are.equal("Matthew Pearon", p1:getRawMetadata("creator"))
+    end)
+
+    it("clears a field given as an empty string", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", caption = "Old caption", title = "Keep" })
+        local _, Handler = setup({ p1 })
+
+        Handler.setMetadata({ photo_ids = { "1" }, caption = "" })
+
+        -- Not nil: Lightroom stores nil on these fields as the text "nil".
+        assert.are.equal("", p1:getRawMetadata("caption"))
+        assert.are.equal("Keep", p1:getRawMetadata("title"))
+    end)
+
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ p1 })
+
+        Handler.setMetadata({ photo_ids = { "1" }, title = "T" })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("reports unknown photos instead of claiming a silent success", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ p1 })
+
+        local r = Handler.setMetadata({ photo_ids = { "1", "missing" }, title = "T" })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "missing" }, r.missing)
+    end)
+
+    it("rejects missing ids, no fields and bad values before scanning", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", title = "Keep" })
+        local catalog, Handler = setup({ p1 })
+
+        assert.has_error(function() Handler.setMetadata({ title = "T" }) end, "photo_ids is required")
+        assert.has_error(function() Handler.setMetadata({ photo_ids = { "1" } }) end,
+            "give at least one of title, caption, headline, creator, copyright, rights_usage_terms, "
+            .. "copyright_info_url, creator_url")
+        assert.has_error(function() Handler.setMetadata({ photo_ids = { "1" }, title = 7 }) end,
+            "title must be a string")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.equal("Keep", p1:getRawMetadata("title"))
+    end)
+end)
