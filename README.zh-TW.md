@@ -112,7 +112,7 @@ args = ['D:\path\to\lightroom-mcp\server\dist\index.js']
 startup_timeout_sec = 60
 ```
 
-重新啟動 Codex，新的 task 才會載入 25 個工具。
+重新啟動 Codex，新的 task 才會載入 28 個工具。
 
 ### 4. 安裝 v2 skill
 

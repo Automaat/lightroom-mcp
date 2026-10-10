@@ -84,6 +84,18 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('set_metadata', { ...base, artist: 'Jane' })).toContain('artist');
   });
 
+  it('requires a non-empty keyword and new name to rename', () => {
+    expect(validateToolArgs('rename_keyword', { keyword: 'Places|KC', new_name: 'Kansas City' })).toBeNull();
+    expect(validateToolArgs('rename_keyword', { keyword: 'person' })).toContain("required property 'new_name'");
+    expect(validateToolArgs('rename_keyword', { keyword: '', new_name: 'x' })).toContain('keyword');
+  });
+
+  it('requires a collection name to delete and nothing else', () => {
+    expect(validateToolArgs('delete_collection', { collection_name: 'Temp' })).toBeNull();
+    expect(validateToolArgs('delete_collection', {})).toContain("required property 'collection_name'");
+    expect(validateToolArgs('delete_collection', { collection_name: 'Temp', photo_ids: [914] })).toContain('photo_ids');
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 

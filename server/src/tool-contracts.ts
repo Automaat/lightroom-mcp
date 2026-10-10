@@ -384,6 +384,35 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "remove_from_collection",
+    luaHandler: "HandlerCollections.removeFromCollection",
+    description:
+      "Remove photos from a collection. They stay in the catalog and in any other collection. Smart collections cannot be edited this way. removed counts unique photos that were in the collection. Use a path from list_collections when names repeat.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+      },
+      required: ["collection_name", "photo_ids"],
+    },
+  },
+  {
+    name: "delete_collection",
+    luaHandler: "HandlerCollections.deleteCollection",
+    description:
+      "Delete a collection. Its photos stay in the catalog. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+      },
+      required: ["collection_name"],
+    },
+  },
+  {
     name: "set_keywords",
     luaHandler: "HandlerOrganization.setKeywords",
     description:
@@ -436,6 +465,29 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         limit: { type: "number", description: "Max keywords to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of keywords to skip (default 0)", minimum: 0 },
       },
+    },
+  },
+  {
+    name: "rename_keyword",
+    luaHandler: "HandlerKeywords.renameKeyword",
+    description:
+      "Rename a keyword in place: every photo tagged with it shows the new name, and its parent, children and synonyms are unchanged. keyword is a plain name, which must match exactly one keyword, or a 'Parent|Child' path (see list_keywords). Fails if a sibling already has the new name, ignoring case, since keywords cannot be merged; a change of case alone is allowed.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        keyword: {
+          type: "string",
+          minLength: 1,
+          description: "Keyword to rename: a plain name or a 'Parent|Child' path",
+        },
+        new_name: {
+          type: "string",
+          minLength: 1,
+          description: "New name for that keyword (a single name, not a path)",
+        },
+      },
+      required: ["keyword", "new_name"],
     },
   },
   {

@@ -167,8 +167,11 @@ If you'd rather drop the plugin in by hand:
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection (optional parent set). |
 | `add_to_collection` | Add photos to a named collection. |
+| `remove_from_collection` | Remove photos from a collection (they stay in the catalog). |
+| `delete_collection` | Delete a collection (its photos stay in the catalog). |
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
+| `rename_keyword` | Rename a keyword everywhere it is used. |
 | `set_rating` | Set 0-5 star rating on photos. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
 | `import_photos` | Import a file or folder into the catalog. |

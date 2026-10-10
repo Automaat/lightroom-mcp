@@ -110,7 +110,8 @@ function M.fakePhoto(meta)
     }
 end
 
--- Build a fake keyword. opts: parent (fake keyword), synonyms, includeOnExport.
+-- Build a fake keyword. opts: parent (fake keyword), synonyms, includeOnExport,
+-- photos (what getPhotos returns).
 -- Registers itself with its parent so getChildren() sees it, as a keyword that
 -- already exists in the catalog would be.
 function M.fakeKeyword(name, opts)
@@ -121,6 +122,17 @@ function M.fakeKeyword(name, opts)
         getParent = function() return opts.parent end,
         getChildren = function() return children end,
         getSynonyms = function() return opts.synonyms or {} end,
+        getPhotos = function() return opts.photos or {} end,
+        -- Only keywordName is modelled. Like Lightroom, a rename that changes
+        -- only the case is ignored. Applied at once: the fake has no
+        -- transactions to defer it to.
+        setAttributes = function(_, attributes)
+            local newName = attributes.keywordName
+            if newName and newName:lower() ~= name:lower() then
+                name = newName
+            end
+            return true
+        end,
         getAttributes = function()
             return {
                 keywordName = name,
@@ -137,12 +149,17 @@ function M.fakeKeyword(name, opts)
 end
 
 -- Build a fake collection.
-function M.fakeCollection(name, photos)
+-- opts (optional): smart = true for a smart collection.
+function M.fakeCollection(name, photos, opts)
     photos = photos or {}
+    opts = opts or {}
     local addedPhotos = {}
+    local removedPhotos = {}
+    local deleted = false
     return {
         getName = function() return name end,
         type = function() return "LrCollection" end,
+        isSmartCollection = function() return opts.smart == true end,
         getPhotos = function() return photos end,
         addPhotos = function(_, ps)
             for _, p in ipairs(ps) do
@@ -150,7 +167,18 @@ function M.fakeCollection(name, photos)
                 table.insert(photos, p)
             end
         end,
+        removePhotos = function(_, ps)
+            for _, p in ipairs(ps) do
+                table.insert(removedPhotos, p)
+                for i = #photos, 1, -1 do
+                    if photos[i] == p then table.remove(photos, i) end
+                end
+            end
+        end,
+        delete = function() deleted = true end,
         getAddedPhotos = function() return addedPhotos end,
+        getRemovedPhotos = function() return removedPhotos end,
+        isDeleted = function() return deleted end,
     }
 end
 
