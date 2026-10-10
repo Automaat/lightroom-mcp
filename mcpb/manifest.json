@@ -71,6 +71,14 @@
       "description": "Add photos to an existing collection."
     },
     {
+      "name": "remove_from_collection",
+      "description": "Remove photos from a collection."
+    },
+    {
+      "name": "delete_collection",
+      "description": "Delete a collection; its photos stay in the catalog."
+    },
+    {
       "name": "set_keywords",
       "description": "Add or remove keywords on photos, by name or hierarchy path."
     },

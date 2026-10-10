@@ -362,6 +362,35 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "remove_from_collection",
+    luaHandler: "HandlerCollections.removeFromCollection",
+    description:
+      "Remove photos from a collection. They stay in the catalog and in any other collection. Smart collections cannot be edited this way. removed counts unique photos that were in the collection. Use a path from list_collections when names repeat.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+      },
+      required: ["collection_name", "photo_ids"],
+    },
+  },
+  {
+    name: "delete_collection",
+    luaHandler: "HandlerCollections.deleteCollection",
+    description:
+      "Delete a collection. Its photos stay in the catalog. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+      },
+      required: ["collection_name"],
+    },
+  },
+  {
     name: "set_keywords",
     luaHandler: "HandlerOrganization.setKeywords",
     description:

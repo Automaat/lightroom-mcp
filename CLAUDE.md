@@ -69,6 +69,14 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 
 **Reload behaviour**: "Reload Plug-in" loads a fresh Lua state but does **not** reliably cancel the old task's `LrFunctionContext` — the old monitor loop can keep running and hold a port (LrC 15.5.1 macOS). The new instance rewrites the token file; the old loop polls it (`isSuperseded`) and exits on a foreign token, releasing its ports via the context cleanup handler. The new instance's binds fail with `failed to open` until then and recover through the reconnect path.
 
+## Live manual testing on macOS
+
+- Work from an isolated checkout. Back up the installed `LightroomMCP.lrplugin` bundle before copying a candidate into `~/Library/Application Support/Adobe/Lightroom/Plugins/`; restore the backup after testing.
+- With Lightroom running, use `osascript tests/e2e/reload-plugin.applescript` to select Lightroom MCP in Plug-in Manager and click **Reload Plug-in**. macOS must grant Accessibility access to the process running `osascript`.
+- Check `lsof -nP -iTCP:58763-58764 -sTCP:LISTEN`, then call `node tests/e2e/mcp-runner.mjs tool list_collections '{"limit":1}'` from the tested checkout. A listening socket alone does not prove that requests work. Use the configured ports if they differ from the defaults.
+- If reload does not answer the tool call, check Plug-in Manager. A stale `Running: true` state can remain after `Server task context cleanup`; click **Stop Server**, then **Start Server**, and retry the tool call. If the plug-in is disabled or reports a toolkit script error, close Plug-in Manager and any Save dialog, quit Lightroom normally, and reopen it. Check the sockets and tool call again. Do not force quit Lightroom or remove another process's socket.
+- For collection changes, create a uniquely named temporary collection, add known photos, test member, nonmember, missing and duplicate IDs, then delete only that temporary collection. Confirm its photos remain in the catalog. Restore the original bundle and restart Lightroom when finished.
+
 ## Conventions
 
 - TS strict mode on. ESM imports must include `.js` extension (NodeNext).
