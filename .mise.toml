@@ -26,6 +26,10 @@ run = "cd server && npm test"
 description = "Build in watch mode"
 run = "cd server && npm run watch"
 
+[tasks."plugin:reload"]
+description = "Reload the installed Lightroom MCP plug-in on macOS"
+run = "osascript tests/e2e/reload-plugin.applescript"
+
 [tasks.mcpb]
 description = "Build the .mcpb bundle for Claude Desktop / Claude Code"
 run = "node scripts/build-mcpb.mjs"

@@ -31,6 +31,7 @@ Use mise tasks from repo root:
 - `mise run build` — `tsc` (outputs `server/dist/`)
 - `mise run test` — Jest (ESM via ts-jest)
 - `mise run dev` — `tsc --watch`
+- `mise run plugin:reload` — reload the installed plug-in in Lightroom Classic on macOS
 - `mise run lua:lint` — `selene plugin/LightroomMCP.lrplugin`
 - `mise run lua:test` — `busted` specs for the plugin
 - `mise run skill:test` — Python unittest for bundled skill scripts
@@ -72,10 +73,11 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 ## Live manual testing on macOS
 
 - Work from an isolated checkout. Back up the installed `LightroomMCP.lrplugin` bundle before copying a candidate into `~/Library/Application Support/Adobe/Lightroom/Plugins/`; restore the backup after testing.
-- With Lightroom running, use `osascript tests/e2e/reload-plugin.applescript` to select Lightroom MCP in Plug-in Manager and click **Reload Plug-in**. macOS must grant Accessibility access to the process running `osascript`.
+- With Lightroom running, use `mise run plugin:reload` to select Lightroom MCP in Plug-in Manager and click **Reload Plug-in**. The task runs `tests/e2e/reload-plugin.applescript`; macOS must grant Accessibility access to the process running `osascript`.
 - Check `lsof -nP -iTCP:58763-58764 -sTCP:LISTEN`, then call `node tests/e2e/mcp-runner.mjs tool list_collections '{"limit":1}'` from the tested checkout. A listening socket alone does not prove that requests work. Use the configured ports if they differ from the defaults.
 - If reload does not answer the tool call, check Plug-in Manager. A stale `Running: true` state can remain after `Server task context cleanup`; click **Stop Server**, then **Start Server**, and retry the tool call. If the plug-in is disabled or reports a toolkit script error, close Plug-in Manager and any Save dialog, quit Lightroom normally, and reopen it. Check the sockets and tool call again. Do not force quit Lightroom or remove another process's socket.
 - For collection changes, create a uniquely named temporary collection, add known photos, test member, nonmember, missing and duplicate IDs, then delete only that temporary collection. Confirm its photos remain in the catalog. Restore the original bundle and restart Lightroom when finished.
+- For keyword changes, record the photo's keywords and `list_keywords` paths before testing. Use a unique temporary keyword on a known photo; verify its path and photo association after each rename, including a case-only rename. Remove the tag from the photo, then delete the empty temporary keyword in Lightroom's Keyword List and confirm the original catalog state. Restore the original bundle when finished.
 
 ## Conventions
 
