@@ -283,17 +283,18 @@ describe("HandlerExport.exportPhotoMetadata", function()
 
     it("validates destination and photo_ids, and refuses an empty export", function()
         local _, Handler = setupMetadata({ photos = { photoOne() }, targetPhotos = {} })
+        local out = tempJson()
 
         assert.has_error(function() Handler.exportPhotoMetadata({}) end, "destination is required")
         assert.has_error(function() Handler.exportPhotoMetadata({ destination = "/tmp/out.txt" }) end,
             "destination must be a .json file path")
         assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = {} })
+            Handler.exportPhotoMetadata({ destination = out, photo_ids = {} })
         end, "photo_ids must be a non-empty array when given")
-        assert.has_error(function() Handler.exportPhotoMetadata({ destination = "/tmp/out.json" }) end,
+        assert.has_error(function() Handler.exportPhotoMetadata({ destination = out }) end,
             "No photos found to export metadata for")
         assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = { "nope" } })
+            Handler.exportPhotoMetadata({ destination = out, photo_ids = { "nope" } })
         end, "No photos found to export metadata for (not found: nope)")
         assert.has_error(function()
             Handler.exportPhotoMetadata({ destination = "out.json", photo_ids = { 11 } })
@@ -305,7 +306,7 @@ describe("HandlerExport.exportPhotoMetadata", function()
             Handler.exportPhotoMetadata({ destination = "/tmp/a\nb.json", photo_ids = { 11 } })
         end, "destination must not contain control characters")
         assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = "/tmp/out.json", photo_ids = { 11 }, overwrite = "yes" })
+            Handler.exportPhotoMetadata({ destination = out, photo_ids = { 11 }, overwrite = "yes" })
         end, "overwrite must be a boolean")
     end)
 
@@ -424,9 +425,10 @@ describe("HandlerExport.exportPhotoMetadata", function()
             many[i] = helper.fakePhoto({ id = i, path = "/p/" .. i .. ".jpg" })
         end
         local catalog, Handler = setupMetadata({ photos = {}, targetPhotos = many })
+        local out = tempJson()
 
         assert.has_error(function()
-            Handler.exportPhotoMetadata({ destination = "/tmp/out.json" })
+            Handler.exportPhotoMetadata({ destination = out })
         end, "1001 photos are selected (or in the filmstrip); export at most 1000 at a time "
             .. "by selecting fewer or passing photo_ids")
         assert.are.equal(0, catalog.getReadAccessCount())

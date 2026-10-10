@@ -137,12 +137,17 @@ function M.fakeKeyword(name, opts)
 end
 
 -- Build a fake collection.
-function M.fakeCollection(name, photos)
+-- opts (optional): smart = true for a smart collection.
+function M.fakeCollection(name, photos, opts)
     photos = photos or {}
+    opts = opts or {}
     local addedPhotos = {}
+    local removedPhotos = {}
+    local deleted = false
     return {
         getName = function() return name end,
         type = function() return "LrCollection" end,
+        isSmartCollection = function() return opts.smart == true end,
         getPhotos = function() return photos end,
         addPhotos = function(_, ps)
             for _, p in ipairs(ps) do
@@ -150,7 +155,18 @@ function M.fakeCollection(name, photos)
                 table.insert(photos, p)
             end
         end,
+        removePhotos = function(_, ps)
+            for _, p in ipairs(ps) do
+                table.insert(removedPhotos, p)
+                for i = #photos, 1, -1 do
+                    if photos[i] == p then table.remove(photos, i) end
+                end
+            end
+        end,
+        delete = function() deleted = true end,
         getAddedPhotos = function() return addedPhotos end,
+        getRemovedPhotos = function() return removedPhotos end,
+        isDeleted = function() return deleted end,
     }
 end
 

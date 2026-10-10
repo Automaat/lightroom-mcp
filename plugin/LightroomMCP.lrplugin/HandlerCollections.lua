@@ -191,4 +191,156 @@ function CollectionsHandler.addToCollection(args)
     }
 end
 
+-- Match bare names or the paths returned by listCollections.
+local function findAllCollections(catalog, name)
+    local matches = {}
+    for _, collection in ipairs(catalog:getChildCollections()) do
+        if collection:getName() == name then
+            table.insert(matches, collection)
+        end
+    end
+
+    local function findInSet(collSet, prefix)
+        for _, coll in ipairs(collSet:getChildCollections()) do
+            if coll:getName() == name or prefix .. coll:getName() == name then
+                table.insert(matches, coll)
+            end
+        end
+        for _, childSet in ipairs(collSet:getChildCollectionSets()) do
+            findInSet(childSet, prefix .. childSet:getName() .. " / ")
+        end
+    end
+
+    for _, set in ipairs(catalog:getChildCollectionSets()) do
+        findInSet(set, set:getName() .. " / ")
+    end
+
+    return matches
+end
+
+-- Removes photos from a collection only; they stay in the catalog.
+function CollectionsHandler.removeFromCollection(args)
+    if not args.collection_name then
+        error("collection_name is required")
+    end
+
+    if not args.photo_ids or #args.photo_ids == 0 then
+        error("photo_ids is required")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local removedCount = 0
+    local notInCollection = 0
+    local missingIds = {}
+    local missingCount = 0
+
+    -- Checked before resolving ids, as add_to_collection does: resolution scans
+    -- the catalog, too slow to spend on a typo'd name.
+    local problem = nil
+    catalog:withReadAccessDo(function()
+        local matches = findAllCollections(catalog, args.collection_name)
+        if #matches == 0 then
+            problem = "Collection not found: " .. args.collection_name
+        elseif #matches > 1 then
+            problem = string.format("%d collections are named '%s'; use a collection path",
+                #matches, args.collection_name)
+        elseif matches[1]:isSmartCollection() then
+            problem = "Cannot remove photos from a smart collection: " .. args.collection_name
+        end
+    end)
+    if problem then
+        error(problem)
+    end
+
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    catalog:withWriteAccessDo("Remove Photos from Collection", function()
+        local matches = findAllCollections(catalog, args.collection_name)
+        if #matches == 0 then
+            error("Collection not found: " .. args.collection_name)
+        end
+        if #matches > 1 then
+            error(string.format("%d collections are named '%s'; use a collection path",
+                #matches, args.collection_name))
+        end
+        local targetCollection = matches[1]
+        if targetCollection:isSmartCollection() then
+            error("Cannot remove photos from a smart collection: " .. args.collection_name)
+        end
+
+        local members = {}
+        for _, photo in ipairs(targetCollection:getPhotos()) do
+            members[photo] = true
+        end
+
+        -- Only members count as removed, so `removed` says what changed rather
+        -- than echoing how many ids were sent.
+        local photosToRemove = {}
+        local selected = {}
+        for _, entry in ipairs(resolved) do
+            if not entry.photo then
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
+            elseif members[entry.photo] then
+                if not selected[entry.photo] then
+                    table.insert(photosToRemove, entry.photo)
+                    selected[entry.photo] = true
+                end
+            else
+                notInCollection = notInCollection + 1
+            end
+        end
+
+        if #photosToRemove > 0 then
+            targetCollection:removePhotos(photosToRemove)
+            removedCount = #photosToRemove
+        end
+    end)
+
+    Log.info(string.format("Removed %d photos from collection: %s", removedCount, args.collection_name))
+
+    return {
+        success = true,
+        removed = removedCount,
+        not_in_collection = notInCollection,
+        missing = missingIds,
+        message = string.format("Removed %d photos from collection (%d not in it, %d ids not found)",
+            removedCount, notInCollection, missingCount)
+    }
+end
+
+-- Deletes the collection itself; its photos stay in the catalog.
+function CollectionsHandler.deleteCollection(args)
+    if type(args.collection_name) ~= "string" or args.collection_name == "" then
+        error("collection_name is required")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local photoCount = 0
+
+    catalog:withWriteAccessDo("Delete Collection", function()
+        local matches = findAllCollections(catalog, args.collection_name)
+        if #matches == 0 then
+            error("Collection not found: " .. args.collection_name)
+        end
+        if #matches > 1 then
+            error(string.format("%d collections are named '%s'; use a collection path",
+                #matches, args.collection_name))
+        end
+
+        photoCount = #matches[1]:getPhotos()
+        matches[1]:delete()
+    end)
+
+    Log.info(string.format("Deleted collection: %s (%d photos, still in the catalog)",
+        args.collection_name, photoCount))
+
+    return {
+        success = true,
+        photo_count = photoCount,
+        message = string.format("Deleted collection '%s' (%d photos stay in the catalog)",
+            args.collection_name, photoCount)
+    }
+end
+
 return CollectionsHandler
