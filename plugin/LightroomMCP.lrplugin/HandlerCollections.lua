@@ -191,8 +191,7 @@ function CollectionsHandler.addToCollection(args)
     }
 end
 
--- Every collection with this name, top level first, then sets depth first.
--- findCollection takes the first; a delete must not guess between several.
+-- Match bare names or the paths returned by listCollections.
 local function findAllCollections(catalog, name)
     local matches = {}
     for _, collection in ipairs(catalog:getChildCollections()) do
@@ -201,19 +200,19 @@ local function findAllCollections(catalog, name)
         end
     end
 
-    local function findInSet(collSet)
+    local function findInSet(collSet, prefix)
         for _, coll in ipairs(collSet:getChildCollections()) do
-            if coll:getName() == name then
+            if coll:getName() == name or prefix .. coll:getName() == name then
                 table.insert(matches, coll)
             end
         end
         for _, childSet in ipairs(collSet:getChildCollectionSets()) do
-            findInSet(childSet)
+            findInSet(childSet, prefix .. childSet:getName() .. " / ")
         end
     end
 
     for _, set in ipairs(catalog:getChildCollectionSets()) do
-        findInSet(set)
+        findInSet(set, set:getName() .. " / ")
     end
 
     return matches
@@ -239,10 +238,13 @@ function CollectionsHandler.removeFromCollection(args)
     -- the catalog, too slow to spend on a typo'd name.
     local problem = nil
     catalog:withReadAccessDo(function()
-        local collection = findCollection(catalog, args.collection_name)
-        if not collection then
+        local matches = findAllCollections(catalog, args.collection_name)
+        if #matches == 0 then
             problem = "Collection not found: " .. args.collection_name
-        elseif collection:isSmartCollection() then
+        elseif #matches > 1 then
+            problem = string.format("%d collections are named '%s'; use a collection path",
+                #matches, args.collection_name)
+        elseif matches[1]:isSmartCollection() then
             problem = "Cannot remove photos from a smart collection: " .. args.collection_name
         end
     end)
@@ -253,9 +255,17 @@ function CollectionsHandler.removeFromCollection(args)
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
     catalog:withWriteAccessDo("Remove Photos from Collection", function()
-        local targetCollection = findCollection(catalog, args.collection_name)
-        if not targetCollection then
+        local matches = findAllCollections(catalog, args.collection_name)
+        if #matches == 0 then
             error("Collection not found: " .. args.collection_name)
+        end
+        if #matches > 1 then
+            error(string.format("%d collections are named '%s'; use a collection path",
+                #matches, args.collection_name))
+        end
+        local targetCollection = matches[1]
+        if targetCollection:isSmartCollection() then
+            error("Cannot remove photos from a smart collection: " .. args.collection_name)
         end
 
         local members = {}
@@ -266,12 +276,16 @@ function CollectionsHandler.removeFromCollection(args)
         -- Only members count as removed, so `removed` says what changed rather
         -- than echoing how many ids were sent.
         local photosToRemove = {}
+        local selected = {}
         for _, entry in ipairs(resolved) do
             if not entry.photo then
                 missingCount = missingCount + 1
                 missingIds[missingCount] = tostring(entry.id)
             elseif members[entry.photo] then
-                table.insert(photosToRemove, entry.photo)
+                if not selected[entry.photo] then
+                    table.insert(photosToRemove, entry.photo)
+                    selected[entry.photo] = true
+                end
             else
                 notInCollection = notInCollection + 1
             end
@@ -310,7 +324,7 @@ function CollectionsHandler.deleteCollection(args)
             error("Collection not found: " .. args.collection_name)
         end
         if #matches > 1 then
-            error(string.format("%d collections are named '%s'; rename one before deleting",
+            error(string.format("%d collections are named '%s'; use a collection path",
                 #matches, args.collection_name))
         end
 

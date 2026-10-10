@@ -45,7 +45,7 @@ run = "test -x lua_modules/bin/busted || luarocks install --tree lua_modules bus
 [tasks."lua:test"]
 description = "Run busted specs for the Lightroom plugin"
 depends = ["lua:deps"]
-run = "busted"
+run = "lua_modules/bin/busted"
 
 [tasks."lua:lint"]
 description = "Lint the Lightroom plugin with selene"

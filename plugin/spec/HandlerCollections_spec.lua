@@ -200,6 +200,22 @@ describe("HandlerCollections.removeFromCollection", function()
         assert.are.same({ p1 }, target.getRemovedPhotos())
     end)
 
+    it("counts a photo once when its id and path are repeated", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+        local target = helper.fakeCollection("Target", { p1, p2 })
+        local _, Handler = setup({ photos = { p1, p2 }, collections = { target } })
+
+        local r = Handler.removeFromCollection({
+            collection_name = "Target",
+            photo_ids = { "1", "/a.jpg", "1" },
+        })
+
+        assert.are.equal(1, r.removed)
+        assert.are.equal(0, r.not_in_collection)
+        assert.are.same({ p2 }, target.getPhotos())
+    end)
+
     it("finds a collection inside a collection set", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local nested = helper.fakeCollection("Inside", { p1 })
@@ -213,6 +229,47 @@ describe("HandlerCollections.removeFromCollection", function()
         local r = Handler.removeFromCollection({ collection_name = "Inside", photo_ids = { "1" } })
 
         assert.are.equal(1, r.removed)
+    end)
+
+    it("accepts a nested collection path returned by listing", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local nested = helper.fakeCollection("Inside", { p1 })
+        local outerSet = {
+            getName = function() return "Outer" end,
+            getChildCollections = function() return { nested } end,
+            getChildCollectionSets = function() return {} end,
+        }
+        local _, Handler = setup({ photos = { p1 }, collectionSets = { outerSet } })
+        local listed = Handler.listCollections({})
+
+        local r = Handler.removeFromCollection({
+            collection_name = listed.collections[1].name,
+            photo_ids = { "1" },
+        })
+
+        assert.are.equal(1, r.removed)
+        assert.are.same({}, nested.getPhotos())
+    end)
+
+    it("rejects an ambiguous name without changing either collection", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local top = helper.fakeCollection("Shared", { p1 })
+        local nested = helper.fakeCollection("Shared", { p1 })
+        local outerSet = {
+            getName = function() return "Outer" end,
+            getChildCollections = function() return { nested } end,
+            getChildCollectionSets = function() return {} end,
+        }
+        local catalog, Handler = setup({ photos = { p1 }, collections = { top },
+            collectionSets = { outerSet } })
+
+        assert.has_error(function()
+            Handler.removeFromCollection({ collection_name = "Shared", photo_ids = { "1" } })
+        end, "2 collections are named 'Shared'; use a collection path")
+
+        assert.are.same({ p1 }, top.getPhotos())
+        assert.are.same({ p1 }, nested.getPhotos())
+        assert.are.equal(0, catalog.getQueryCount())
     end)
 
     it("reports ids that matched no photo", function()
@@ -279,9 +336,26 @@ describe("HandlerCollections.deleteCollection", function()
         local _, Handler = setup({ collections = { top }, collectionSets = { outerSet } })
 
         assert.has_error(function() Handler.deleteCollection({ collection_name = "Temp" }) end,
-            "2 collections are named 'Temp'; rename one before deleting")
+            "2 collections are named 'Temp'; use a collection path")
         assert.is_false(top.isDeleted())
         assert.is_false(nested.isDeleted())
+    end)
+
+    it("deletes the nested collection selected by its listed path", function()
+        local top = helper.fakeCollection("Temp", {})
+        local nested = helper.fakeCollection("Temp", {})
+        local outerSet = {
+            getName = function() return "Outer" end,
+            getChildCollections = function() return { nested } end,
+            getChildCollectionSets = function() return {} end,
+        }
+        local _, Handler = setup({ collections = { top }, collectionSets = { outerSet } })
+
+        local r = Handler.deleteCollection({ collection_name = "Outer / Temp" })
+
+        assert.is_true(r.success)
+        assert.is_false(top.isDeleted())
+        assert.is_true(nested.isDeleted())
     end)
 
     it("errors on an unknown collection or a missing name", function()
