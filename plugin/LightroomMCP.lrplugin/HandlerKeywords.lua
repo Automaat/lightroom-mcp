@@ -177,9 +177,13 @@ function KeywordsHandler.renameKeyword(args)
                 n = n + 1
                 tempName = string.format("%s (renaming %d)", newName, n)
             end
-            keyword:setAttributes({ keywordName = tempName })
+            if not keyword:setAttributes({ keywordName = tempName }) then
+                error("Lightroom refused to rename keyword '" .. oldPath .. "' to '" .. tempName .. "'")
+            end
         else
-            keyword:setAttributes({ keywordName = newName })
+            if not keyword:setAttributes({ keywordName = newName }) then
+                error("Lightroom refused to rename keyword '" .. oldPath .. "' to '" .. newName .. "'")
+            end
         end
     end)
 
@@ -189,7 +193,9 @@ function KeywordsHandler.renameKeyword(args)
         -- called from within an LrTask".
         local ok, err = LrTasks.pcall(function()
             catalog:withWriteAccessDo("Rename Keyword", function()
-                keyword:setAttributes({ keywordName = newName })
+                if not keyword:setAttributes({ keywordName = newName }) then
+                    error("Lightroom refused the final rename to '" .. newName .. "'")
+                end
             end)
         end)
         if not ok then

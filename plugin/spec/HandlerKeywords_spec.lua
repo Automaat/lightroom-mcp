@@ -282,6 +282,47 @@ describe("HandlerKeywords.renameKeyword", function()
         assert.are.equal("Callie (renaming)", callie:getName())
     end)
 
+    it("reports a sibling collision during the final case-only rename", function()
+        local callie = helper.fakeKeyword("callie")
+        local siblings = { callie }
+        local catalog, Handler = setup(siblings)
+        local realWrite = catalog.withWriteAccessDo
+        local calls = 0
+        catalog.withWriteAccessDo = function(self, name, fn)
+            calls = calls + 1
+            if calls == 2 then table.insert(siblings, helper.fakeKeyword("Callie")) end
+            return realWrite(self, name, fn)
+        end
+        local realSetAttributes = callie.setAttributes
+        callie.setAttributes = function(self, attributes)
+            for _, sibling in ipairs(siblings) do
+                if sibling ~= self and sibling:getName():lower() == attributes.keywordName:lower() then
+                    return false
+                end
+            end
+            return realSetAttributes(self, attributes)
+        end
+
+        local ok, err = pcall(Handler.renameKeyword, { keyword = "callie", new_name = "Callie" })
+
+        assert.is_false(ok)
+        assert.is_not_nil(tostring(err):find(
+            "Keyword 'callie' was left named 'Callie (renaming)' while changing its case", 1, true))
+        assert.are.equal("Callie (renaming)", callie:getName())
+        assert.are.equal("Callie", siblings[2]:getName())
+    end)
+
+    it("reports a rename rejected by Lightroom before claiming success", function()
+        local person = helper.fakeKeyword("person")
+        local _, Handler = setup({ person })
+        person.setAttributes = function() return false end
+
+        assert.has_error(function()
+            Handler.renameKeyword({ keyword = "person", new_name = "people" })
+        end, "Lightroom refused to rename keyword 'person' to 'people'")
+        assert.are.equal("person", person:getName())
+    end)
+
     it("picks a temporary name that no sibling has", function()
         local callie = helper.fakeKeyword("callie")
         local taken = helper.fakeKeyword("Callie (renaming)")

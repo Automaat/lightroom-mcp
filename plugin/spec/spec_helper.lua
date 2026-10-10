@@ -131,6 +131,7 @@ function M.fakeKeyword(name, opts)
             if newName and newName:lower() ~= name:lower() then
                 name = newName
             end
+            return true
         end,
         getAttributes = function()
             return {
