@@ -364,7 +364,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       additionalProperties: false,
       properties: {
         name: { type: "string", description: "Collection name" },
-        parent: { type: "string", description: "Parent collection set (optional)" },
+        parent: {
+          type: "string",
+          description:
+            "Parent collection set path (optional), levels separated by ' / ' as in list_collections (e.g. 'Trips / 2026'). Missing sets are created; existing ones are reused.",
+        },
       },
       required: ["name"],
     },
@@ -372,12 +376,13 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "add_to_collection",
     luaHandler: "HandlerCollections.addToCollection",
-    description: "Add photos to a collection",
+    description:
+      "Add photos to a collection. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        collection_name: { type: "string", description: "Collection name" },
+        collection_name: { type: "string", description: "Collection name or path from list_collections" },
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
       },
       required: ["collection_name", "photo_ids"],

@@ -60,6 +60,24 @@ function CollectionsHandler.listCollections(args)
     }
 end
 
+-- Splits a collection set path on the " / " separator listCollections uses.
+local function splitSetPath(path)
+    local names = {}
+    local rest = path
+    while true do
+        local first, last = rest:find(" / ", 1, true)
+        local name = first and rest:sub(1, first - 1) or rest
+        if name:match("^%s*$") then
+            error("parent contains an empty collection set name: " .. path)
+        end
+        table.insert(names, name)
+        if not first then
+            return names
+        end
+        rest = rest:sub(last + 1)
+    end
+end
+
 function CollectionsHandler.createCollection(args)
     if type(args.name) ~= "string" or args.name:match("^%s*$") then
         error("name is required")
@@ -67,59 +85,110 @@ function CollectionsHandler.createCollection(args)
 
     local catalog = LrApplication.activeCatalog()
     local collectionName = args.name
+    local path = collectionName
+    local parentSet = nil
 
-    -- add_to_collection addresses collections by name, so a second collection
-    -- with the same name makes that lookup ambiguous: photos would silently
-    -- land in whichever one enumerates first.
-    for _, collection in ipairs(catalog:getChildCollections()) do
-        if collection:getName() == collectionName then
-            error("Collection already exists: " .. collectionName)
+    if type(args.parent) ~= "string" or args.parent:match("^%s*$") then
+        -- add_to_collection addresses collections by name, so a second collection
+        -- with the same name makes that lookup ambiguous: photos would silently
+        -- land in whichever one enumerates first.
+        for _, collection in ipairs(catalog:getChildCollections()) do
+            if collection:getName() == collectionName then
+                error("Collection already exists: " .. collectionName)
+            end
         end
+    else
+        local setNames = splitSetPath(args.parent)
+        path = table.concat(setNames, " / ") .. " / " .. collectionName
+
+        -- Three gates, not one: Lightroom refuses to read a collection set in
+        -- the withWriteAccessDo that created it ("Can't get collection
+        -- information after creating collection inside the same
+        -- withWriteAccessDo function"). Missing sets are created first, then
+        -- looked up and checked for a duplicate, then the collection is added.
+        catalog:withWriteAccessDo("Create Collection Sets", function()
+            local set = nil
+            for _, setName in ipairs(setNames) do
+                set = catalog:createCollectionSet(setName, set, true)
+            end
+        end)
+
+        catalog:withReadAccessDo(function()
+            local children = catalog:getChildCollectionSets()
+            for _, setName in ipairs(setNames) do
+                local found = nil
+                for _, set in ipairs(children) do
+                    if set:getName() == setName then
+                        found = set
+                        break
+                    end
+                end
+                if not found then
+                    error("Collection set not found after creating it: " .. setName)
+                end
+                parentSet = found
+                children = found:getChildCollectionSets()
+            end
+
+            for _, collection in ipairs(parentSet:getChildCollections()) do
+                if collection:getName() == collectionName then
+                    error("Collection already exists: " .. path)
+                end
+            end
+        end)
     end
 
     catalog:withWriteAccessDo("Create Collection", function()
-        catalog:createCollection(collectionName)
-        Log.info("Created collection: " .. collectionName)
+        catalog:createCollection(collectionName, parentSet, false)
+        Log.info("Created collection: " .. path)
     end)
 
     return {
         success = true,
-        message = "Collection created: " .. collectionName
+        path = path,
+        message = "Collection created: " .. path
     }
 end
 
--- Walks the top-level collections and then every collection set, depth first.
--- Cheap: the tree is small next to the photo catalog.
-local function findCollection(catalog, name)
+-- Match bare names or the paths returned by listCollections.
+local function findAllCollections(catalog, name)
+    local matches = {}
     for _, collection in ipairs(catalog:getChildCollections()) do
         if collection:getName() == name then
-            return collection
+            table.insert(matches, collection)
         end
     end
 
-    local function findInSet(collSet)
+    local function findInSet(collSet, prefix)
         for _, coll in ipairs(collSet:getChildCollections()) do
-            if coll:getName() == name then
-                return coll
+            if coll:getName() == name or prefix .. coll:getName() == name then
+                table.insert(matches, coll)
             end
         end
         for _, childSet in ipairs(collSet:getChildCollectionSets()) do
-            local found = findInSet(childSet)
-            if found then
-                return found
-            end
+            findInSet(childSet, prefix .. childSet:getName() .. " / ")
         end
-        return nil
     end
 
     for _, set in ipairs(catalog:getChildCollectionSets()) do
-        local found = findInSet(set)
-        if found then
-            return found
-        end
+        findInSet(set, set:getName() .. " / ")
     end
 
-    return nil
+    return matches
+end
+
+-- Resolves a bare name or listed path to exactly one collection. A bare name
+-- shared by several collections is rejected rather than resolved to whichever
+-- enumerates first.
+local function findOneCollection(catalog, name)
+    local matches = findAllCollections(catalog, name)
+    if #matches == 0 then
+        error("Collection not found: " .. name)
+    end
+    if #matches > 1 then
+        error(string.format("%d collections are named '%s'; use a collection path", #matches, name))
+    end
+    return matches[1]
 end
 
 function CollectionsHandler.addToCollection(args)
@@ -141,13 +210,9 @@ function CollectionsHandler.addToCollection(args)
     -- only to discover a typo'd name pushed the request past the server's
     -- timeout, so the caller got no answer at all instead of "Collection not
     -- found".
-    local exists = false
     catalog:withReadAccessDo(function()
-        exists = findCollection(catalog, args.collection_name) ~= nil
+        findOneCollection(catalog, args.collection_name)
     end)
-    if not exists then
-        error("Collection not found: " .. args.collection_name)
-    end
 
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
@@ -155,11 +220,7 @@ function CollectionsHandler.addToCollection(args)
         -- Looked up again rather than carried across gates: the check above
         -- only proved the name resolved then, and the write gate is what makes
         -- the result safe to act on.
-        local targetCollection = findCollection(catalog, args.collection_name)
-
-        if not targetCollection then
-            error("Collection not found: " .. args.collection_name)
-        end
+        local targetCollection = findOneCollection(catalog, args.collection_name)
 
         -- Find and add photos
         local photosToAdd = {}
@@ -189,33 +250,6 @@ function CollectionsHandler.addToCollection(args)
         message = string.format("Added %d photos to collection (%d ids not found)",
             addedCount, missingCount)
     }
-end
-
--- Match bare names or the paths returned by listCollections.
-local function findAllCollections(catalog, name)
-    local matches = {}
-    for _, collection in ipairs(catalog:getChildCollections()) do
-        if collection:getName() == name then
-            table.insert(matches, collection)
-        end
-    end
-
-    local function findInSet(collSet, prefix)
-        for _, coll in ipairs(collSet:getChildCollections()) do
-            if coll:getName() == name or prefix .. coll:getName() == name then
-                table.insert(matches, coll)
-            end
-        end
-        for _, childSet in ipairs(collSet:getChildCollectionSets()) do
-            findInSet(childSet, prefix .. childSet:getName() .. " / ")
-        end
-    end
-
-    for _, set in ipairs(catalog:getChildCollectionSets()) do
-        findInSet(set, set:getName() .. " / ")
-    end
-
-    return matches
 end
 
 -- Removes photos from a collection only; they stay in the catalog.

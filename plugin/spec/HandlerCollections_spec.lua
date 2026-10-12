@@ -90,6 +90,99 @@ describe("HandlerCollections.createCollection", function()
             "Collection already exists: Album")
         assert.is_nil(catalog.getCreatedCollections()[1])
     end)
+
+    it("creates a top-level collection when parent is omitted", function()
+        local catalog, Handler = setup({})
+        local r = Handler.createCollection({ name = "Album" })
+        assert.are.equal("Album", r.path)
+        assert.are.equal(0, #catalog.getCreatedCollectionSets())
+        assert.are.equal(1, #catalog.getChildCollections())
+    end)
+
+    it("creates missing collection sets along a parent path", function()
+        local catalog, Handler = setup({})
+
+        local r = Handler.createCollection({ name = "City", parent = "Trips / 2026 / Coast" })
+
+        assert.is_true(r.success)
+        assert.are.equal("Trips / 2026 / Coast / City", r.path)
+        assert.are.equal(3, #catalog.getCreatedCollectionSets())
+        assert.are.equal(0, #catalog.getChildCollections())
+        local listed = Handler.listCollections({})
+        assert.are.equal(1, listed.count)
+        assert.are.equal("Trips / 2026 / Coast / City", listed.collections[1].name)
+        assert.are.equal("Coast", listed.collections[1].parent)
+    end)
+
+    it("reuses existing collection sets instead of duplicating them", function()
+        local trips = helper.fakeCollectionSet("Trips")
+        local year = helper.fakeCollectionSet("2026", { parent = trips })
+        local catalog, Handler = setup({ collectionSets = { trips } })
+
+        Handler.createCollection({ name = "One", parent = "Trips / 2026" })
+        Handler.createCollection({ name = "Two", parent = "Trips / 2026" })
+
+        assert.are.equal(0, #catalog.getCreatedCollectionSets())
+        assert.are.equal(1, #catalog.getChildCollectionSets())
+        assert.are.equal(1, #trips.getChildCollectionSets())
+        assert.are.equal(2, #year.getChildCollections())
+    end)
+
+    it("rejects a duplicate name within the same set", function()
+        local trips = helper.fakeCollectionSet("Trips",
+            { collections = { helper.fakeCollection("City", {}) } })
+        local catalog, Handler = setup({ collectionSets = { trips } })
+
+        assert.has_error(
+            function() Handler.createCollection({ name = "City", parent = "Trips" }) end,
+            "Collection already exists: Trips / City")
+        assert.are.equal(0, #catalog.getCreatedCollections())
+    end)
+
+    it("allows the same name in different sets", function()
+        local catalog, Handler = setup({ collections = { helper.fakeCollection("City", {}) } })
+
+        Handler.createCollection({ name = "City", parent = "A" })
+        Handler.createCollection({ name = "City", parent = "B" })
+
+        assert.are.equal(2, #catalog.getCreatedCollections())
+        local names = {}
+        for _, c in ipairs(Handler.listCollections({}).collections) do
+            table.insert(names, c.name)
+        end
+        assert.are.same({ "City", "A / City", "B / City" }, names)
+    end)
+
+    it("rejects a parent path with an empty set name", function()
+        local catalog, Handler = setup({})
+        for _, parent in ipairs({ "Trips /  / City", " / Trips", "Trips / " }) do
+            assert.has_error(
+                function() Handler.createCollection({ name = "X", parent = parent }) end,
+                "parent contains an empty collection set name: " .. parent)
+        end
+        assert.are.equal(0, #catalog.getCreatedCollectionSets())
+        assert.are.equal(0, #catalog.getCreatedCollections())
+    end)
+
+    -- Lightroom raises "Can't get collection information after creating
+    -- collection inside the same withWriteAccessDo function" when a new set is
+    -- read in the transaction that created it, so the handler needs separate
+    -- gates. The fake raises the same error.
+    it("does not read a new collection set in the gate that created it", function()
+        local catalog, Handler = setup({})
+
+        Handler.createCollection({ name = "City", parent = "Trips / 2026" })
+
+        assert.are.equal(2, catalog.getWriteAccessCount())
+        local naive = setup({})
+        assert.has_error(function()
+            naive:withWriteAccessDo("Single gate", function()
+                local set = naive:createCollectionSet("Trips", nil, true)
+                set:getChildCollections()
+            end)
+        end, "Can't get collection information after creating collection"
+            .. " inside the same withWriteAccessDo function")
+    end)
 end)
 
 describe("HandlerCollections.addToCollection", function()
@@ -153,6 +246,37 @@ describe("HandlerCollections.addToCollection", function()
         assert.are.equal(1, r.added)
         assert.are.same({ "ghost" }, r.missing)
         assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+    end)
+
+    it("adds to a nested collection addressed by its listed path", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local top = helper.fakeCollection("Shared", {})
+        local nested = helper.fakeCollection("Shared", {})
+        local outer = helper.fakeCollectionSet("Outer", { collections = { nested } })
+        local _, Handler = setup({ photos = { p1 }, collections = { top }, collectionSets = { outer } })
+
+        local r = Handler.addToCollection({ collection_name = "Outer / Shared", photo_ids = { "1" } })
+
+        assert.are.equal(1, r.added)
+        assert.are.same({ p1 }, nested.getAddedPhotos())
+        assert.are.same({}, top.getAddedPhotos())
+    end)
+
+    it("rejects an ambiguous name without adding to either collection", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local top = helper.fakeCollection("Shared", {})
+        local nested = helper.fakeCollection("Shared", {})
+        local outer = helper.fakeCollectionSet("Outer", { collections = { nested } })
+        local catalog, Handler = setup({ photos = { p1 }, collections = { top },
+            collectionSets = { outer } })
+
+        assert.has_error(function()
+            Handler.addToCollection({ collection_name = "Shared", photo_ids = { "1" } })
+        end, "2 collections are named 'Shared'; use a collection path")
+
+        assert.are.same({}, top.getAddedPhotos())
+        assert.are.same({}, nested.getAddedPhotos())
+        assert.are.equal(0, catalog.getQueryCount())
     end)
 
     it("errors without required args", function()

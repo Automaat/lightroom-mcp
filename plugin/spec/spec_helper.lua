@@ -182,6 +182,35 @@ function M.fakeCollection(name, photos, opts)
     }
 end
 
+-- Build a fake collection set. opts: parent (fake set), collections, sets.
+-- Registers itself with its parent so getChildCollectionSets() sees it, as a
+-- set that already exists in the catalog would be, unless detached.
+function M.fakeCollectionSet(name, opts)
+    opts = opts or {}
+    local collections = opts.collections or {}
+    local sets = opts.sets or {}
+    local set = {}
+    -- The catalog installs __readGuard on sets it creates, to model the SDK
+    -- refusing reads in the transaction that created them.
+    local function read(value)
+        if set.__readGuard then set.__readGuard() end
+        return value
+    end
+    set.getName = function() return read(name) end
+    set.type = function() return "LrCollectionSet" end
+    set.getParent = function() return read(opts.parent) end
+    set.getChildCollections = function() return read(collections) end
+    set.getChildCollectionSets = function() return read(sets) end
+    -- Unguarded, for the fake catalog's own bookkeeping.
+    set.__name = function() return name end
+    set.__childCollections = function() return collections end
+    set.__childSets = function() return sets end
+    if opts.parent and not opts.detached then
+        table.insert(opts.parent.__childSets(), set)
+    end
+    return set
+end
+
 -- Build a fake catalog. opts:
 --   photos: array of fake photos
 --   collections: array of fake collections
@@ -193,9 +222,11 @@ function M.fakeCatalog(opts)
     local collections = opts.collections or {}
     local collectionSets = opts.collectionSets or {}
     local createdCollections = {}
+    local createdCollectionSets = {}
     local createdKeywords = {}
     local topKeywords = opts.keywords or {}
     local pendingKeywords = {}
+    local setsCreatedInWrite = {}
     local readAccessCount = 0
     local writeAccessCount = 0
     -- Tracks whether a catalog query (getTargetPhotos/findPhotos/getAllPhotos)
@@ -291,8 +322,10 @@ function M.fakeCatalog(opts)
             writeAccessCount = writeAccessCount + 1
             insideWriteAccess = true
             pendingKeywords = {}
+            setsCreatedInWrite = {}
             local ok, err = pcall(fn)
             insideWriteAccess = false
+            setsCreatedInWrite = {}
             -- Keywords created in the transaction become visible once it
             -- commits; a failed transaction leaves none behind.
             local pending = pendingKeywords
@@ -315,11 +348,47 @@ function M.fakeCatalog(opts)
             end
             return nil
         end,
-        createCollection = function(_, name)
+        createCollection = function(_, name, parent, canReturnPrior)
+            if not insideWriteAccess then
+                error("createCollection outside withWriteAccessDo")
+            end
+            local siblings = parent and parent.__childCollections() or collections
+            if canReturnPrior then
+                for _, c in ipairs(siblings) do
+                    if c:getName() == name then return c end
+                end
+            end
             local c = M.fakeCollection(name, {})
             table.insert(createdCollections, c)
-            table.insert(collections, c)
+            table.insert(siblings, c)
             return c
+        end,
+        -- Models the SDK restriction the handler has to work around: a set
+        -- created in a write transaction cannot be read (name, children) until
+        -- that transaction ends; Lightroom raises the error below. It can still
+        -- be passed as the parent of further sets in the same transaction.
+        createCollectionSet = function(_, name, parent, canReturnPrior)
+            if not insideWriteAccess then
+                error("createCollectionSet outside withWriteAccessDo")
+            end
+            local siblings = parent and parent.__childSets() or collectionSets
+            if canReturnPrior then
+                for _, set in ipairs(siblings) do
+                    local setName = set.__name and set.__name() or set:getName()
+                    if setName == name then return set end
+                end
+            end
+            local set = M.fakeCollectionSet(name, { parent = parent, detached = true })
+            set.__readGuard = function()
+                if setsCreatedInWrite[set] then
+                    error("Can't get collection information after creating collection"
+                        .. " inside the same withWriteAccessDo function")
+                end
+            end
+            setsCreatedInWrite[set] = true
+            table.insert(createdCollectionSets, set)
+            table.insert(siblings, set)
+            return set
         end,
         getKeywords = function() return topKeywords end,
         -- Models the SDK behaviour the handlers have to work around: a keyword
@@ -360,6 +429,7 @@ function M.fakeCatalog(opts)
             return p
         end,
         getCreatedCollections = function() return createdCollections end,
+        getCreatedCollectionSets = function() return createdCollectionSets end,
         getCreatedKeywords = function() return createdKeywords end,
         getReadAccessCount = function() return readAccessCount end,
         getWriteAccessCount = function() return writeAccessCount end,
