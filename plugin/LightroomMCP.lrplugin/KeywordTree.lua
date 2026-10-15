@@ -72,6 +72,51 @@ function KeywordTree.findChild(catalog, parent, name)
     return nil
 end
 
+-- Children of `parent` (or the top level) keyed by folded name, the first
+-- match winning as in findChild. One pass for many lookups: findChild reads
+-- every sibling's name again for each one.
+function KeywordTree.childIndex(catalog, parent)
+    local index = {}
+    for _, child in ipairs(KeywordTree.children(catalog, parent)) do
+        local folded = KeywordTree.fold(child:getName())
+        if index[folded] == nil then
+            index[folded] = child
+        end
+    end
+    return index
+end
+
+-- The top-level index, kept between calls: building it reads every top-level
+-- keyword's name, which takes seconds on a catalog with thousands of them.
+-- Rebuilt when the number of top-level keywords changes and after
+-- forgetTopIndex. A rename or move in Lightroom leaves the count alone, so
+-- findTopLevel checks each hit.
+local topCache = nil
+
+function KeywordTree.topIndex(catalog)
+    local count = #KeywordTree.children(catalog, nil)
+    if not topCache or topCache.count ~= count then
+        topCache = { count = count, index = KeywordTree.childIndex(catalog, nil) }
+    end
+    return topCache.index
+end
+
+function KeywordTree.forgetTopIndex()
+    topCache = nil
+end
+
+-- findChild(catalog, nil, name) through the cached index. A hit that has been
+-- renamed or moved since the index was built is a miss; a miss does not
+-- rebuild the index.
+function KeywordTree.findTopLevel(catalog, name)
+    local folded = KeywordTree.fold(name)
+    local keyword = KeywordTree.topIndex(catalog)[folded]
+    if keyword and not keyword:getParent() and KeywordTree.fold(keyword:getName()) == folded then
+        return keyword
+    end
+    return nil
+end
+
 -- Walks `parts` from the top level. Returns the keyword, or nil plus the
 -- number of leading levels that did resolve.
 function KeywordTree.resolve(catalog, parts)

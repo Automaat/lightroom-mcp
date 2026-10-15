@@ -9,6 +9,9 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerOrganization = nil
+    -- A fresh KeywordTree too: its top-level index outlives a call, and each
+    -- spec has its own catalog.
+    package.loaded.KeywordTree = nil
     KeywordTree = require 'KeywordTree'
     return catalog, require 'HandlerOrganization'
 end
@@ -394,6 +397,108 @@ describe("HandlerOrganization.setKeywords", function()
             Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = { "summer" }, create_missing = false })
 
             assert.are.same({ t.summer }, removed(p1))
+        end)
+    end)
+
+    describe("top-level keyword index", function()
+        -- Top-level keywords k01..k20. No spec adds k01, so its read count is
+        -- what building the index cost.
+        local function counted()
+            local top = {}
+            for i = 1, 20 do
+                top[i] = helper.fakeKeyword(string.format("k%02d", i))
+            end
+            return top, helper.countNameReads(top)
+        end
+
+        it("reads each top-level name once per call, not once per keyword added", function()
+            local top, reads = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k18", "k19", "k20" } })
+
+            assert.are.same({ top[18], top[19], top[20] }, added(p1))
+            assert.are.equal(0, #catalog.getCreatedKeywords())
+            -- findChild per name read it six times: twice for each.
+            assert.are.equal(1, reads.k01)
+        end)
+
+        it("reuses the index on the next call", function()
+            local top, reads = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local _, Handler = setup({ photos = { p1 }, keywords = top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "K19" } })
+
+            assert.are.same({ top[20], top[19] }, added(p1))
+            assert.are.equal(1, reads.k01)
+        end)
+
+        it("rebuilds the index when the number of top-level keywords changes", function()
+            local top, reads = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+            -- Created in Lightroom between the calls.
+            local k21 = helper.fakeKeyword("k21")
+            table.insert(catalog:getKeywords(), k21)
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k21" } })
+
+            assert.are.same({ top[20], k21 }, added(p1))
+            assert.are.equal(0, #catalog.getCreatedKeywords())
+            assert.are.equal(2, reads.k01)
+        end)
+
+        it("finds the keywords it creates, in that call and the next", function()
+            local top, reads = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20", "new" } })
+            local readsAfterFirst = reads.k01
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "new" } })
+
+            local created = catalog.getCreatedKeywords()
+            assert.are.equal(1, #created)
+            assert.are.same({ top[20], created[1], created[1] }, added(p1))
+            -- The index rebuilt once "new" existed is reused.
+            assert.are.equal(readsAfterFirst, reads.k01)
+        end)
+
+        it("rebuilds the index after a call that failed", function()
+            local top, reads = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", keywords = {} })
+            p1.addKeyword = function() error("write failed") end
+            local _, Handler = setup({ photos = { p1, p2 }, keywords = top })
+
+            assert.has_error(function()
+                Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+            end)
+            Handler.setKeywords({ photo_ids = { "2" }, add_keywords = { "k20" } })
+            Handler.setKeywords({ photo_ids = { "2" }, add_keywords = { "k19" } })
+
+            assert.are.same({ top[20], top[19] }, added(p2))
+            -- Built by the failed call, rebuilt by the next, then reused.
+            assert.are.equal(2, reads.k01)
+        end)
+
+        it("does not add a keyword renamed since the index was built", function()
+            local top = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+            top[20]:setAttributes({ keywordName = "renamed" })
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+
+            local created = catalog.getCreatedKeywords()
+            assert.are.equal(1, #created)
+            assert.are.equal("k20", created[1]:getName())
+            assert.are.same({ top[20], created[1] }, added(p1))
         end)
     end)
 
