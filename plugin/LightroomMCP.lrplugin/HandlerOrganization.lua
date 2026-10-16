@@ -7,6 +7,10 @@ local Log = require 'Log'
 local OrganizationHandler = {}
 local MAX_KEYWORDS_PER_REQUEST = 1000
 
+-- Set while a setKeywords call runs; still set at the next call's start when
+-- the last one failed part-way.
+local keywordCallFailed = false
+
 local function validateKeywordLimit(keywords, fieldName)
     if keywords and #keywords > MAX_KEYWORDS_PER_REQUEST then
         error(fieldName .. " must contain at most " .. MAX_KEYWORDS_PER_REQUEST .. " keywords")
@@ -96,6 +100,9 @@ local function createMissingLevels(catalog, pathsToEnsure)
         local missing = {}
         catalog:withReadAccessDo(function()
             local seen = {}
+            -- One index per parent at this depth; the top level uses the
+            -- cached one.
+            local indexes = {}
             for _, parts in ipairs(pathsToEnsure) do
                 if #parts >= depth then
                     local folded = KeywordTree.fold(KeywordTree.join(prefixOf(parts, depth)))
@@ -109,7 +116,14 @@ local function createMissingLevels(catalog, pathsToEnsure)
                                 error("Keyword level was not created: " .. KeywordTree.join(parentParts))
                             end
                         end
-                        if not KeywordTree.findChild(catalog, parent, parts[depth]) then
+                        local existing
+                        if parent then
+                            indexes[parent] = indexes[parent] or KeywordTree.childIndex(catalog, parent)
+                            existing = indexes[parent][KeywordTree.fold(parts[depth])]
+                        else
+                            existing = KeywordTree.findTopLevel(catalog, parts[depth])
+                        end
+                        if not existing then
                             table.insert(missing, { parent = parent, name = parts[depth] })
                         end
                     end
@@ -123,6 +137,8 @@ local function createMissingLevels(catalog, pathsToEnsure)
                     catalog:createKeyword(level.name, {}, true, level.parent, true)
                 end
             end)
+            -- The cached top-level index has not seen what was just created.
+            if depth == 1 then KeywordTree.forgetTopIndex() end
         end
     end
 end
@@ -151,6 +167,11 @@ function OrganizationHandler.setKeywords(args)
 
     local catalog = LrApplication.activeCatalog()
     local updatedCount = 0
+
+    -- A call that failed part-way may have changed keywords behind the cached
+    -- top-level index.
+    if keywordCallFailed then KeywordTree.forgetTopIndex() end
+    keywordCallFailed = true
 
     local addEntries = parseKeywordList(args.add_keywords)
 
@@ -198,7 +219,12 @@ function OrganizationHandler.setKeywords(args)
             if entry.parts then
                 keyword = KeywordTree.resolve(catalog, entry.parts)
             elseif createMissing then
-                keyword = KeywordTree.findChild(catalog, nil, entry.name)
+                keyword = KeywordTree.findTopLevel(catalog, entry.name)
+                if not keyword then
+                    -- Changed in Lightroom since the index was built.
+                    KeywordTree.forgetTopIndex()
+                    keyword = KeywordTree.findTopLevel(catalog, entry.name)
+                end
             else
                 -- Looked up again rather than carried across gates: the check
                 -- above only proved the name resolved then.
@@ -244,6 +270,7 @@ function OrganizationHandler.setKeywords(args)
         end
     end)
 
+    keywordCallFailed = false
     Log.info(string.format("Updated keywords for %d photos", updatedCount))
 
     return {

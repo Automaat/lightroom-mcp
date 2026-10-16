@@ -148,6 +148,23 @@ function M.fakeKeyword(name, opts)
     return kw
 end
 
+-- Counts getName() calls on each of `keywords` (fake keywords), keyed by the
+-- name it had when wrapped. Reading names is what makes keyword lookup slow on
+-- a large catalog, so specs count it.
+function M.countNameReads(keywords)
+    local reads = {}
+    for _, kw in ipairs(keywords) do
+        local getName = kw.getName
+        local name = getName(kw)
+        reads[name] = 0
+        kw.getName = function(self)
+            reads[name] = reads[name] + 1
+            return getName(self)
+        end
+    end
+    return reads
+end
+
 -- Build a fake collection.
 -- opts (optional): smart = true for a smart collection.
 function M.fakeCollection(name, photos, opts)
