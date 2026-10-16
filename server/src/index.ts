@@ -21,6 +21,8 @@ import { acquireInstanceLock } from "./instance-lock.js";
 import {
   ensurePluginInstalled,
   findBundledPlugin,
+  findPluginBesideBinary,
+  findPluginInCwd,
   installPlugin,
   lightroomModulesDir,
 } from "./install-plugin.js";
@@ -248,10 +250,12 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
 }
 
 function runInstallPlugin(): void {
-  const source = findBundledPlugin(here);
+  const source = findBundledPlugin(here) ?? findPluginBesideBinary() ?? findPluginInCwd();
   if (!source) {
-    console.error("Could not locate bundled LightroomMCP.lrplugin folder near this binary.");
-    console.error("If you cloned the repo, run from the repo root or pass a path explicitly.");
+    console.error("Could not locate a LightroomMCP.lrplugin folder.");
+    console.error(
+      "Extract LightroomMCP-<platform>.lrplugin.zip from the release next to this binary (or run from that folder), then retry.",
+    );
     process.exit(1);
   }
   const dest = lightroomModulesDir();

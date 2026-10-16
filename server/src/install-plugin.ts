@@ -68,6 +68,22 @@ export function findBundledPlugin(startDir: string): string | null {
     path.join(startDir, "..", "..", "plugin", "LightroomMCP.lrplugin"),
     path.join(startDir, "..", "..", "..", "plugin", "LightroomMCP.lrplugin"),
   ];
+  return firstValidPlugin(candidates);
+}
+
+// A compiled single-file binary resolves `here` inside its bundle, so also
+// look right beside the executable. Only direct children: no parent walk.
+export function findPluginBesideBinary(): string | null {
+  return firstValidPlugin([path.join(path.dirname(process.execPath), "LightroomMCP.lrplugin")]);
+}
+
+// Explicit `install-plugin` only: the cwd is attacker-influenced when an MCP
+// host starts the server inside an arbitrary project, so never auto-install it.
+export function findPluginInCwd(): string | null {
+  return firstValidPlugin([path.join(process.cwd(), "LightroomMCP.lrplugin")]);
+}
+
+function firstValidPlugin(candidates: string[]): string | null {
   for (const c of candidates) {
     try {
       const st = fs.statSync(c);
@@ -118,7 +134,7 @@ export function installPlugin(opts: {
 
 export function ensurePluginInstalled(startDir: string, log: (msg: string) => void): void {
   if (isPluginInstalledAnywhere()) return;
-  const source = findBundledPlugin(startDir);
+  const source = findBundledPlugin(startDir) ?? findPluginBesideBinary();
   if (!source) return;
   try {
     const result = installPlugin({ source });

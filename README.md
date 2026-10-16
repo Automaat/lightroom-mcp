@@ -116,7 +116,7 @@ npx -y @mskalski/lightroom-mcp install-plugin
    xattr -d com.apple.quarantine ~/Downloads/lightroom-mcp-darwin-arm64
    ```
 
-3. Install the Lightroom plugin:
+3. Download `LightroomMCP-macos.lrplugin.zip` (or `LightroomMCP-windows.lrplugin.zip`) from the same release and extract it next to the binary, so the `LightroomMCP.lrplugin` folder sits beside it. Then install the Lightroom plugin:
    ```bash
    ~/Downloads/lightroom-mcp-darwin-arm64 install-plugin
    ```
