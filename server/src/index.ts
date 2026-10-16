@@ -19,9 +19,10 @@ import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
 import { acquireInstanceLock } from "./instance-lock.js";
 import {
-  bundledPluginSearchDirs,
   ensurePluginInstalled,
   findBundledPlugin,
+  findPluginBesideBinary,
+  findPluginInCwd,
   installPlugin,
   lightroomModulesDir,
 } from "./install-plugin.js";
@@ -86,7 +87,7 @@ async function main() {
     process.exit(1);
   }
 
-  ensurePluginInstalled(bundledPluginSearchDirs(here), (m) => console.error(m));
+  ensurePluginInstalled(here, (m) => console.error(m));
 
   const bridge = new Bridge({
     ipcPath: brokerPath(REQUEST_PORT, RESPONSE_PORT),
@@ -249,7 +250,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
 }
 
 function runInstallPlugin(): void {
-  const source = findBundledPlugin(bundledPluginSearchDirs(here));
+  const source = findBundledPlugin(here) ?? findPluginBesideBinary() ?? findPluginInCwd();
   if (!source) {
     console.error("Could not locate a LightroomMCP.lrplugin folder.");
     console.error(

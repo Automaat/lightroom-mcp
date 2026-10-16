@@ -58,22 +58,7 @@ export function isPluginInstalledAnywhere(): boolean {
   });
 }
 
-// A compiled single-file binary resolves `here` inside its bundle, so also
-// look next to the executable and in the working directory.
-export function bundledPluginSearchDirs(here: string): string[] {
-  const dirs = [here, path.dirname(process.execPath), process.cwd()].map((d) => path.resolve(d));
-  return [...new Set(dirs)];
-}
-
-export function findBundledPlugin(startDirs: string | readonly string[]): string | null {
-  for (const startDir of typeof startDirs === "string" ? [startDirs] : startDirs) {
-    const found = findBundledPluginFrom(startDir);
-    if (found) return found;
-  }
-  return null;
-}
-
-function findBundledPluginFrom(startDir: string): string | null {
+export function findBundledPlugin(startDir: string): string | null {
   const candidates = [
     path.join(startDir, "LightroomMCP.lrplugin"),
     path.join(startDir, "..", "LightroomMCP.lrplugin"),
@@ -83,6 +68,22 @@ function findBundledPluginFrom(startDir: string): string | null {
     path.join(startDir, "..", "..", "plugin", "LightroomMCP.lrplugin"),
     path.join(startDir, "..", "..", "..", "plugin", "LightroomMCP.lrplugin"),
   ];
+  return firstValidPlugin(candidates);
+}
+
+// A compiled single-file binary resolves `here` inside its bundle, so also
+// look right beside the executable. Only direct children: no parent walk.
+export function findPluginBesideBinary(): string | null {
+  return firstValidPlugin([path.join(path.dirname(process.execPath), "LightroomMCP.lrplugin")]);
+}
+
+// Explicit `install-plugin` only: the cwd is attacker-influenced when an MCP
+// host starts the server inside an arbitrary project, so never auto-install it.
+export function findPluginInCwd(): string | null {
+  return firstValidPlugin([path.join(process.cwd(), "LightroomMCP.lrplugin")]);
+}
+
+function firstValidPlugin(candidates: string[]): string | null {
   for (const c of candidates) {
     try {
       const st = fs.statSync(c);
@@ -131,9 +132,9 @@ export function installPlugin(opts: {
   return { status: "installed", destination };
 }
 
-export function ensurePluginInstalled(startDirs: string | readonly string[], log: (msg: string) => void): void {
+export function ensurePluginInstalled(startDir: string, log: (msg: string) => void): void {
   if (isPluginInstalledAnywhere()) return;
-  const source = findBundledPlugin(startDirs);
+  const source = findBundledPlugin(startDir) ?? findPluginBesideBinary();
   if (!source) return;
   try {
     const result = installPlugin({ source });

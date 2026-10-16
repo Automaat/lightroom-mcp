@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  bundledPluginSearchDirs,
   ensurePluginInstalled,
   findBundledPlugin,
+  findPluginBesideBinary,
+  findPluginInCwd,
   installPlugin,
   isPluginInstalledAnywhere,
   lightroomModulesDir,
@@ -254,48 +255,57 @@ describe('findBundledPlugin', () => {
   });
 });
 
-describe('bundledPluginSearchDirs', () => {
+describe('plugin lookup beside the binary and in the cwd', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-exe-'));
+  });
+
   afterEach(() => {
+    Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true });
     jest.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('lists the bundle dir, the executable dir and the working dir without duplicates', () => {
-    const exe = path.join(os.tmpdir(), 'lrmcp-exe', 'lightroom-mcp.exe');
+  function bundlePluginIn(parent: string): string {
+    const plug = path.join(parent, 'LightroomMCP.lrplugin');
+    fs.mkdirSync(plug, { recursive: true });
+    fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
+    return path.resolve(plug);
+  }
+
+  function setExecPath(exe: string): void {
     Object.defineProperty(process, 'execPath', { value: exe, configurable: true });
-    jest.spyOn(process, 'cwd').mockReturnValue(path.dirname(exe));
-    try {
-      expect(bundledPluginSearchDirs('/$bunfs/root')).toEqual([
-        path.resolve('/$bunfs/root'),
-        path.dirname(exe),
-      ]);
-    } finally {
-      Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true });
-    }
-  });
-});
+  }
 
-describe('findBundledPlugin with several start dirs', () => {
-  it('falls through to a later dir when the first has no plugin', () => {
-    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-empty-'));
-    const exeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-exe-'));
-    try {
-      const plug = path.join(exeDir, 'LightroomMCP.lrplugin');
-      fs.mkdirSync(plug);
-      fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
-      expect(findBundledPlugin([empty, exeDir])).toBe(path.resolve(plug));
-    } finally {
-      fs.rmSync(empty, { recursive: true, force: true });
-      fs.rmSync(exeDir, { recursive: true, force: true });
-    }
+  it('finds the plugin folder next to the executable', () => {
+    const plug = bundlePluginIn(dir);
+    setExecPath(path.join(dir, 'lightroom-mcp.exe'));
+    expect(findPluginBesideBinary()).toBe(plug);
   });
 
-  it('returns null when no dir has a plugin', () => {
-    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-empty-'));
-    try {
-      expect(findBundledPlugin([empty])).toBeNull();
-    } finally {
-      fs.rmSync(empty, { recursive: true, force: true });
-    }
+  it('does not walk parent dirs of the executable', () => {
+    bundlePluginIn(dir);
+    const sub = path.join(dir, 'bin');
+    fs.mkdirSync(sub);
+    setExecPath(path.join(sub, 'lightroom-mcp.exe'));
+    expect(findPluginBesideBinary()).toBeNull();
+  });
+
+  it('finds the plugin folder in the working directory', () => {
+    const plug = bundlePluginIn(dir);
+    jest.spyOn(process, 'cwd').mockReturnValue(dir);
+    expect(findPluginInCwd()).toBe(plug);
+  });
+
+  it('does not walk parent dirs of the working directory', () => {
+    bundlePluginIn(path.join(dir, 'plugin'));
+    bundlePluginIn(dir);
+    const sub = path.join(dir, 'sub');
+    fs.mkdirSync(sub);
+    jest.spyOn(process, 'cwd').mockReturnValue(sub);
+    expect(findPluginInCwd()).toBeNull();
   });
 });
 
@@ -346,6 +356,37 @@ describe('ensurePluginInstalled', () => {
     expect(
       fs.existsSync(path.join(lightroomModulesDir(), 'LightroomMCP.lrplugin', 'Info.lua')),
     ).toBe(true);
+  });
+
+  it('installs a plugin placed next to the executable', () => {
+    const exeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-exe-'));
+    try {
+      bundlePluginIn(exeDir);
+      Object.defineProperty(process, 'execPath', {
+        value: path.join(exeDir, 'lightroom-mcp'),
+        configurable: true,
+      });
+      const log = jest.fn();
+      ensurePluginInstalled(startDir, log);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('copied'));
+    } finally {
+      Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true });
+      fs.rmSync(exeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('never auto-installs a plugin found only in the working directory', () => {
+    const cwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-cwd-'));
+    try {
+      bundlePluginIn(cwdDir);
+      jest.spyOn(process, 'cwd').mockReturnValue(cwdDir);
+      const log = jest.fn();
+      ensurePluginInstalled(startDir, log);
+      expect(log).not.toHaveBeenCalled();
+      expect(fs.existsSync(path.join(lightroomModulesDir(), 'LightroomMCP.lrplugin'))).toBe(false);
+    } finally {
+      fs.rmSync(cwdDir, { recursive: true, force: true });
+    }
   });
 
   it('logs a failure message when the install throws', () => {
