@@ -75,6 +75,10 @@
       "description": "Add photos to an existing collection."
     },
     {
+      "name": "get_collection_photos",
+      "description": "List the photos in a collection, regular or smart."
+    },
+    {
       "name": "remove_from_collection",
       "description": "Remove photos from a collection."
     },

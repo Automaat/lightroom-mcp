@@ -385,6 +385,74 @@ function CollectionsHandler.removeFromCollection(args)
     }
 end
 
+local function buildPhotoResult(photo)
+    return {
+        id = photo.localIdentifier,
+        path = photo:getRawMetadata('path'),
+        filename = photo:getFormattedMetadata('fileName'),
+        rating = photo:getRawMetadata('rating'),
+        dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
+    }
+end
+
+-- Returns a page of a collection's photos, regular or smart, in the shape
+-- search_photos uses.
+function CollectionsHandler.getCollectionPhotos(args)
+    args = args or {}
+    if type(args.collection_name) ~= "string" or args.collection_name == "" then
+        error("collection_name is required")
+    end
+
+    -- floor: a fractional offset would index photos[i] with a non-integer key
+    -- (always nil) and crash buildPhotoResult(nil).
+    local limit = math.floor(tonumber(args.limit) or 100)
+    if limit < 0 then limit = 0 end
+    local offset = math.floor(tonumber(args.offset) or 0)
+    if offset < 0 then offset = 0 end
+
+    local catalog = LrApplication.activeCatalog()
+
+    local collection = nil
+    local problem = nil
+    catalog:withReadAccessDo(function()
+        local matches = findAllCollections(catalog, args.collection_name)
+        if #matches == 0 then
+            problem = "Collection not found: " .. args.collection_name
+        elseif #matches > 1 then
+            problem = string.format("%d collections are named '%s'; use a collection path",
+                #matches, args.collection_name)
+        else
+            collection = matches[1]
+        end
+    end)
+    if problem then
+        error(problem)
+    end
+
+    -- OUTSIDE withReadAccessDo: a smart collection's getPhotos() runs a
+    -- catalog search, and a query that yields inside the read gate deadlocks
+    -- on Windows (#134/#124), as getTargetPhotos and findPhotos do.
+    local photos = collection:getPhotos() or {}
+    local total = #photos
+
+    local last = math.min(offset + limit, total)
+    local results = {}
+    catalog:withReadAccessDo(function()
+        for i = offset + 1, last do
+            table.insert(results, buildPhotoResult(photos[i]))
+        end
+    end)
+
+    Log.info(string.format("Collection %s has %d photos, returning %d (offset=%d, limit=%d)",
+        args.collection_name, total, #results, offset, limit))
+
+    return {
+        count = total,
+        photos = results,
+        has_more = (offset + #results) < total,
+    }
+end
+
 -- Deletes the collection itself; its photos stay in the catalog.
 function CollectionsHandler.deleteCollection(args)
     if type(args.collection_name) ~= "string" or args.collection_name == "" then

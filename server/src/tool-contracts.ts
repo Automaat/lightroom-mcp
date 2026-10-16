@@ -393,6 +393,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_collection_photos",
+    luaHandler: "HandlerCollections.getCollectionPhotos",
+    description:
+      "List the photos in a collection, regular or smart (paginated, default limit 100). Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        collection_name: {
+          type: "string",
+          description:
+            "Collection path from list_collections, or a bare name. A listed path always picks that collection; a bare name of a nested collection must be unique.",
+        },
+        limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
+        offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
+      },
+      required: ["collection_name"],
+    },
+  },
+  {
     name: "remove_from_collection",
     luaHandler: "HandlerCollections.removeFromCollection",
     description:

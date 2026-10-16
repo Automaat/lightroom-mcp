@@ -187,6 +187,7 @@ local DISPATCH = {
     list_collections = HandlerCollections.listCollections,
     create_collection = HandlerCollections.createCollection,
     add_to_collection = HandlerCollections.addToCollection,
+    get_collection_photos = HandlerCollections.getCollectionPhotos,
     remove_from_collection = HandlerCollections.removeFromCollection,
     delete_collection = HandlerCollections.deleteCollection,
     get_photo_metadata = HandlerMetadata.getPhotoMetadata,

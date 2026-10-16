@@ -320,6 +320,9 @@ function M.fakeCatalog(opts)
             if not ok then error(err, 0) end
         end,
         getQueriedInsideReadAccess = function() return queriedInsideReadAccess end,
+        -- For queries that live off the catalog (a smart collection's
+        -- getPhotos) and so cannot call markQuery themselves.
+        isInsideReadAccess = function() return insideReadAccess end,
         setSelectedPhotos = function(_, activePhoto, selected)
             markQuery()
             selectionCall = { active = activePhoto, photos = selected }
