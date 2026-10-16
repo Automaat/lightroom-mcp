@@ -58,7 +58,22 @@ export function isPluginInstalledAnywhere(): boolean {
   });
 }
 
-export function findBundledPlugin(startDir: string): string | null {
+// A compiled single-file binary resolves `here` inside its bundle, so also
+// look next to the executable and in the working directory.
+export function bundledPluginSearchDirs(here: string): string[] {
+  const dirs = [here, path.dirname(process.execPath), process.cwd()].map((d) => path.resolve(d));
+  return [...new Set(dirs)];
+}
+
+export function findBundledPlugin(startDirs: string | readonly string[]): string | null {
+  for (const startDir of typeof startDirs === "string" ? [startDirs] : startDirs) {
+    const found = findBundledPluginFrom(startDir);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findBundledPluginFrom(startDir: string): string | null {
   const candidates = [
     path.join(startDir, "LightroomMCP.lrplugin"),
     path.join(startDir, "..", "LightroomMCP.lrplugin"),
@@ -116,9 +131,9 @@ export function installPlugin(opts: {
   return { status: "installed", destination };
 }
 
-export function ensurePluginInstalled(startDir: string, log: (msg: string) => void): void {
+export function ensurePluginInstalled(startDirs: string | readonly string[], log: (msg: string) => void): void {
   if (isPluginInstalledAnywhere()) return;
-  const source = findBundledPlugin(startDir);
+  const source = findBundledPlugin(startDirs);
   if (!source) return;
   try {
     const result = installPlugin({ source });

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  bundledPluginSearchDirs,
   ensurePluginInstalled,
   findBundledPlugin,
   installPlugin,
@@ -12,6 +13,7 @@ import {
 } from '../src/install-plugin.js';
 
 const realPlatform = process.platform;
+const realExecPath = process.execPath;
 const realAppData = process.env.APPDATA;
 
 function setPlatform(p: NodeJS.Platform): void {
@@ -248,6 +250,51 @@ describe('findBundledPlugin', () => {
       expect(path.resolve(found!)).toBe(path.resolve(plug));
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('bundledPluginSearchDirs', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('lists the bundle dir, the executable dir and the working dir without duplicates', () => {
+    const exe = path.join(os.tmpdir(), 'lrmcp-exe', 'lightroom-mcp.exe');
+    Object.defineProperty(process, 'execPath', { value: exe, configurable: true });
+    jest.spyOn(process, 'cwd').mockReturnValue(path.dirname(exe));
+    try {
+      expect(bundledPluginSearchDirs('/$bunfs/root')).toEqual([
+        path.resolve('/$bunfs/root'),
+        path.dirname(exe),
+      ]);
+    } finally {
+      Object.defineProperty(process, 'execPath', { value: realExecPath, configurable: true });
+    }
+  });
+});
+
+describe('findBundledPlugin with several start dirs', () => {
+  it('falls through to a later dir when the first has no plugin', () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-empty-'));
+    const exeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-exe-'));
+    try {
+      const plug = path.join(exeDir, 'LightroomMCP.lrplugin');
+      fs.mkdirSync(plug);
+      fs.writeFileSync(path.join(plug, 'Info.lua'), '-- fake');
+      expect(findBundledPlugin([empty, exeDir])).toBe(path.resolve(plug));
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true });
+      fs.rmSync(exeDir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns null when no dir has a plugin', () => {
+    const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'lrmcp-empty-'));
+    try {
+      expect(findBundledPlugin([empty])).toBeNull();
+    } finally {
+      fs.rmSync(empty, { recursive: true, force: true });
     }
   });
 });
