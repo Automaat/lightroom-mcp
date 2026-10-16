@@ -70,6 +70,13 @@ local function splitSetPath(path)
         if name:match("^%s*$") then
             error("parent contains an empty collection set name: " .. path)
         end
+        -- Edge spaces or slashes come from a malformed separator ("A /",
+        -- "A / /B"); the set would exist but its path could not be read back.
+        if name:match("^[%s/]") or name:match("[%s/]$") then
+            error(string.format(
+                "parent has a malformed collection set name '%s'; separate sets with ' / ': %s",
+                name, path))
+        end
         table.insert(names, name)
         if not first then
             return names
@@ -78,68 +85,95 @@ local function splitSetPath(path)
     end
 end
 
+-- Lightroom compares sibling names ignoring case, and collections and
+-- collection sets under one parent share those names.
+local function findNamed(items, name)
+    local wanted = name:lower()
+    for _, item in ipairs(items) do
+        if item:getName():lower() == wanted then
+            return item
+        end
+    end
+    return nil
+end
+
 function CollectionsHandler.createCollection(args)
     if type(args.name) ~= "string" or args.name:match("^%s*$") then
         error("name is required")
     end
+    if args.parent ~= nil and type(args.parent) ~= "string" then
+        error("parent must be a collection set path")
+    end
 
     local catalog = LrApplication.activeCatalog()
     local collectionName = args.name
-    local path = collectionName
+    local setNames = args.parent and splitSetPath(args.parent) or {}
     local parentSet = nil
+    local existingLevels = 0
 
-    if type(args.parent) ~= "string" or args.parent:match("^%s*$") then
-        -- add_to_collection addresses collections by name, so a second collection
-        -- with the same name makes that lookup ambiguous: photos would silently
-        -- land in whichever one enumerates first.
-        for _, collection in ipairs(catalog:getChildCollections()) do
-            if collection:getName() == collectionName then
-                error("Collection already exists: " .. collectionName)
-            end
-        end
-    else
-        local setNames = splitSetPath(args.parent)
-        path = table.concat(setNames, " / ") .. " / " .. collectionName
-
-        -- Three gates, not one: Lightroom refuses to read a collection set in
-        -- the withWriteAccessDo that created it ("Can't get collection
-        -- information after creating collection inside the same
-        -- withWriteAccessDo function"). Missing sets are created first, then
-        -- looked up and checked for a duplicate, then the collection is added.
-        catalog:withWriteAccessDo("Create Collection Sets", function()
-            local set = nil
-            for _, setName in ipairs(setNames) do
-                set = catalog:createCollectionSet(setName, set, true)
+    -- Existing sets are reused under their stored names: asking Lightroom to
+    -- create "trips" beside "Trips" fails with "name is not unique".
+    if setNames[1] then
+        catalog:withReadAccessDo(function()
+            local sets = catalog:getChildCollectionSets()
+            local collections = catalog:getChildCollections()
+            for i, setName in ipairs(setNames) do
+                local found = findNamed(sets, setName)
+                if not found then
+                    if findNamed(collections, setName) then
+                        error(string.format("parent '%s' names a collection, not a collection set",
+                            setName))
+                    end
+                    break
+                end
+                setNames[i] = found:getName()
+                parentSet = found
+                existingLevels = i
+                sets = found:getChildCollectionSets()
+                collections = found:getChildCollections()
             end
         end)
+    end
 
-        catalog:withReadAccessDo(function()
-            local children = catalog:getChildCollectionSets()
-            for _, setName in ipairs(setNames) do
-                local found = nil
-                for _, set in ipairs(children) do
-                    if set:getName() == setName then
-                        found = set
-                        break
-                    end
-                end
-                if not found then
-                    error("Collection set not found after creating it: " .. setName)
-                end
-                parentSet = found
-                children = found:getChildCollectionSets()
-            end
+    local parentPath = table.concat(setNames, " / ")
+    local path = setNames[1] and (parentPath .. " / " .. collectionName) or collectionName
 
-            for _, collection in ipairs(parentSet:getChildCollections()) do
-                if collection:getName() == collectionName then
-                    error("Collection already exists: " .. path)
+    -- Lightroom refuses to read a collection set in the withWriteAccessDo that
+    -- created it ("Can't get collection information after creating collection
+    -- inside the same withWriteAccessDo function"), so the collection goes in
+    -- a second gate, where the new set can be read.
+    if existingLevels < #setNames then
+        catalog:withWriteAccessDo("Create Collection Sets", function()
+            for i = existingLevels + 1, #setNames do
+                local set = catalog:createCollectionSet(setNames[i], parentSet, true)
+                -- A name clash returns nil instead of raising; the failed gate
+                -- rolls back the sets created before it.
+                if not set then
+                    error("Lightroom did not create collection set: " .. setNames[i])
                 end
+                parentSet = set
             end
         end)
     end
 
     catalog:withWriteAccessDo("Create Collection", function()
-        catalog:createCollection(collectionName, parentSet, false)
+        -- Checked inside the gate that creates, so a concurrent create cannot
+        -- slip in between. A same-named collection would also make
+        -- add_to_collection's bare-name lookup ambiguous.
+        local collections = parentSet and parentSet:getChildCollections() or catalog:getChildCollections()
+        local sets = parentSet and parentSet:getChildCollectionSets() or catalog:getChildCollectionSets()
+        if findNamed(collections, collectionName) then
+            error("Collection already exists: " .. path)
+        end
+        local clash = findNamed(sets, collectionName)
+        if clash then
+            error(string.format("A collection set named '%s' already exists %s",
+                clash:getName(), parentSet and ("in " .. parentPath) or "at the top level"))
+        end
+
+        if not catalog:createCollection(collectionName, parentSet, false) then
+            error("Lightroom did not create collection: " .. path)
+        end
         Log.info("Created collection: " .. path)
     end)
 
@@ -150,19 +184,24 @@ function CollectionsHandler.createCollection(args)
     }
 end
 
--- Match bare names or the paths returned by listCollections.
+-- Match the paths returned by listCollections, then bare names of nested
+-- collections. A listed path wins: a top-level "City" beside "Trips / City"
+-- has no other name to be addressed by.
 local function findAllCollections(catalog, name)
-    local matches = {}
+    local byPath = {}
+    local byName = {}
     for _, collection in ipairs(catalog:getChildCollections()) do
         if collection:getName() == name then
-            table.insert(matches, collection)
+            table.insert(byPath, collection)
         end
     end
 
     local function findInSet(collSet, prefix)
         for _, coll in ipairs(collSet:getChildCollections()) do
-            if coll:getName() == name or prefix .. coll:getName() == name then
-                table.insert(matches, coll)
+            if prefix .. coll:getName() == name then
+                table.insert(byPath, coll)
+            elseif coll:getName() == name then
+                table.insert(byName, coll)
             end
         end
         for _, childSet in ipairs(collSet:getChildCollectionSets()) do
@@ -174,7 +213,10 @@ local function findAllCollections(catalog, name)
         findInSet(set, set:getName() .. " / ")
     end
 
-    return matches
+    if byPath[1] then
+        return byPath
+    end
+    return byName
 end
 
 -- Resolves a bare name or listed path to exactly one collection. A bare name

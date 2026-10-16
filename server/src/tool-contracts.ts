@@ -367,7 +367,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         parent: {
           type: "string",
           description:
-            "Parent collection set path (optional), levels separated by ' / ' as in list_collections (e.g. 'Trips / 2026'). Missing sets are created; existing ones are reused.",
+            "Parent collection set path (optional), levels separated by ' / ' as in list_collections (e.g. 'Trips / 2026'). Missing sets are created; existing ones are reused, matching names ignoring case as Lightroom does. Omit it for a top-level collection; an empty level or a level with leading or trailing spaces or slashes is rejected.",
         },
       },
       required: ["name"],
@@ -382,7 +382,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+        collection_name: {
+          type: "string",
+          description:
+            "Collection path from list_collections, or a bare name. A listed path always picks that collection; a bare name of a nested collection must be unique.",
+        },
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
       },
       required: ["collection_name", "photo_ids"],
@@ -397,7 +401,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+        collection_name: {
+          type: "string",
+          description:
+            "Collection path from list_collections, or a bare name. A listed path always picks that collection; a bare name of a nested collection must be unique.",
+        },
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
       },
       required: ["collection_name", "photo_ids"],
@@ -412,7 +420,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        collection_name: { type: "string", description: "Collection name or path from list_collections" },
+        collection_name: {
+          type: "string",
+          description:
+            "Collection path from list_collections, or a bare name. A listed path always picks that collection; a bare name of a nested collection must be unique.",
+        },
       },
       required: ["collection_name"],
     },

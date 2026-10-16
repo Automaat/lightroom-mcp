@@ -166,7 +166,7 @@ If you'd rather drop the plugin in by hand:
 | `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
-| `add_to_collection` | Add photos to a named collection. |
+| `add_to_collection` | Add photos to a collection, by name or by its `list_collections` path. |
 | `remove_from_collection` | Remove photos from a collection (they stay in the catalog). |
 | `delete_collection` | Delete a collection (its photos stay in the catalog). |
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
