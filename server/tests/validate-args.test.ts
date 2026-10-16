@@ -96,6 +96,12 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('delete_collection', { collection_name: 'Temp', photo_ids: [914] })).toContain('photo_ids');
   });
 
+  it('requires a collection name to list its photos and pages with limit/offset', () => {
+    expect(validateToolArgs('get_collection_photos', { collection_name: 'Trip', limit: 10, offset: 20 })).toBeNull();
+    expect(validateToolArgs('get_collection_photos', {})).toContain("required property 'collection_name'");
+    expect(validateToolArgs('get_collection_photos', { collection_name: 'Trip', offset: -1 })).toContain('offset');
+  });
+
   it('reports a missing required field', () => {
     const msg = validateToolArgs('set_rating', { photo_ids: [914] });
 
