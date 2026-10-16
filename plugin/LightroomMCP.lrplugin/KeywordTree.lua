@@ -75,9 +75,9 @@ end
 -- Children of `parent` (or the top level) keyed by folded name, the first
 -- match winning as in findChild. One pass for many lookups: findChild reads
 -- every sibling's name again for each one.
-function KeywordTree.childIndex(catalog, parent)
+local function indexByName(keywords)
     local index = {}
-    for _, child in ipairs(KeywordTree.children(catalog, parent)) do
+    for _, child in ipairs(keywords) do
         local folded = KeywordTree.fold(child:getName())
         if index[folded] == nil then
             index[folded] = child
@@ -86,17 +86,32 @@ function KeywordTree.childIndex(catalog, parent)
     return index
 end
 
--- The top-level index, kept between calls: building it reads every top-level
--- keyword's name, which takes seconds on a catalog with thousands of them.
--- Rebuilt when the number of top-level keywords changes and after
--- forgetTopIndex. A rename or move in Lightroom leaves the count alone, so
--- findTopLevel checks each hit.
+function KeywordTree.childIndex(catalog, parent)
+    return indexByName(KeywordTree.children(catalog, parent))
+end
+
 local topCache = nil
 
+local function sameMembers(cache, keywords)
+    if cache.count ~= #keywords then
+        return false
+    end
+    for _, keyword in ipairs(keywords) do
+        if not cache.members[keyword] then
+            return false
+        end
+    end
+    return true
+end
+
 function KeywordTree.topIndex(catalog)
-    local count = #KeywordTree.children(catalog, nil)
-    if not topCache or topCache.count ~= count then
-        topCache = { count = count, index = KeywordTree.childIndex(catalog, nil) }
+    local keywords = KeywordTree.children(catalog, nil)
+    if not topCache or not sameMembers(topCache, keywords) then
+        local members = {}
+        for _, keyword in ipairs(keywords) do
+            members[keyword] = true
+        end
+        topCache = { count = #keywords, members = members, index = indexByName(keywords) }
     end
     return topCache.index
 end

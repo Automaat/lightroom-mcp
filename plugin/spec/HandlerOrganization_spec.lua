@@ -486,6 +486,23 @@ describe("HandlerOrganization.setKeywords", function()
             assert.are.equal(2, reads.k01)
         end)
 
+        it("adds a keyword deleted and created again under the same name", function()
+            local top = counted()
+            local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
+            local catalog, Handler = setup({ photos = { p1 }, keywords = top })
+
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+            local deleted = top[20]
+            local recreated = helper.fakeKeyword("k20")
+            catalog:getKeywords()[20] = recreated
+            deleted.getName = function() error("keyword deleted") end
+            deleted.getParent = function() error("keyword deleted") end
+            Handler.setKeywords({ photo_ids = { "1" }, add_keywords = { "k20" } })
+
+            assert.are.equal(0, #catalog.getCreatedKeywords())
+            assert.are.equal(recreated, added(p1)[2])
+        end)
+
         it("does not add a keyword renamed since the index was built", function()
             local top = counted()
             local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })

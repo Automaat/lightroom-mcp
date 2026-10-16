@@ -51,6 +51,21 @@ describe("KeywordTree.topIndex", function()
         assert.are.same({ a = 2, b = 2 }, reads)
     end)
 
+    it("rebuilds when a top-level keyword is replaced by another of the same count", function()
+        local top = { helper.fakeKeyword("a"), helper.fakeKeyword("b") }
+        local reads = helper.countNameReads(top)
+        local catalog, KeywordTree = setup(top)
+
+        KeywordTree.topIndex(catalog)
+        local c = helper.fakeKeyword("c")
+        catalog:getKeywords()[1] = c
+        local index = KeywordTree.topIndex(catalog)
+
+        assert.are.equal(c, index.c)
+        assert.is_nil(index.a)
+        assert.are.equal(2, reads.b)
+    end)
+
     it("rebuilds after forgetTopIndex", function()
         local top = { helper.fakeKeyword("a"), helper.fakeKeyword("b") }
         local reads = helper.countNameReads(top)
@@ -80,6 +95,19 @@ describe("KeywordTree.findTopLevel", function()
         assert.is_nil(KeywordTree.findTopLevel(catalog, "nope"))
         assert.is_nil(KeywordTree.findTopLevel(catalog, "nope"))
         assert.are.equal(1, reads.a)
+    end)
+
+    it("finds a keyword deleted and created again under the same name", function()
+        local summer = helper.fakeKeyword("summer")
+        local catalog, KeywordTree = setup({ summer, helper.fakeKeyword("winter") })
+
+        KeywordTree.findTopLevel(catalog, "summer")
+        local recreated = helper.fakeKeyword("summer")
+        catalog:getKeywords()[1] = recreated
+        summer.getName = function() error("keyword deleted") end
+        summer.getParent = function() error("keyword deleted") end
+
+        assert.are.equal(recreated, KeywordTree.findTopLevel(catalog, "summer"))
     end)
 
     it("misses a keyword renamed since the index was built", function()
