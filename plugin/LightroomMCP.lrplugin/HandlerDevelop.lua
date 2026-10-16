@@ -572,11 +572,12 @@ function DevelopHandler.createDevelopPreset(args)
 
     local catalog = LrApplication.activeCatalog()
     local sourceSettings
+    -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
+    local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
+    if not photo then
+        error("Photo not found: " .. args.photo_id)
+    end
     catalog:withReadAccessDo(function()
-        local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
-        if not photo then
-            error("Photo not found: " .. args.photo_id)
-        end
         sourceSettings = photo:getDevelopSettings()
     end)
 
@@ -709,11 +710,12 @@ function DevelopHandler.copyDevelopSettings(args)
     local catalog = LrApplication.activeCatalog()
     local sourceSettings
 
+    -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
+    local source = PhotoLookup.resolveOne(catalog, args.source_id)
+    if not source then
+        error("Source photo not found: " .. args.source_id)
+    end
     catalog:withReadAccessDo(function()
-        local source = PhotoLookup.resolveOne(catalog, args.source_id)
-        if not source then
-            error("Source photo not found: " .. args.source_id)
-        end
         sourceSettings = source:getDevelopSettings()
     end)
 

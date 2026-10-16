@@ -1,14 +1,21 @@
 local function fakePhoto(id, path, state)
+    local meta = { path = path }
     return {
         localIdentifier = id,
+        __path = path,
+        __meta = meta,
         getRawMetadata = function(_, key)
-            if key == 'path' then
-                if state then state.pathReads = state.pathReads + 1 end
-                return path
-            end
-            return nil
+            if key == 'path' and state then state.pathReads = state.pathReads + 1 end
+            return meta[key]
         end,
     }
+end
+
+-- Makes `copies` virtual copies of `master`, as Lightroom reports them: each
+-- copy reports the master's path.
+local function linkCopies(master, copies)
+    master.__meta.virtualCopies = copies
+    for _, copy in ipairs(copies) do copy.__meta.masterPhoto = master end
 end
 
 -- Counts how many photos the scan actually touches. The scan reads
@@ -18,18 +25,30 @@ local function countingPhoto(id, path, state)
     local inner = fakePhoto(id, path, state)
     return setmetatable({}, {
         __index = function(_, key)
-            if key == 'localIdentifier' then state.visits = state.visits + 1 end
+            if key == 'localIdentifier' then
+                state.visits = state.visits + 1
+                state.furthest = math.max(state.furthest or 0, id)
+            end
             return inner[key]
         end,
     })
 end
 
 local function fakeCatalog(photos)
-    local state = { getAllPhotosCalls = 0, pathReads = 0 }
+    local state = { getAllPhotosCalls = 0, pathReads = 0, findPhotoByPathCalls = 0 }
     local catalog = {
         getAllPhotos = function()
             state.getAllPhotosCalls = state.getAllPhotosCalls + 1
             return photos
+        end,
+        -- One photo per path: for a master and its virtual copies, whichever
+        -- comes first here.
+        findPhotoByPath = function(_, path)
+            state.findPhotoByPathCalls = state.findPhotoByPathCalls + 1
+            for _, p in ipairs(photos) do
+                if p.__path == path then return p end
+            end
+            return nil
         end,
     }
     return catalog, state
@@ -56,7 +75,7 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(1, state.getAllPhotosCalls)
     end)
 
-    it("resolves by path", function()
+    it("resolves by path without scanning the catalog", function()
         local p1 = fakePhoto(1, "/a.jpg")
         local p2 = fakePhoto(2, "/b.jpg")
         local catalog, state = fakeCatalog({ p1, p2 })
@@ -65,7 +84,7 @@ describe("PhotoLookup.resolveMany", function()
 
         assert.are.equal(p1, r[1].photo)
         assert.are.equal(p2, r[2].photo)
-        assert.are.equal(1, state.getAllPhotosCalls)
+        assert.are.equal(0, state.getAllPhotosCalls)
     end)
 
     it("resolves a mixed batch (some by id, some by path)", function()
@@ -112,8 +131,29 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(0, #r)
     end)
 
-    -- The scan runs per call on every handler that resolves ids, so on a large
-    -- catalog its cost is the handler's cost. These two pin that down.
+    it("looks each distinct path up once", function()
+        local p1 = fakePhoto(1, "/a.jpg")
+        local catalog, state = fakeCatalog({ p1 })
+
+        local r = PhotoLookup.resolveMany(catalog, { "/a.jpg", "/a.jpg" })
+
+        assert.are.equal(p1, r[1].photo)
+        assert.are.equal(p1, r[2].photo)
+        assert.are.equal(1, state.findPhotoByPathCalls)
+    end)
+
+    it("does not resolve a path that differs only in case", function()
+        local p1 = fakePhoto(1, "/a.jpg")
+        local catalog, _ = fakeCatalog({ p1 })
+        -- Lightroom may match a path ignoring case; the full scan this
+        -- replaced compared exactly.
+        catalog.findPhotoByPath = function() return p1 end
+
+        assert.is_nil(PhotoLookup.resolveOne(catalog, "/A.JPG"))
+    end)
+
+    -- The lookup runs per call on every handler that resolves ids, so on a
+    -- large catalog its cost is the handler's cost. These pin that down.
     it("never reads paths when every id is numeric", function()
         local state = { pathReads = 0 }
         local photos = {}
@@ -137,6 +177,32 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(2, state.visits)
     end)
 
+    it("reads only the requested photo's path when resolving a path", function()
+        local state = { pathReads = 0, visits = 0 }
+        local photos = {}
+        for i = 1, 100 do photos[i] = countingPhoto(i, "/" .. i .. ".jpg", state) end
+        local catalog = fakeCatalog(photos)
+
+        local r = PhotoLookup.resolveMany(catalog, { "/2.jpg" })
+
+        assert.are.equal(photos[2], r[1].photo)
+        assert.are.equal(1, state.pathReads)
+        assert.are.equal(0, state.visits)
+    end)
+
+    it("does not scan the catalog for a path that matches nothing", function()
+        local state = { pathReads = 0 }
+        local photos = {}
+        for i = 1, 10 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        local catalog, catalogState = fakeCatalog(photos)
+
+        local r = PhotoLookup.resolveMany(catalog, { "/missing.jpg" })
+
+        assert.is_nil(r[1].photo)
+        assert.are.equal(0, state.pathReads)
+        assert.are.equal(0, catalogState.getAllPhotosCalls)
+    end)
+
     -- Paths are not unique: a virtual copy reports its master's source path.
     -- Resolving one to the FIRST match instead of the last would silently hand
     -- a path-addressed write tool a different photo than the catalog's own
@@ -144,6 +210,7 @@ describe("PhotoLookup.resolveMany", function()
     it("resolves a duplicate path to the last matching photo", function()
         local master = fakePhoto(1, "/shared.nef")
         local virtualCopy = fakePhoto(2, "/shared.nef")
+        linkCopies(master, { virtualCopy })
         local catalog, _ = fakeCatalog({ master, virtualCopy })
 
         local r = PhotoLookup.resolveMany(catalog, { "/shared.nef" })
@@ -151,31 +218,31 @@ describe("PhotoLookup.resolveMany", function()
         assert.are.equal(virtualCopy, r[1].photo)
     end)
 
-    it("scans the whole catalog when a path is requested, even after a match", function()
-        local state = { pathReads = 0, visits = 0 }
-        local photos = {}
-        for i = 1, 100 do photos[i] = countingPhoto(i, "/" .. i .. ".jpg", state) end
-        local catalog = fakeCatalog(photos)
+    it("takes the last in catalog order, whichever photo the path lookup returns", function()
+        local master = fakePhoto(1, "/shared.nef")
+        local copyA = fakePhoto(2, "/shared.nef")
+        local copyB = fakePhoto(3, "/shared.nef")
+        linkCopies(master, { copyA, copyB })
+        -- findPhotoByPath returns copyB, the first here; copyA comes last.
+        local catalog = fakeCatalog({ copyB, master, copyA })
 
-        -- The match is the 2nd photo, but a later one could still claim the
-        -- same path, so stopping there would be a guess.
-        local r = PhotoLookup.resolveMany(catalog, { "/2.jpg" })
-
-        assert.are.equal(photos[2], r[1].photo)
-        assert.are.equal(100, state.pathReads)
-        assert.are.equal(100, state.visits)
+        assert.are.equal(copyA, PhotoLookup.resolveOne(catalog, "/shared.nef"))
     end)
 
-    it("still scans the whole catalog for an id that matches nothing", function()
-        local state = { pathReads = 0 }
+    it("stops the scan once it has seen a master and all its virtual copies", function()
+        local state = { pathReads = 0, visits = 0 }
         local photos = {}
-        for i = 1, 10 do photos[i] = fakePhoto(i, "/" .. i .. ".jpg", state) end
+        for i = 1, 100 do
+            local path = (i == 2 or i == 3) and "/shared.nef" or ("/" .. i .. ".jpg")
+            photos[i] = countingPhoto(i, path, state)
+        end
+        linkCopies(photos[2], { photos[3] })
         local catalog = fakeCatalog(photos)
 
-        local r = PhotoLookup.resolveMany(catalog, { "/missing.jpg" })
+        local r = PhotoLookup.resolveMany(catalog, { "/shared.nef" })
 
-        assert.is_nil(r[1].photo)
-        assert.are.equal(10, state.pathReads)
+        assert.are.equal(photos[3], r[1].photo)
+        assert.are.equal(3, state.furthest)
     end)
 end)
 

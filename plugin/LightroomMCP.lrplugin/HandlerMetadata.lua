@@ -53,13 +53,13 @@ function MetadataHandler.getPhotoMetadata(args)
     local catalog = LrApplication.activeCatalog()
     local photoData = nil
 
+    -- Resolved OUTSIDE the read gate: the lookup runs catalog queries.
+    local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
+    if not photo then
+        error("Photo not found: " .. args.photo_id)
+    end
+
     catalog:withReadAccessDo(function()
-        local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
-
-        if not photo then
-            error("Photo not found: " .. args.photo_id)
-        end
-
         -- Get keywords
         -- `keywords` stays leaf names; `keywordPaths` is the same list as
         -- full parent-first paths, which is what tells two keywords of the

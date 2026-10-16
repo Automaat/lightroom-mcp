@@ -58,6 +58,7 @@ for _, key in ipairs({
     "fileName", "fileSize", "fileFormat", "path", "dimensions",
     "rating", "colorNameForLabel", "pickStatus", "keywords",
     "uuid", "isVirtualCopy", "croppedDimensions", "dateTimeOriginalISO8601",
+    "masterPhoto", "virtualCopies",
     -- EXIF
     "dateTimeOriginal", "dateTimeDigitized", "cameraMake", "cameraModel",
     "cameraSerialNumber", "lens", "isoSpeedRating", "focalLength",
@@ -253,8 +254,8 @@ function M.fakeCatalog(opts)
     local undoInWrite = {}
     local readAccessCount = 0
     local writeAccessCount = 0
-    -- Tracks whether a catalog query (getTargetPhotos/findPhotos/getAllPhotos)
-    -- was invoked while a withReadAccessDo gate was open. The Windows deadlock
+    -- Tracks whether a catalog query (getTargetPhotos/findPhotos/getAllPhotos/
+    -- findPhotoByPath) was invoked while a withReadAccessDo gate was open. The Windows deadlock
     -- (#134/#124) is exactly that nesting, so handlers must keep their query
     -- OUTSIDE the gate; specs assert getQueriedInsideReadAccess() == false.
     local insideReadAccess = false
@@ -311,6 +312,13 @@ function M.fakeCatalog(opts)
     return {
         getAllPhotos = function() markQuery() return photos end,
         getTargetPhotos = function() markQuery() return opts.targetPhotos or photos end,
+        findPhotoByPath = function(_, path)
+            markQuery()
+            for _, photo in ipairs(photos) do
+                if photo:getRawMetadata('path') == path then return photo end
+            end
+            return nil
+        end,
         findPhotos = function(_, opts)
             markQuery()
             local desc = opts and opts.searchDesc or {}

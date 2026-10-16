@@ -40,22 +40,19 @@ function ExportHandler.exportPhotos(args)
 
     local catalog = LrApplication.activeCatalog()
 
-    -- Resolve photos under read access, then RELEASE the lock before
-    -- exporting. doExportOnCurrentTask() can run for minutes on a large
-    -- batch; holding catalog read access for that whole span blocks every
-    -- other handler (list_collections, get_selected_photos, ...) and on
-    -- macOS wedged the bridge until a manual restart (issue #128).
-    -- LrExportSession acquires its own catalog access during rendering, so
-    -- the lock is only needed for the lookup itself.
+    -- Resolved without read access: the lookup runs catalog queries, which
+    -- must not nest inside withReadAccessDo. Never hold read access across
+    -- the export either: doExportOnCurrentTask() can run for minutes on a
+    -- large batch, and holding it for that span blocks every other handler
+    -- (list_collections, get_selected_photos, ...) and on macOS wedged the
+    -- bridge until a manual restart (issue #128). LrExportSession acquires
+    -- its own catalog access during rendering.
     local photosToExport = {}
-    catalog:withReadAccessDo(function()
-        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
-        for _, entry in ipairs(resolved) do
-            if entry.photo then
-                table.insert(photosToExport, entry.photo)
-            end
+    for _, entry in ipairs(PhotoLookup.resolveMany(catalog, args.photo_ids)) do
+        if entry.photo then
+            table.insert(photosToExport, entry.photo)
         end
-    end)
+    end
 
     if #photosToExport == 0 then
         error("No photos found to export")

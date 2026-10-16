@@ -100,6 +100,16 @@ describe("HandlerExport.exportPhotos", function()
         end)
     end)
 
+    it("resolves photos OUTSIDE the read-access gate", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local catalog, Handler = setup({ photos = { p } })
+
+        local r = Handler.exportPhotos({ photo_ids = { "/a.jpg" }, destination = "/out" })
+
+        assert.are.equal(1, r.exported)
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
     it("runs the export after releasing catalog read access", function()
         -- Holding read access for the whole export wedged the bridge on
         -- macOS (issue #128). The lock must be released before
