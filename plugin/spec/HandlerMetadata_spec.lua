@@ -158,6 +158,15 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.equal("/match-by-path.jpg", r.path)
     end)
 
+    it("resolves the photo OUTSIDE the read-access gate", function()
+        local photo = helper.fakePhoto({ id = "99", path = "/p.jpg", fileName = "p.jpg" })
+        local catalog, Handler = setup({ photo })
+
+        Handler.getPhotoMetadata({ photo_id = "/p.jpg" })
+
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
     it("errors when photo not found", function()
         local _, Handler = setup({})
         assert.has_error(function()

@@ -282,7 +282,7 @@ end)
 describe("HandlerDevelop.createDevelopPreset", function()
     it("creates a versioned plugin checkpoint from explicit photo settings", function()
         local photo = helper.fakePhoto({
-            id = "source",
+            id = "7",
             path = "/raw/source.nef",
             developSettings = {
                 Exposure2012 = 0.5,
@@ -294,7 +294,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         local _, Handler, state = setup({ photos = { photo } })
 
         local r = Handler.createDevelopPreset({
-            photo_id = "source",
+            photo_id = "7",
             preset_name = "John Warm v2",
             settings = { "Contrast2012", "ToneCurvePV2012" },
         })
@@ -309,9 +309,22 @@ describe("HandlerDevelop.createDevelopPreset", function()
         }, state.pluginPresets[1]:getSetting())
     end)
 
+    it("resolves the source photo OUTSIDE the read-access gate", function()
+        local photo = helper.fakePhoto({
+            id = "7", path = "/raw/source.nef", developSettings = { Contrast2012 = 12 },
+        })
+        local catalog, Handler = setup({ photos = { photo } })
+
+        Handler.createDevelopPreset({
+            photo_id = "/raw/source.nef", preset_name = "Contrast v1", settings = { "Contrast2012" },
+        })
+
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
     it("captures curves Lightroom stores off the 0-255 anchors", function()
         local photo = helper.fakePhoto({
-            id = "source",
+            id = "7",
             path = "/raw/source.nef",
             developSettings = {
                 ToneCurvePV2012 = { 17, 0, 127.5, 130.2, 255, 240 },
@@ -320,7 +333,7 @@ describe("HandlerDevelop.createDevelopPreset", function()
         local _, Handler, state = setup({ photos = { photo } })
 
         local r = Handler.createDevelopPreset({
-            photo_id = "source",
+            photo_id = "7",
             preset_name = "Clipped v1",
             settings = { "ToneCurvePV2012" },
         })
@@ -335,18 +348,18 @@ describe("HandlerDevelop.createDevelopPreset", function()
     it("refuses duplicate names and missing source settings", function()
         local existing = fakePreset("Existing")
         local photo = helper.fakePhoto({
-            id = "source", path = "/raw/source.nef", developSettings = { Exposure2012 = 0.5 },
+            id = "7", path = "/raw/source.nef", developSettings = { Exposure2012 = 0.5 },
         })
         local _, Handler = setup({ photos = { photo }, pluginPresets = { existing } })
 
         assert.has_error(function()
             Handler.createDevelopPreset({
-                photo_id = "source", preset_name = "Existing", settings = { "Exposure2012" },
+                photo_id = "7", preset_name = "Existing", settings = { "Exposure2012" },
             })
         end, "Plugin preset already exists; use a versioned preset_name")
         assert.has_error(function()
             Handler.createDevelopPreset({
-                photo_id = "source", preset_name = "New", settings = { "Contrast2012" },
+                photo_id = "7", preset_name = "New", settings = { "Contrast2012" },
             })
         end, "Source photo has no develop setting: Contrast2012")
     end)
@@ -532,6 +545,19 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
 
         assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("resolves the source OUTSIDE the read-access gate", function()
+        local source = helper.fakePhoto({
+            id = "10", path = "/s.jpg",
+            developSettings = { Exposure2012 = 1.0 },
+        })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
+        local catalog, Handler = setup({ photos = { source, t1 } })
+
+        Handler.copyDevelopSettings({ source_id = "/s.jpg", target_ids = { "11" } })
+
+        assert.is_false(catalog.getQueriedInsideReadAccess())
     end)
 
     it("copies all settings from source to targets", function()
