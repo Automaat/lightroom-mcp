@@ -1,4 +1,5 @@
 import net from "node:net";
+import { LineBuffer } from "./line-buffer.js";
 
 export interface PluginSocketOptions {
   port: number;
@@ -14,7 +15,7 @@ export interface PluginSocketOptions {
 export class PluginSocket {
   private socket: net.Socket | null = null;
   private connected = false;
-  private buffer = "";
+  private readonly lines = new LineBuffer();
   private reconnectTimer: NodeJS.Timeout | null = null;
   private stopped = false;
 
@@ -51,14 +52,7 @@ export class PluginSocket {
     });
 
     sock.on("data", (chunk: string) => {
-      if (!this.onLine) return;
-      this.buffer += chunk;
-      let idx: number;
-      while ((idx = this.buffer.indexOf("\n")) !== -1) {
-        const line = this.buffer.slice(0, idx).trim();
-        this.buffer = this.buffer.slice(idx + 1);
-        if (line) this.onLine(line);
-      }
+      if (this.onLine) this.lines.push(chunk, this.onLine);
     });
 
     sock.on("error", (err: NodeJS.ErrnoException) => {
@@ -71,7 +65,7 @@ export class PluginSocket {
       const wasConnected = this.connected;
       this.connected = false;
       this.socket = null;
-      this.buffer = "";
+      this.lines.clear();
       if (wasConnected) this.log(`[${this.label}] disconnected, reconnecting`);
       if (wasConnected) this.onDisconnect?.();
       this.scheduleReconnect();
