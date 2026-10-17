@@ -174,6 +174,13 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         end)
     end)
 
+    it("reports an unknown numeric id as not found", function()
+        local _, Handler = setup({ helper.fakePhoto({ id = 1, path = "/p.jpg" }) })
+        local ok, err = pcall(Handler.getPhotoMetadata, { photo_id = "999999999" })
+        assert.is_false(ok)
+        assert.is_not_nil(tostring(err):find("Photo not found: 999999999", 1, true))
+    end)
+
     it("errors without photo_id", function()
         local _, Handler = setup({})
         assert.has_error(function() Handler.getPhotoMetadata({}) end)

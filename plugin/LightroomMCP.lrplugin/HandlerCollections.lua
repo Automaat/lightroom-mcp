@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
+local PhotoSummary = require 'PhotoSummary'
 
 local CollectionsHandler = {}
 
@@ -18,19 +19,19 @@ function CollectionsHandler.listCollections(args)
     catalog:withReadAccessDo(function()
         for _, collection in ipairs(catalog:getChildCollections()) do
             table.insert(all, {
+                collection = collection,
                 name = collection:getName(),
                 type = collection:type(),
-                photoCount = #collection:getPhotos(),
             })
         end
 
         local function addCollectionsFromSet(collSet, prefix)
             for _, coll in ipairs(collSet:getChildCollections()) do
                 table.insert(all, {
+                    collection = coll,
                     name = prefix .. coll:getName(),
                     parent = collSet:getName(),
                     type = coll:type(),
-                    photoCount = #coll:getPhotos(),
                 })
             end
             for _, childSet in ipairs(collSet:getChildCollectionSets()) do
@@ -47,7 +48,10 @@ function CollectionsHandler.listCollections(args)
     local last = math.min(offset + limit, total)
     local slice = {}
     for i = offset + 1, last do
-        table.insert(slice, all[i])
+        local entry = all[i]
+        entry.photoCount = #(entry.collection:getPhotos() or {})
+        entry.collection = nil
+        table.insert(slice, entry)
     end
 
     Log.info(string.format("Found %d collections, returning %d (offset=%d, limit=%d)",
@@ -385,16 +389,6 @@ function CollectionsHandler.removeFromCollection(args)
     }
 end
 
-local function buildPhotoResult(photo)
-    return {
-        id = photo.localIdentifier,
-        path = photo:getRawMetadata('path'),
-        filename = photo:getFormattedMetadata('fileName'),
-        rating = photo:getRawMetadata('rating'),
-        dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
-    }
-end
-
 -- Returns a page of a collection's photos, regular or smart, in the shape
 -- search_photos uses.
 function CollectionsHandler.getCollectionPhotos(args)
@@ -404,7 +398,7 @@ function CollectionsHandler.getCollectionPhotos(args)
     end
 
     -- floor: a fractional offset would index photos[i] with a non-integer key
-    -- (always nil) and crash buildPhotoResult(nil).
+    -- (always nil) and crash the row builder.
     local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
     local offset = math.floor(tonumber(args.offset) or 0)
@@ -436,12 +430,7 @@ function CollectionsHandler.getCollectionPhotos(args)
     local total = #photos
 
     local last = math.min(offset + limit, total)
-    local results = {}
-    catalog:withReadAccessDo(function()
-        for i = offset + 1, last do
-            table.insert(results, buildPhotoResult(photos[i]))
-        end
-    end)
+    local results = PhotoSummary.page(catalog, photos, offset + 1, last)
 
     Log.info(string.format("Collection %s has %d photos, returning %d (offset=%d, limit=%d)",
         args.collection_name, total, #results, offset, limit))

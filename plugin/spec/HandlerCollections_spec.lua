@@ -45,6 +45,28 @@ describe("HandlerCollections.listCollections", function()
         assert.is_false(r2.has_more)
     end)
 
+    it("reads members of the returned page only, outside the read gate", function()
+        local cols = {}
+        local reads = {}
+        local catalog
+        for i = 1, 10 do
+            local coll = helper.fakeCollection("c" .. i, { i }, { smart = i % 2 == 0 })
+            coll.getPhotos = function()
+                table.insert(reads, { name = "c" .. i, gated = catalog:isInsideReadAccess() })
+                return { i }
+            end
+            table.insert(cols, coll)
+        end
+        local Handler
+        catalog, Handler = setup({ collections = cols })
+
+        local r = Handler.listCollections({ limit = 2, offset = 4 })
+
+        assert.are.equal(10, r.count)
+        assert.are.same({ { name = "c5", gated = false }, { name = "c6", gated = false } }, reads)
+        assert.are.same({ name = "c6", type = "LrCollection", photoCount = 1 }, r.collections[2])
+    end)
+
     it("descends into collection sets and prefixes names", function()
         local nested = helper.fakeCollection("Inside", {})
         local outerSet = {

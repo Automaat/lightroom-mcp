@@ -87,6 +87,9 @@ end
 -- Build a fake photo with the given metadata table.
 -- meta keys correspond to keys passed to getRawMetadata / getFormattedMetadata / localIdentifier.
 function M.fakePhoto(meta)
+    if meta.uuid == nil and not meta.__dangling then
+        meta.uuid = "uuid-" .. tostring(meta.localIdentifier or meta.id or "photo-id")
+    end
     return {
         localIdentifier = meta.localIdentifier or meta.id or "photo-id",
         getRawMetadata = function(_, key) return readMetadata(meta, key) end,
@@ -311,6 +314,13 @@ function M.fakeCatalog(opts)
 
     return {
         getAllPhotos = function() markQuery() return photos end,
+        getPhotoByLocalId = function(_, id)
+            markQuery()
+            for _, photo in ipairs(photos) do
+                if tostring(photo.localIdentifier) == tostring(id) then return photo end
+            end
+            return M.fakePhoto({ id = id, __dangling = true })
+        end,
         getTargetPhotos = function() markQuery() return opts.targetPhotos or photos end,
         findPhotoByPath = function(_, path)
             markQuery()
@@ -332,6 +342,24 @@ function M.fakeCatalog(opts)
                     end
                 end
                 if ok then table.insert(out, photo) end
+            end
+            return out
+        end,
+        batchGetRawMetadata = function(_, list, keys)
+            local out = {}
+            for _, photo in ipairs(list) do
+                local values = {}
+                for _, key in ipairs(keys) do values[key] = photo:getRawMetadata(key) end
+                out[photo] = values
+            end
+            return out
+        end,
+        batchGetFormattedMetadata = function(_, list, keys)
+            local out = {}
+            for _, photo in ipairs(list) do
+                local values = {}
+                for _, key in ipairs(keys) do values[key] = photo:getFormattedMetadata(key) end
+                out[photo] = values
             end
             return out
         end,

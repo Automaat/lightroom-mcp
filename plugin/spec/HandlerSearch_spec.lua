@@ -105,7 +105,7 @@ describe("HandlerSearch.searchPhotos", function()
 end)
 
 describe("HandlerSearch.searchPhotos pagination", function()
-    local Handler
+    local Handler, catalog
 
     before_each(function()
         local photos = {}
@@ -118,7 +118,7 @@ describe("HandlerSearch.searchPhotos pagination", function()
                 dateTimeOriginal = "2024-06-01",
             }))
         end
-        local catalog = helper.fakeCatalog({ photos = photos })
+        catalog = helper.fakeCatalog({ photos = photos })
         helper.installImport({
             LrApplication = { activeCatalog = function() return catalog end },
             LrLogger = helper.defaultLrLogger(),
@@ -157,5 +157,25 @@ describe("HandlerSearch.searchPhotos pagination", function()
         assert.are.equal(250, r.count)
         assert.are.equal(0, #r.photos)
         assert.is_false(r.has_more)
+    end)
+
+    it("reads a page's metadata in one batch call per kind", function()
+        local calls = {}
+        for _, name in ipairs({ "batchGetRawMetadata", "batchGetFormattedMetadata" }) do
+            local inner = catalog[name]
+            catalog[name] = function(self, photos, keys)
+                calls[#calls + 1] = { name = name, size = #photos, first = photos[1].localIdentifier }
+                return inner(self, photos, keys)
+            end
+        end
+
+        local r = Handler.searchPhotos({ limit = 50, offset = 100 })
+
+        assert.are.equal(50, #r.photos)
+        assert.are.same({
+            { name = "batchGetRawMetadata", size = 50, first = "101" },
+            { name = "batchGetFormattedMetadata", size = 50, first = "101" },
+        }, calls)
+        assert.are.equal("/p/101.jpg", r.photos[1].path)
     end)
 end)

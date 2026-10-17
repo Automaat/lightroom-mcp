@@ -1,5 +1,13 @@
 local PhotoLookup = {}
 
+local function directLocalId(id)
+    if type(id) == "number" and id == math.floor(id) then return id end
+    if type(id) == "string" and id:match("^%d+$") and tostring(tonumber(id)) == id then
+        return tonumber(id)
+    end
+    return nil
+end
+
 -- Resolve a list of photo identifiers to photo objects.
 -- Each id may be a numeric local identifier (string or number) or a file path.
 -- Returns a parallel array:
@@ -7,9 +15,6 @@ local PhotoLookup = {}
 --
 -- Cost matters: on a large catalog this lookup dominates every handler that
 -- resolves ids, so it does the least work it can.
---
--- A numeric id needs a getAllPhotos pass (LrCatalog has no
--- findPhotoByLocalIdentifier), which stops as soon as the last id is found.
 --
 -- A path is looked up with catalog:findPhotoByPath instead of reading every
 -- photo's path: that was one getRawMetadata call per photo, ~95 s on a large
@@ -23,6 +28,10 @@ local PhotoLookup = {}
 -- copies joins the pass, which stops once it has seen all of them.
 function PhotoLookup.resolveMany(catalog, photoIds)
     local results = {}
+    local canLookUpDirectly = type(catalog.getPhotoByLocalId) == "function"
+    local byLocalId = {}
+    local unverified = {}
+    local keyOf = {}
     -- Local ids the getAllPhotos pass has yet to see.
     local pending = {}
     local remaining = 0
@@ -40,7 +49,18 @@ function PhotoLookup.resolveMany(catalog, photoIds)
 
     for i, id in ipairs(photoIds) do
         results[i] = { id = id, photo = nil }
-        if tonumber(id) ~= nil then
+        local direct = canLookUpDirectly and directLocalId(id)
+        if direct then
+            local key = tostring(id)
+            if byLocalId[key] == nil then
+                byLocalId[key] = false
+                local photo = catalog:getPhotoByLocalId(direct)
+                if photo then
+                    unverified[#unverified + 1] = photo
+                    keyOf[photo] = key
+                end
+            end
+        elseif tonumber(id) ~= nil then
             await(tostring(id))
         elseif byPath[id] == nil then
             byPath[id] = false
@@ -66,14 +86,24 @@ function PhotoLookup.resolveMany(catalog, photoIds)
 
     -- localIdentifier is numeric in production but tests pass strings --
     -- normalize via tostring.
-    local byLocalId = {}
+    if #unverified > 0 then
+        local raw = catalog:batchGetRawMetadata(unverified, { 'uuid' }) or {}
+        for _, photo in ipairs(unverified) do
+            if (raw[photo] or {}).uuid ~= nil then
+                byLocalId[keyOf[photo]] = photo
+            end
+        end
+    end
+
     if remaining > 0 then
+        local seen = {}
         for _, p in ipairs(catalog:getAllPhotos()) do
             local lid = p.localIdentifier
             if lid ~= nil then
                 local key = tostring(lid)
-                if byLocalId[key] == nil then
-                    byLocalId[key] = p
+                if not seen[key] then
+                    seen[key] = true
+                    if byLocalId[key] == nil then byLocalId[key] = p end
                     -- Overwritten by each later sharer: the last one wins.
                     if sharers[key] then byPath[sharers[key]] = p end
                     if pending[key] then
@@ -88,7 +118,7 @@ function PhotoLookup.resolveMany(catalog, photoIds)
 
     for i, id in ipairs(photoIds) do
         if tonumber(id) ~= nil then
-            results[i].photo = byLocalId[tostring(id)]
+            results[i].photo = byLocalId[tostring(id)] or nil
         else
             results[i].photo = byPath[id] or nil
         end

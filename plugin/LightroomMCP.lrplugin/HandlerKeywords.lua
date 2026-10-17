@@ -63,25 +63,20 @@ function KeywordsHandler.listKeywords(args)
             end
         end
 
-        KeywordTree.walk(catalog, root, function(keyword, path)
-            local name = keyword:getName()
-            -- Synonyms are only read when something needs them.
-            local synonyms = nil
-            if query then
-                synonyms = keyword:getSynonyms() or {}
-                if not matches(name, synonyms) then return end
-            end
+        KeywordTree.walk(catalog, root, function(keyword, path, attributes)
+            local name = attributes.keywordName or keyword:getName()
+            local synonyms = attributes.synonyms or {}
+            if query and not matches(name, synonyms) then return end
 
             total = total + 1
             if total > offset and #slice < limit then
                 if pathsOnly then
                     table.insert(slice, path)
                 else
-                    local attributes = keyword:getAttributes() or {}
                     table.insert(slice, {
                         path = path,
                         name = name,
-                        synonyms = synonyms or keyword:getSynonyms() or {},
+                        synonyms = synonyms,
                         includeOnExport = attributes.includeOnExport,
                     })
                 end
