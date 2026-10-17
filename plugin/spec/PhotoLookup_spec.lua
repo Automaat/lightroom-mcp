@@ -303,12 +303,26 @@ describe("PhotoLookup.resolveMany with getPhotoByLocalId", function()
         assert.are.equal(1, state.directCalls)
     end)
 
-    for _, id in ipairs({ "1.0", "0x1", " 1" }) do
+    for _, id in ipairs({ "1.0", "0x1", " 1", "01", "001" }) do
         it("does not resolve the non-canonical id '" .. id .. "'", function()
             local _, catalog, state = setup(3)
 
             assert.is_nil(PhotoLookup.resolveOne(catalog, id))
             assert.are.equal(0, state.directCalls)
+        end)
+    end
+
+    for _, ids in ipairs({ { "1", "01" }, { "01", "1" }, { 1, "001" } }) do
+        local label = tostring(ids[1]) .. "' and '" .. tostring(ids[2])
+        it("resolves only the canonical id of '" .. label .. "'", function()
+            local photos, catalog = setup(3)
+
+            local r = PhotoLookup.resolveMany(catalog, ids)
+
+            for i, id in ipairs(ids) do
+                local canonical = type(id) == "number" or id == "1"
+                assert.are.equal(canonical and photos[1] or nil, r[i].photo)
+            end
         end)
     end
 

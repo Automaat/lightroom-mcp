@@ -2,7 +2,9 @@ local PhotoLookup = {}
 
 local function directLocalId(id)
     if type(id) == "number" and id == math.floor(id) then return id end
-    if type(id) == "string" and id:match("^%d+$") then return tonumber(id) end
+    if type(id) == "string" and id:match("^%d+$") and tostring(tonumber(id)) == id then
+        return tonumber(id)
+    end
     return nil
 end
 
