@@ -1,6 +1,7 @@
 local LrApplication = import 'LrApplication'
 
 local Log = require 'Log'
+local PhotoSummary = require 'PhotoSummary'
 
 local SearchHandler = {}
 
@@ -75,25 +76,14 @@ local function buildSearchDesc(args)
     return desc
 end
 
-local function buildResult(photo)
-    return {
-        id = photo.localIdentifier,
-        path = photo:getRawMetadata('path'),
-        filename = photo:getFormattedMetadata('fileName'),
-        rating = photo:getRawMetadata('rating'),
-        dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
-    }
-end
-
 function SearchHandler.searchPhotos(args)
     local catalog = LrApplication.activeCatalog()
-    local results = {}
     local searchDesc = buildSearchDesc(args)
     local hasFilters = #searchDesc > 0
 
     -- floor: the tool schema permits any number, and a fractional offset would
     -- make the page loop index matches[i] with a non-integer key (always nil)
-    -- and crash buildResult(nil).
+    -- and crash the row builder.
     local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
     local offset = math.floor(tonumber(args.offset) or 0)
@@ -103,9 +93,7 @@ function SearchHandler.searchPhotos(args)
     -- async catalog search that yields; called from inside the read gate on
     -- Windows it deadlocks -- the task never returns and never releases the
     -- gate, wedging the whole bridge until the 30s server timeout (issue #124,
-    -- same root cause as #134's getTargetPhotos). Only the per-photo metadata
-    -- reads need the gate. getAllPhotos() (no-filter path) is a non-yielding
-    -- enumeration, but is hoisted out too for a single, consistent structure.
+    -- same root cause as #134's getTargetPhotos).
     Log.info(string.format("searchPhotos: querying (hasFilters=%s)", tostring(hasFilters)))
     -- Unrated photos have nil rating; rating>=0 excludes them, so getAllPhotos()
     -- must be used when no filters are specified.
@@ -117,11 +105,7 @@ function SearchHandler.searchPhotos(args)
     Log.info(string.format("searchPhotos: query returned %d", total))
 
     local last = math.min(offset + limit, total)
-    catalog:withReadAccessDo(function()
-        for i = offset + 1, last do
-            table.insert(results, buildResult(matches[i]))
-        end
-    end)
+    local results = PhotoSummary.page(catalog, matches, offset + 1, last)
 
     Log.info(string.format("Search matched %d photos, returning %d (offset=%d, limit=%d)",
         total, #results, offset, limit))

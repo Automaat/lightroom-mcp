@@ -1,5 +1,5 @@
 local function fakePhoto(id, path, state)
-    local meta = { path = path }
+    local meta = { path = path, uuid = path and ("uuid-" .. tostring(id)) or nil }
     return {
         localIdentifier = id,
         __path = path,
@@ -243,6 +243,90 @@ describe("PhotoLookup.resolveMany", function()
 
         assert.are.equal(photos[3], r[1].photo)
         assert.are.equal(3, state.furthest)
+    end)
+end)
+
+local function withDirectLookup(catalog, state, photos)
+    state.directCalls = 0
+    state.batchCalls = 0
+    catalog.getPhotoByLocalId = function(_, id)
+        state.directCalls = state.directCalls + 1
+        assert.are.equal("number", type(id))
+        for _, p in ipairs(photos) do
+            if p.localIdentifier == id then return p end
+        end
+        return fakePhoto(id, nil)
+    end
+    catalog.batchGetRawMetadata = function(_, list, keys)
+        state.batchCalls = state.batchCalls + 1
+        local out = {}
+        for _, p in ipairs(list) do
+            local values = {}
+            for _, key in ipairs(keys) do values[key] = p:getRawMetadata(key) end
+            out[p] = values
+        end
+        return out
+    end
+    return catalog, state
+end
+
+describe("PhotoLookup.resolveMany with getPhotoByLocalId", function()
+    before_each(loadModule)
+
+    local function setup(n)
+        local photos = {}
+        for i = 1, n do photos[i] = fakePhoto(i, "/" .. i .. ".jpg") end
+        local catalog, state = fakeCatalog(photos)
+        withDirectLookup(catalog, state, photos)
+        return photos, catalog, state
+    end
+
+    it("resolves numeric ids without scanning the catalog", function()
+        local photos, catalog, state = setup(5)
+
+        local r = PhotoLookup.resolveMany(catalog, { "2", 5, "999" })
+
+        assert.are.equal(photos[2], r[1].photo)
+        assert.are.equal(photos[5], r[2].photo)
+        assert.is_nil(r[3].photo)
+        assert.are.equal(0, state.getAllPhotosCalls)
+        assert.are.equal(3, state.directCalls)
+        assert.are.equal(1, state.batchCalls)
+    end)
+
+    it("looks each distinct id up once", function()
+        local photos, catalog, state = setup(3)
+
+        local r = PhotoLookup.resolveMany(catalog, { "1", "1", "1" })
+
+        assert.are.equal(photos[1], r[3].photo)
+        assert.are.equal(1, state.directCalls)
+    end)
+
+    for _, id in ipairs({ "1.0", "0x1", " 1" }) do
+        it("does not resolve the non-canonical id '" .. id .. "'", function()
+            local _, catalog, state = setup(3)
+
+            assert.is_nil(PhotoLookup.resolveOne(catalog, id))
+            assert.are.equal(0, state.directCalls)
+        end)
+    end
+
+    it("keeps last-in-catalog-order for a shared path when its photos are also named by id", function()
+        local master = fakePhoto(1, "/shared.nef")
+        local copyA = fakePhoto(2, "/shared.nef")
+        local copyB = fakePhoto(3, "/shared.nef")
+        linkCopies(master, { copyA, copyB })
+        local photos = { copyB, master, copyA }
+        local catalog, state = fakeCatalog(photos)
+        withDirectLookup(catalog, state, photos)
+
+        local r = PhotoLookup.resolveMany(catalog, { "2", "/shared.nef", "3" })
+
+        assert.are.equal(copyA, r[1].photo)
+        assert.are.equal(copyA, r[2].photo)
+        assert.are.equal(copyB, r[3].photo)
+        assert.are.equal(1, state.getAllPhotosCalls)
     end)
 end)
 

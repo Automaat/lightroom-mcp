@@ -2,18 +2,9 @@ local LrApplication = import 'LrApplication'
 
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
+local PhotoSummary = require 'PhotoSummary'
 
 local SelectionHandler = {}
-
-local function buildResult(photo)
-    return {
-        id = photo.localIdentifier,
-        path = photo:getRawMetadata('path'),
-        filename = photo:getFormattedMetadata('fileName'),
-        rating = photo:getRawMetadata('rating'),
-        dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
-    }
-end
 
 function SelectionHandler.getSelectedPhotos(args)
     args = args or {}
@@ -21,7 +12,7 @@ function SelectionHandler.getSelectedPhotos(args)
 
     -- floor: the tool schema permits any number, and a fractional offset would
     -- make the page loop index matches[i] with a non-integer key (always nil)
-    -- and crash buildResult(nil).
+    -- and crash the row builder.
     local limit = math.floor(tonumber(args.limit) or 100)
     if limit < 0 then limit = 0 end
     local offset = math.floor(tonumber(args.offset) or 0)
@@ -31,21 +22,14 @@ function SelectionHandler.getSelectedPhotos(args)
     -- the live view selection, which yields to the UI thread; called from
     -- inside the read gate on Windows it deadlocks -- the task never returns
     -- and never releases the gate, so the whole bridge wedges until the 30s
-    -- server timeout (issues #134, #124). Only the per-photo metadata reads
-    -- need the gate; getTargetPhotos() does not. This mirrors get_photo_metadata,
-    -- which works because it only does a non-yielding getAllPhotos() pass.
+    -- server timeout (issues #134, #124).
     Log.info("getSelectedPhotos: requesting target photos")
     local matches = catalog:getTargetPhotos() or {}
     local total = #matches
     Log.info(string.format("getSelectedPhotos: getTargetPhotos returned %d", total))
 
     local last = math.min(offset + limit, total)
-    local results = {}
-    catalog:withReadAccessDo(function()
-        for i = offset + 1, last do
-            table.insert(results, buildResult(matches[i]))
-        end
-    end)
+    local results = PhotoSummary.page(catalog, matches, offset + 1, last)
 
     Log.info(string.format("getSelectedPhotos: returning %d (offset=%d, limit=%d)",
         #results, offset, limit))

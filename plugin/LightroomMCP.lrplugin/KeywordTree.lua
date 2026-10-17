@@ -147,7 +147,8 @@ function KeywordTree.resolve(catalog, parts)
 end
 
 -- Depth-first, parent before children, siblings in name order so repeated
--- calls page through the tree in a stable order. `visit(keyword, path)`.
+-- calls page through the tree in a stable order.
+-- `visit(keyword, path, attributes)`, attributes as from getAttributes.
 function KeywordTree.walk(catalog, root, visit)
     local function descend(parent, prefix)
         -- Names are read BEFORE sorting: LrKeyword getters can yield, which is
@@ -156,8 +157,11 @@ function KeywordTree.walk(catalog, root, visit)
         -- not allowed within a C or metamethod call".
         local kids = {}
         for _, child in ipairs(KeywordTree.children(catalog, parent)) do
-            local name = child:getName()
-            kids[#kids + 1] = { keyword = child, name = name, lower = KeywordTree.fold(name) }
+            local attributes = child:getAttributes() or {}
+            local name = attributes.keywordName or child:getName()
+            kids[#kids + 1] = {
+                keyword = child, name = name, lower = KeywordTree.fold(name), attributes = attributes,
+            }
         end
         table.sort(kids, function(a, b)
             if a.lower ~= b.lower then return a.lower < b.lower end
@@ -165,7 +169,7 @@ function KeywordTree.walk(catalog, root, visit)
         end)
         for _, kid in ipairs(kids) do
             local path = prefix .. kid.name
-            visit(kid.keyword, path)
+            visit(kid.keyword, path, kid.attributes)
             descend(kid.keyword, path .. KeywordTree.SEPARATOR)
         end
     end
@@ -181,8 +185,8 @@ end
 function KeywordTree.findByName(catalog, name)
     local folded = KeywordTree.fold(name)
     local matches = {}
-    KeywordTree.walk(catalog, nil, function(keyword, path)
-        if KeywordTree.fold(keyword:getName()) == folded then
+    KeywordTree.walk(catalog, nil, function(keyword, path, attributes)
+        if KeywordTree.fold(attributes.keywordName or keyword:getName()) == folded then
             matches[#matches + 1] = { keyword = keyword, path = path }
         end
     end)

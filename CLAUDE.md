@@ -20,6 +20,8 @@ Plugin opens **two LrSocket binds** as servers; MCP server connects to both.
 - `LrSocket.bind` in `mode='receive'` has a 10s no-client timeout that fires `onError`. Plugin auto-calls `:reconnect()` from a monitor loop in response. Reconnect storms are prevented by setting flags in callbacks and acting on them in the loop (never `:reconnect()` synchronously from `onError`).
 - `onMessage` runs in non-yielding context — handler dispatch must be wrapped in `LrTasks.startAsyncTask` so `catalog:withReadAccessDo` can yield.
 - Catalog queries that yield (`getTargetPhotos`, `findPhotos`) must run **outside** `withReadAccessDo`. Nesting a yielding query inside the read gate deadlocks on Windows: the task yields to the UI thread holding the gate, never returns, never releases it, wedging the bridge until the server timeout (#124/#134). Only non-yielding per-photo metadata reads belong inside the gate. `getAllPhotos` is a non-yielding enumeration, safe either side. `PhotoLookup` resolves paths with `findPhotoByPath`, a catalog query, so handlers resolve photo ids before opening either gate. Specs guard this via `getQueriedInsideReadAccess()` in `spec_helper`.
+- Every SDK getter call (`getRawMetadata`, `getFormattedMetadata`, `LrKeyword` getters) costs ~0.1-1 ms; per-call overhead dominates handler time on large catalogs. Read photo fields for a page with `catalog:batchGetRawMetadata` / `batchGetFormattedMetadata` (`PhotoSummary`), read keyword name and synonyms with one `getAttributes`, and avoid `LrTasks.pcall` per item (~1 ms each).
+- `catalog:getPhotoByLocalId` returns a dangling photo object, not nil, for an unknown id; its metadata reads return nil. `PhotoLookup` keeps only photos whose batched `uuid` read is non-nil.
 
 Pattern verified against MIDI2LR (`rsjaffe/MIDI2LR`, see `src/plugin/Client.lua`) — same dual-port LrSocket model, ports 58763/58764 also chosen there.
 
@@ -69,6 +71,8 @@ Bundle is pure Lua — same content ships in both `LightroomMCP-macos.lrplugin.z
 Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/LightroomMCP.log`.
 
 **Reload behaviour**: "Reload Plug-in" loads a fresh Lua state but does **not** reliably cancel the old task's `LrFunctionContext` — the old monitor loop can keep running and hold a port (LrC 15.5.1 macOS). The new instance rewrites the token file; the old loop polls it (`isSuperseded`) and exits on a foreign token, releasing its ports via the context cleanup handler. The new instance's binds fail with `failed to open` until then and recover through the reconnect path.
+
+"Reload Plug-in" does not see a `.lua` file added to the bundle after Lightroom started: `require` fails with `Could not load toolkit script` and the plug-in is disabled. Restart Lightroom after adding a file.
 
 ## Live manual testing on macOS
 
