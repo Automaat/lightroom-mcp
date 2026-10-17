@@ -46,11 +46,11 @@ function successContent(result: unknown): ToolResponse["content"] {
   if (isImagePayload(result)) {
     const { image, ...rest } = result;
     return [
-      { type: "text", text: JSON.stringify(rest, null, 2) },
+      { type: "text", text: JSON.stringify(rest) },
       { type: "image", data: image.data, mimeType: image.mime_type },
     ];
   }
-  return [{ type: "text", text: JSON.stringify(result, null, 2) }];
+  return [{ type: "text", text: JSON.stringify(result) }];
 }
 
 export const NOT_CONNECTED_MESSAGE =

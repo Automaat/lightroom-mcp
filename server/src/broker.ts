@@ -14,6 +14,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { LineBuffer } from "./line-buffer.js";
 import type { ToolResponse } from "./tool-handler.js";
 
 export type ToolCaller = (name: string, args: unknown) => Promise<ToolResponse>;
@@ -93,19 +94,13 @@ function errorResponse(text: string): ToolResponse {
 }
 
 function onLines(sock: net.Socket, handle: (line: string) => void, maxBytes: () => number): void {
-  let buffer = "";
+  const lines = new LineBuffer();
   sock.setEncoding("utf8");
   sock.on("data", (chunk: string) => {
-    buffer += chunk;
-    if (buffer.indexOf("\n") === -1 && Buffer.byteLength(buffer) > maxBytes()) {
+    lines.push(chunk, handle);
+    if (lines.pendingBytes() > maxBytes()) {
+      lines.clear();
       sock.destroy();
-      return;
-    }
-    let idx: number;
-    while ((idx = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (line) handle(line);
     }
   });
 }
