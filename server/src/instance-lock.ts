@@ -4,6 +4,16 @@ import path from "node:path";
 
 export interface InstanceLock {
   release: () => void;
+  /** Runs once when another bridge takes the lock while this one still holds it. */
+  onLost: (listener: () => void) => void;
+}
+
+function defaultBaseDir(): string {
+  return path.join(os.homedir(), ".config", "lightroom-mcp");
+}
+
+function lockPath(baseDir: string, requestPort: number, responsePort: number): string {
+  return path.join(baseDir, `bridge-${requestPort}-${responsePort}.lock`);
 }
 
 function pidIsAlive(pid: number): boolean {
@@ -102,22 +112,39 @@ function heartbeatPath(lockFile: string): string {
 /**
  * True when a live pid's lock no longer has a working owner: the owner kept a
  * heartbeat and stopped refreshing it, and the lock itself is not newly
- * taken. Owners that never wrote a heartbeat (older versions) never qualify.
+ * taken. Owners that never wrote a heartbeat (older versions) never qualify,
+ * nor does one beside a heartbeat left by an earlier owner.
  */
 function ownerUnresponsive(lockFile: string): boolean {
+  const owner = readPid(lockFile);
   const heartbeat = heartbeatPath(lockFile);
-  if (!fs.existsSync(heartbeat)) return false;
+  if (owner === null || readPid(heartbeat) !== owner) return false;
   return !isFresh(heartbeat, HEARTBEAT_STALE_MS) && !isFresh(lockFile, HEARTBEAT_STALE_MS);
 }
 
+/** The pid the lock for these ports names, or null when there is none. */
+export function lockHolder(requestPort: number, responsePort: number, baseDir = defaultBaseDir()): number | null {
+  return readPid(lockPath(baseDir, requestPort, responsePort));
+}
+
+/** True when the bridge holding the lock for these ports stopped beating. */
+export function lockHolderUnresponsive(
+  requestPort: number,
+  responsePort: number,
+  baseDir = defaultBaseDir(),
+): boolean {
+  return ownerUnresponsive(lockPath(baseDir, requestPort, responsePort));
+}
+
 /**
- * Removes a dead owner's lock, but only if it still names that owner. The
+ * Removes a dead or unresponsive owner's lock and heartbeat, but only if the
+ * lock still names that owner. The
  * guard serializes reclaimers: without it, two of them can both see the dead
  * pid, and the slower one deletes the lock the faster one just took. A lock
  * that has vanished is never removed: a non-reclaiming bridge may be linking
  * a fresh one into its place.
  */
-function reclaimStale(lockFile: string, deadPid: number | null): boolean {
+function reclaimStale(lockFile: string, stalePid: number | null): boolean {
   const guard = `${lockFile}.reclaim`;
   try {
     fs.closeSync(fs.openSync(guard, "wx", 0o600));
@@ -129,7 +156,10 @@ function reclaimStale(lockFile: string, deadPid: number | null): boolean {
   try {
     const current = readOwner(lockFile);
     const midWrite = current === null && isFresh(lockFile);
-    if (current !== "missing" && current === deadPid && !midWrite) fs.rmSync(lockFile, { force: true });
+    if (current !== "missing" && current === stalePid && !midWrite) {
+      fs.rmSync(heartbeatPath(lockFile), { force: true });
+      fs.rmSync(lockFile, { force: true });
+    }
   } finally {
     fs.rmSync(guard, { force: true });
   }
@@ -148,10 +178,10 @@ function reclaimStale(lockFile: string, deadPid: number | null): boolean {
 export function acquireInstanceLock(
   requestPort: number,
   responsePort: number,
-  baseDir = path.join(os.homedir(), ".config", "lightroom-mcp"),
+  baseDir = defaultBaseDir(),
 ): InstanceLock {
   fs.mkdirSync(baseDir, { recursive: true, mode: 0o700 });
-  const lockFile = path.join(baseDir, `bridge-${requestPort}-${responsePort}.lock`);
+  const lockFile = lockPath(baseDir, requestPort, responsePort);
 
   const pending = `${lockFile}.${process.pid}.tmp`;
   fs.writeFileSync(pending, `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
@@ -174,10 +204,17 @@ export function acquireInstanceLock(
   }
 
   const heartbeatFile = heartbeatPath(lockFile);
+  let lost = false;
+  let lostListener: (() => void) | null = null;
   const beat = () => {
+    const owner = readOwner(lockFile);
+    // Unreadable (sharing violation, EMFILE) is not proof of loss; retry next beat.
+    if (owner === null) return;
     // A reclaimed owner that wakes up must not refresh its successor's heartbeat.
-    if (readPid(lockFile) !== process.pid) {
+    if (owner !== process.pid) {
       clearInterval(heartbeat);
+      lost = true;
+      lostListener?.();
       return;
     }
     try {
@@ -213,5 +250,10 @@ export function acquireInstanceLock(
   process.once("SIGINT", signalHandler);
   process.once("SIGTERM", signalHandler);
 
-  return { release };
+  const onLost = (listener: () => void) => {
+    lostListener = listener;
+    if (lost) listener();
+  };
+
+  return { release, onLost };
 }

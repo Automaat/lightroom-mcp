@@ -194,6 +194,25 @@ export class BrokerServer {
     this.server?.close();
     this.server = null;
   }
+
+  /**
+   * Drops every follower but leaves the listener open: closing a Unix socket
+   * server unlinks its path, which the bridge that took over has rebound. A
+   * named pipe has no path, and holding it would block that bridge, so it is
+   * closed.
+   */
+  abandon(): void {
+    if (this.opts.path.startsWith("\\\\")) {
+      this.close();
+      return;
+    }
+    for (const sock of this.clients) sock.destroy();
+    this.clients.clear();
+    this.server?.removeAllListeners("connection");
+    this.server?.on("connection", (sock: net.Socket) => sock.destroy());
+    this.server?.unref();
+    this.server = null;
+  }
 }
 
 export const OWNER_LOST_MESSAGE =
