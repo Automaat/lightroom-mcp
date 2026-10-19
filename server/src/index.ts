@@ -17,7 +17,7 @@ import { startHeartbeat, probePlugin } from "./heartbeat.js";
 import { PluginLiveness } from "./plugin-liveness.js";
 import { waitUntil } from "./wait-until.js";
 import { diagnoseUnresponsive, UnresponsiveReporter } from "./port-owner.js";
-import { acquireInstanceLock } from "./instance-lock.js";
+import { acquireInstanceLock, lockHolder, lockHolderUnresponsive } from "./instance-lock.js";
 import {
   ensurePluginInstalled,
   findBundledPlugin,
@@ -94,6 +94,8 @@ async function main() {
     acquireLock: () => acquireInstanceLock(REQUEST_PORT, RESPONSE_PORT),
     startLeader: () => startLeader(REQUEST_PORT, RESPONSE_PORT),
     readToken: tryReadToken,
+    holderUnresponsive: () => lockHolderUnresponsive(REQUEST_PORT, RESPONSE_PORT),
+    lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
   });
 
   const server = createMcpServer({ callTool: (name, args) => bridge.callTool(name, args) });

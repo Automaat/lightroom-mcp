@@ -12,6 +12,11 @@ export interface BridgeOptions {
   acquireLock: () => InstanceLock;
   startLeader: () => Leader;
   readToken: () => string | null;
+  /** True when the lock holder stopped beating; followers then re-elect. */
+  holderUnresponsive?: () => boolean;
+  /** The pid the lock names now; a follower whose owner lost the lock re-elects. */
+  lockHolder?: () => number | null;
+  holderCheckMs?: number;
   retryMs?: number;
   readyWaitMs?: number;
   log?: (msg: string) => void;
@@ -33,7 +38,7 @@ export function unreachableOwnerMessage(pid: number): string {
 type RoleState =
   | { kind: "none" }
   | { kind: "leader"; leader: Leader; server: BrokerServer; lock: InstanceLock }
-  | { kind: "follower"; client: BrokerClient };
+  | { kind: "follower"; client: BrokerClient; watch: NodeJS.Timeout | null };
 
 /**
  * Elects one bridge per port pair to own the plugin connection. The lock
@@ -50,11 +55,13 @@ export class Bridge {
   private waiters: Array<() => void> = [];
   private readonly retryMs: number;
   private readonly readyWaitMs: number;
+  private readonly holderCheckMs: number;
   private readonly log: (msg: string) => void;
 
   constructor(private readonly opts: BridgeOptions) {
     this.retryMs = opts.retryMs ?? 200;
     this.readyWaitMs = opts.readyWaitMs ?? 10_000;
+    this.holderCheckMs = opts.holderCheckMs ?? 5_000;
     this.log = opts.log ?? ((msg: string) => console.error(msg));
   }
 
@@ -80,8 +87,12 @@ export class Bridge {
       case "follower":
         return this.state.client.callTool(name, args);
       case "none":
-        return { content: [{ type: "text", text: this.noOwnerMessage() }], isError: true };
+        return this.noOwnerResponse();
     }
+  }
+
+  private noOwnerResponse(): ToolResponse {
+    return { content: [{ type: "text", text: this.noOwnerMessage() }], isError: true };
   }
 
   private noOwnerMessage(): string {
@@ -101,6 +112,7 @@ export class Bridge {
       state.leader.stop();
       state.lock.release();
     } else if (state.kind === "follower") {
+      if (state.watch) clearInterval(state.watch);
       state.client.close();
     }
     this.notify();
@@ -130,39 +142,55 @@ export class Bridge {
   }
 
   private async lead(lock: InstanceLock): Promise<void> {
-    let leader: Leader;
-    try {
-      leader = this.opts.startLeader();
-    } catch (err) {
-      this.log(`[bridge] failed to start as owner: ${(err as Error).message}`);
-      lock.release();
-      this.scheduleElection();
-      return;
-    }
+    let callTool: ToolCaller = async () => this.noOwnerResponse();
     const server = new BrokerServer({
       path: this.opts.ipcPath,
-      callTool: leader.callTool,
+      callTool: (name, args) => callTool(name, args),
       readToken: this.opts.readToken,
       log: this.log,
     });
+    // Listen before taking the plugin: a bridge that cannot serve the others
+    // (a hung owner still holds the named pipe) must not churn its sockets.
     try {
       await server.listen();
     } catch (err) {
       this.log(`[bridge] failed to serve other bridges: ${(err as Error).message}`);
-      leader.stop();
       lock.release();
       this.scheduleElection();
       return;
     }
     if (this.stopped) {
       server.close();
-      leader.stop();
       lock.release();
       return;
     }
+    let leader: Leader;
+    try {
+      leader = this.opts.startLeader();
+    } catch (err) {
+      this.log(`[bridge] failed to start as owner: ${(err as Error).message}`);
+      server.close();
+      lock.release();
+      this.scheduleElection();
+      return;
+    }
+    callTool = leader.callTool;
     this.state = { kind: "leader", leader, server, lock };
     this.log("[bridge] owning the plugin connection");
+    lock.onLost(() => this.stepDown(lock));
     this.notify();
+  }
+
+  /** Another bridge reclaimed the lock while this one was stalled; leave the plugin to it. */
+  private stepDown(lock: InstanceLock): void {
+    const state = this.state;
+    if (state.kind !== "leader" || state.lock !== lock) return;
+    this.log("[bridge] another bridge took over the plugin connection, stepping down");
+    this.state = { kind: "none" };
+    state.server.abandon();
+    state.leader.stop();
+    lock.release();
+    this.scheduleElection();
   }
 
   private async follow(holder: number | null): Promise<void> {
@@ -171,6 +199,7 @@ export class Bridge {
       readToken: this.opts.readToken,
       onClose: () => {
         if (this.state.kind !== "follower" || this.state.client !== client) return;
+        if (this.state.watch) clearInterval(this.state.watch);
         this.state = { kind: "none" };
         this.log("[bridge] owning bridge went away, re-electing");
         this.scheduleElection();
@@ -188,9 +217,36 @@ export class Bridge {
       client.close();
       return;
     }
-    this.state = { kind: "follower", client };
+    this.state = { kind: "follower", client, watch: this.watchHolder(client, holder) };
     this.log("[bridge] another bridge owns the plugin connection, forwarding to it");
     this.notify();
+  }
+
+  /**
+   * A hung owner keeps its IPC socket open, so onClose never fires; drop it
+   * once its heartbeat goes stale, or once another follower has reclaimed
+   * its lock, and let the election sort out the new owner.
+   */
+  private watchHolder(client: BrokerClient, holder: number | null): NodeJS.Timeout | null {
+    const { holderUnresponsive, lockHolder } = this.opts;
+    if (!holderUnresponsive && !lockHolder) return null;
+    let strikes = 0;
+    const watch = setInterval(() => {
+      const current = lockHolder?.() ?? null;
+      const moved = holder !== null && current !== null && current !== holder;
+      strikes = holderUnresponsive?.() ? strikes + 1 : 0;
+      // Two in a row: after a sleep the owner's overdue beat may just not have run yet.
+      if (!moved && strikes < 2) return;
+      clearInterval(watch);
+      this.log(
+        moved
+          ? "[bridge] another bridge took over from the owning bridge, re-electing"
+          : "[bridge] owning bridge stopped responding, re-electing",
+      );
+      client.close();
+    }, this.holderCheckMs);
+    watch.unref();
+    return watch;
   }
 
   private noteLockError(message: string): void {
