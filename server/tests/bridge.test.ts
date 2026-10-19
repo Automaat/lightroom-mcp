@@ -367,17 +367,20 @@ describe('Bridge', () => {
     expect(text(await bridge.callTool('ping', {}))).toBe('second');
   });
 
-  unixOnly('releases the lock and retries when it cannot serve other bridges', async () => {
+  unixOnly('releases the lock without taking the plugin when it cannot serve other bridges', async () => {
     const dir = tmpDir();
     const blocker = path.join(dir, 'blocked');
     fs.mkdirSync(path.join(blocker, 'bridge-58763-58764.sock'), { recursive: true, mode: 0o700 });
     fs.writeFileSync(path.join(blocker, 'bridge-58763-58764.sock', 'keep'), '', { mode: 0o600, flag: 'wx' });
-    const stopped: string[] = [];
+    const started: string[] = [];
     const logs: string[] = [];
     const bridge = new Bridge({
       ipcPath: ipcPath(blocker),
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
-      startLeader: () => ({ callTool: async () => ok('x'), stop: () => stopped.push('x') }),
+      startLeader: () => {
+        started.push('x');
+        return { callTool: async () => ok('x'), stop: () => {} };
+      },
       readToken: () => null,
       retryMs: 1000,
       log: (m) => logs.push(m),
@@ -387,7 +390,7 @@ describe('Bridge', () => {
     await bridge.start();
 
     expect(bridge.role()).toBe('none');
-    expect(stopped).toEqual(['x']);
+    expect(started).toEqual([]);
     expect(logs[0]).toMatch(/failed to serve other bridges/);
     expect(() => acquireInstanceLock(58763, 58764, dir).release()).not.toThrow();
   });
@@ -436,8 +439,10 @@ describe('Bridge', () => {
     expect(text(await c.callTool('ping', {}))).toBe('b:ping');
   });
 
-  it('re-elects when the owner stops beating', async () => {
-    const dir = tmpDir();
+  async function followHungOwner(
+    dir: string,
+    watch: { holderUnresponsive?: () => boolean; lockHolder?: () => number | null; hungPid?: number },
+  ) {
     const hung = fakeLock();
     const a = new Bridge({
       ipcPath: ipcPath(dir),
@@ -448,18 +453,18 @@ describe('Bridge', () => {
     });
     bridges.push(a);
     await a.start();
-    let electionsB = 0;
-    let unresponsive = false;
+    let elections = 0;
     const logs: string[] = [];
     const b = new Bridge({
       ipcPath: ipcPath(dir),
       acquireLock: () => {
-        if (electionsB++ === 0) throw new LockHeldError(process.pid, 58763, 58764);
+        if (elections++ === 0) throw new LockHeldError(watch.hungPid ?? process.pid, 58763, 58764);
         return acquireInstanceLock(58763, 58764, dir);
       },
       startLeader: () => ({ callTool: async (name) => ok(`b:${name}`), stop: () => {} }),
       readToken: () => 'tok',
-      holderUnresponsive: () => unresponsive,
+      holderUnresponsive: watch.holderUnresponsive,
+      lockHolder: watch.lockHolder,
       holderCheckMs: 10,
       retryMs: 20,
       log: (m) => logs.push(m),
@@ -467,55 +472,47 @@ describe('Bridge', () => {
     bridges.push(b);
     await b.start();
     expect(b.role()).toBe('follower');
+    return { b, logs, elections: () => elections };
+  }
+
+  it('drops a hung owner once its heartbeat goes stale', async () => {
+    let unresponsive = false;
+    const { b, logs, elections } = await followHungOwner(tmpDir(), { holderUnresponsive: () => unresponsive });
     const stuck = b.callTool('export_photos', {});
 
     unresponsive = true;
 
     expect(text(await stuck)).toBe(OWNER_LOST_MESSAGE);
-    await waitFor(() => b.role() === 'leader');
+    await waitFor(() => elections() > 1);
     expect(logs).toContain('[bridge] owning bridge stopped responding, re-electing');
-    expect(text(await b.callTool('ping', {}))).toBe('b:ping');
   });
 
-  it('re-elects once another follower has taken the hung owner\'s lock', async () => {
-    const dir = tmpDir();
-    const hung = fakeLock();
-    const a = new Bridge({
-      ipcPath: ipcPath(dir),
-      acquireLock: () => hung.lock,
-      startLeader: () => ({ callTool: () => new Promise<ToolResponse>(() => {}), stop: () => {} }),
-      readToken: () => 'tok',
-      log: () => {},
-    });
-    bridges.push(a);
-    await a.start();
+  it('drops a hung owner once another follower has taken its lock', async () => {
     const hungPid = 111111;
     let holder = hungPid;
-    let electionsB = 0;
-    const logs: string[] = [];
-    const b = new Bridge({
-      ipcPath: ipcPath(dir),
-      acquireLock: () => {
-        if (electionsB++ === 0) throw new LockHeldError(hungPid, 58763, 58764);
-        return acquireInstanceLock(58763, 58764, dir);
-      },
-      startLeader: () => ({ callTool: async (name) => ok(`b:${name}`), stop: () => {} }),
-      readToken: () => 'tok',
+    const { b, logs, elections } = await followHungOwner(tmpDir(), {
       holderUnresponsive: () => false,
       lockHolder: () => holder,
-      holderCheckMs: 10,
-      retryMs: 20,
-      log: (m) => logs.push(m),
+      hungPid,
     });
-    bridges.push(b);
-    await b.start();
     const stuck = b.callTool('export_photos', {});
 
     holder = 222222;
 
     expect(text(await stuck)).toBe(OWNER_LOST_MESSAGE);
-    await waitFor(() => b.role() === 'leader');
+    await waitFor(() => elections() > 1);
     expect(logs).toContain('[bridge] another bridge took over from the owning bridge, re-electing');
+  });
+
+  // A hung owner on Windows keeps its named pipe, so only Unix can take over its listener.
+  unixOnly('takes over from a hung owner that still holds its listener', async () => {
+    let unresponsive = false;
+    const { b } = await followHungOwner(tmpDir(), { holderUnresponsive: () => unresponsive });
+
+    unresponsive = true;
+
+    await waitFor(() => b.role() === 'leader');
+    expect(text(await b.callTool('ping', {}))).toBe('b:ping');
   });
 
   it('keeps forwarding through a single missed owner beat', async () => {

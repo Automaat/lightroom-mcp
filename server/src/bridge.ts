@@ -87,8 +87,12 @@ export class Bridge {
       case "follower":
         return this.state.client.callTool(name, args);
       case "none":
-        return { content: [{ type: "text", text: this.noOwnerMessage() }], isError: true };
+        return this.noOwnerResponse();
     }
+  }
+
+  private noOwnerResponse(): ToolResponse {
+    return { content: [{ type: "text", text: this.noOwnerMessage() }], isError: true };
   }
 
   private noOwnerMessage(): string {
@@ -138,36 +142,39 @@ export class Bridge {
   }
 
   private async lead(lock: InstanceLock): Promise<void> {
-    let leader: Leader;
-    try {
-      leader = this.opts.startLeader();
-    } catch (err) {
-      this.log(`[bridge] failed to start as owner: ${(err as Error).message}`);
-      lock.release();
-      this.scheduleElection();
-      return;
-    }
+    let callTool: ToolCaller = async () => this.noOwnerResponse();
     const server = new BrokerServer({
       path: this.opts.ipcPath,
-      callTool: leader.callTool,
+      callTool: (name, args) => callTool(name, args),
       readToken: this.opts.readToken,
       log: this.log,
     });
+    // Listen before taking the plugin: a bridge that cannot serve the others
+    // (a hung owner still holds the named pipe) must not churn its sockets.
     try {
       await server.listen();
     } catch (err) {
       this.log(`[bridge] failed to serve other bridges: ${(err as Error).message}`);
-      leader.stop();
       lock.release();
       this.scheduleElection();
       return;
     }
     if (this.stopped) {
       server.close();
-      leader.stop();
       lock.release();
       return;
     }
+    let leader: Leader;
+    try {
+      leader = this.opts.startLeader();
+    } catch (err) {
+      this.log(`[bridge] failed to start as owner: ${(err as Error).message}`);
+      server.close();
+      lock.release();
+      this.scheduleElection();
+      return;
+    }
+    callTool = leader.callTool;
     this.state = { kind: "leader", leader, server, lock };
     this.log("[bridge] owning the plugin connection");
     lock.onLost(() => this.stepDown(lock));
