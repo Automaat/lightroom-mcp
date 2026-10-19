@@ -101,11 +101,92 @@ describe("instance lock", () => {
     expect((caught as LockHeldError).pid).toBe(process.pid);
   });
 
-  it("leaves only the lock file behind", () => {
+  it("leaves only the lock and its heartbeat behind", () => {
     const dir = baseDir();
     locks.push(acquireInstanceLock(58763, 58764, dir));
 
-    expect(fs.readdirSync(dir)).toEqual(["bridge-58763-58764.lock"]);
+    expect(fs.readdirSync(dir).sort()).toEqual(["bridge-58763-58764.lock", "bridge-58763-58764.lock.alive"]);
+  });
+
+  it("removes the heartbeat on release", () => {
+    const dir = baseDir();
+    acquireInstanceLock(58763, 58764, dir).release();
+
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  describe("live owner liveness", () => {
+    // The parent of the Jest worker is alive for the whole test but is not us.
+    const livePid = process.ppid;
+    const old = () => new Date(Date.now() - 120_000);
+
+    function writeLock(dir: string, opts: { lockAge?: Date; heartbeatAge?: Date | null }): string {
+      const lockFile = path.join(dir, "bridge-58763-58764.lock");
+      fs.writeFileSync(lockFile, `${livePid}
+`);
+      if (opts.lockAge) fs.utimesSync(lockFile, opts.lockAge, opts.lockAge);
+      if (opts.heartbeatAge !== null) {
+        const heartbeat = `${lockFile}.alive`;
+        fs.writeFileSync(heartbeat, `${livePid}
+`);
+        if (opts.heartbeatAge) fs.utimesSync(heartbeat, opts.heartbeatAge, opts.heartbeatAge);
+      }
+      return lockFile;
+    }
+
+    it("reclaims a live pid whose heartbeat went stale", () => {
+      const dir = baseDir();
+      const lockFile = writeLock(dir, { lockAge: old(), heartbeatAge: old() });
+
+      locks.push(acquireInstanceLock(58763, 58764, dir));
+
+      expect(fs.readFileSync(lockFile, "utf8")).toBe(`${process.pid}
+`);
+      expect(fs.readFileSync(`${lockFile}.alive`, "utf8")).toBe(`${process.pid}
+`);
+    });
+
+    it("keeps a live owner whose heartbeat is fresh", () => {
+      const dir = baseDir();
+      writeLock(dir, { lockAge: old() });
+
+      expect(() => acquireInstanceLock(58763, 58764, dir)).toThrow(LockHeldError);
+    });
+
+    it("keeps a live owner that never wrote a heartbeat", () => {
+      const dir = baseDir();
+      writeLock(dir, { lockAge: old(), heartbeatAge: null });
+
+      expect(() => acquireInstanceLock(58763, 58764, dir)).toThrow(LockHeldError);
+    });
+
+    it("keeps a newly taken lock beside a stale leftover heartbeat", () => {
+      const dir = baseDir();
+      writeLock(dir, { heartbeatAge: old() });
+
+      expect(() => acquireInstanceLock(58763, 58764, dir)).toThrow(LockHeldError);
+    });
+
+    it("stops beating once another bridge has reclaimed the lock", () => {
+      jest.useFakeTimers();
+      try {
+        const dir = baseDir();
+        const lockFile = path.join(dir, "bridge-58763-58764.lock");
+        const lock = acquireInstanceLock(58763, 58764, dir);
+        locks.push(lock);
+        fs.writeFileSync(lockFile, `${livePid}
+`);
+        fs.writeFileSync(`${lockFile}.alive`, `${livePid}
+`);
+
+        jest.advanceTimersByTime(10_000);
+
+        expect(fs.readFileSync(`${lockFile}.alive`, "utf8")).toBe(`${livePid}
+`);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   it("backs off while another bridge is reclaiming a stale lock", () => {

@@ -82,12 +82,32 @@ export class LockHeldError extends Error {
 /** A guard or pid-less lock older than this belongs to a process that died. */
 const STALE_GUARD_MS = 5_000;
 
-function isFresh(file: string): boolean {
+function isFresh(file: string, maxAgeMs = STALE_GUARD_MS): boolean {
   try {
-    return Date.now() - fs.statSync(file).mtimeMs <= STALE_GUARD_MS;
+    return Date.now() - fs.statSync(file).mtimeMs <= maxAgeMs;
   } catch {
     return false;
   }
+}
+
+/** How often the owner refreshes its heartbeat file. */
+const HEARTBEAT_MS = 5_000;
+/** An owner whose heartbeat is older than this is hung, or its pid was reused. */
+const HEARTBEAT_STALE_MS = 60_000;
+
+function heartbeatPath(lockFile: string): string {
+  return `${lockFile}.alive`;
+}
+
+/**
+ * True when a live pid's lock no longer has a working owner: the owner kept a
+ * heartbeat and stopped refreshing it, and the lock itself is not newly
+ * taken. Owners that never wrote a heartbeat (older versions) never qualify.
+ */
+function ownerUnresponsive(lockFile: string): boolean {
+  const heartbeat = heartbeatPath(lockFile);
+  if (!fs.existsSync(heartbeat)) return false;
+  return !isFresh(heartbeat, HEARTBEAT_STALE_MS) && !isFresh(lockFile, HEARTBEAT_STALE_MS);
 }
 
 /**
@@ -120,7 +140,10 @@ function reclaimStale(lockFile: string, deadPid: number | null): boolean {
  * Takes the per-port-pair bridge lock. The pid is written to a private file
  * first and hard-linked into place, so the lock never exists without its pid:
  * an empty lock seen mid-write would look stale and be reclaimed while live.
- * Throws LockHeldError when a live bridge holds it.
+ * The owner refreshes a heartbeat file beside the lock, so a live pid that
+ * stopped beating (hung, or reused by an unrelated process after a crash) is
+ * reclaimed like a dead one. Throws LockHeldError when a live, beating bridge
+ * holds it.
  */
 export function acquireInstanceLock(
   requestPort: number,
@@ -139,7 +162,7 @@ export function acquireInstanceLock(
       if (existingPid === null && isFresh(lockFile)) {
         throw new Error(`Another bridge is still writing the lock for ports ${requestPort}/${responsePort}`);
       }
-      if (existingPid && pidIsAlive(existingPid)) {
+      if (existingPid && pidIsAlive(existingPid) && !ownerUnresponsive(lockFile)) {
         throw new LockHeldError(existingPid, requestPort, responsePort);
       }
       if (!reclaimStale(lockFile, existingPid)) {
@@ -150,6 +173,23 @@ export function acquireInstanceLock(
     fs.rmSync(pending, { force: true });
   }
 
+  const heartbeatFile = heartbeatPath(lockFile);
+  const beat = () => {
+    // A reclaimed owner that wakes up must not refresh its successor's heartbeat.
+    if (readPid(lockFile) !== process.pid) {
+      clearInterval(heartbeat);
+      return;
+    }
+    try {
+      fs.writeFileSync(heartbeatFile, `${process.pid}\n`, { encoding: "utf8", mode: 0o600 });
+    } catch {
+      // Best effort: a missed beat only delays reclaim if this process hangs.
+    }
+  };
+  const heartbeat = setInterval(beat, HEARTBEAT_MS);
+  heartbeat.unref();
+  beat();
+
   let released = false;
   const exitHandler = () => release();
   const signalHandler = () => {
@@ -159,10 +199,12 @@ export function acquireInstanceLock(
   const release = () => {
     if (released) return;
     released = true;
+    clearInterval(heartbeat);
     process.off("exit", exitHandler);
     process.off("SIGINT", signalHandler);
     process.off("SIGTERM", signalHandler);
     if (readPid(lockFile) === process.pid) {
+      fs.rmSync(heartbeatFile, { force: true });
       fs.unlinkSync(lockFile);
     }
   };
