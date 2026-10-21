@@ -10,6 +10,16 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('search_photos', {})).toBeNull();
   });
 
+  it('bounds apply_denoise amount and batch size', () => {
+    expect(validateToolArgs('apply_denoise', { photo_ids: [914], amount: 45 })).toBeNull();
+    expect(validateToolArgs('apply_denoise', { photo_ids: [914], amount: 0 })).toContain('amount');
+    expect(validateToolArgs('apply_denoise', { photo_ids: [914], amount: 101 })).toContain('amount');
+    expect(validateToolArgs('apply_denoise', { photo_ids: [914], amount: 30.5 })).toContain('amount');
+    expect(validateToolArgs('apply_denoise', { photo_ids: [914] })).toContain('amount');
+    const tooMany = Array.from({ length: 101 }, (_, i) => i + 1);
+    expect(validateToolArgs('apply_denoise', { photo_ids: tooMany, amount: 30 })).toContain('photo_ids');
+  });
+
   it('rejects a photo id that is neither a string nor a number', () => {
     const msg = validateToolArgs('get_photo_metadata', { photo_id: { nested: true } });
 

@@ -10,6 +10,7 @@ export interface ToolContract {
 }
 
 const MAX_BULK_PHOTO_IDS = 1000;
+const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 
 export const POINT_CURVE_SETTING_KEYS = [
@@ -792,6 +793,34 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_id", "settings"],
+    },
+  },
+  {
+    name: "apply_denoise",
+    luaHandler: "HandlerDevelop.applyDenoise",
+    description:
+      "Turn on AI Denoise at a given amount, or change its amount, on photos (Lightroom Classic 15+). Denoise is not a plain develop key, so this drives the Develop module: it switches to Develop, makes each photo active in turn, applies Denoise through Lightroom's own panel, then restores the selection. Lightroom computes the result in the background (Activity Center). Photos already at that amount are left alone; other develop settings are untouched. Up to 100 photos per call.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: {
+          ...photoIdArray("Photo IDs or file paths"),
+          maxItems: MAX_DENOISE_PHOTO_IDS,
+        },
+        amount: {
+          type: "integer",
+          minimum: 1,
+          maximum: 100,
+          description: "Denoise amount, as on the Develop panel slider (Lightroom's default is 50)",
+        },
+        restore_selection: {
+          type: "boolean",
+          description:
+            "Put the user's selection back afterwards (default true). Pass false when calling in back-to-back batches: restoring loads one more photo in Develop per call.",
+        },
+      },
+      required: ["photo_ids", "amount"],
     },
   },
 ];

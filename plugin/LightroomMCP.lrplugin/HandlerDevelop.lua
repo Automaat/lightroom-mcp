@@ -1,6 +1,10 @@
 local LrApplication = import 'LrApplication'
+local LrApplicationView = import 'LrApplicationView'
+local LrDate = import 'LrDate'
+local LrDevelopController = import 'LrDevelopController'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrTasks = import 'LrTasks'
 
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
@@ -779,6 +783,184 @@ function DevelopHandler.setDevelopSettings(args)
     return {
         success = applied,
         photo_id = args.photo_id,
+    }
+end
+
+-- AI Denoise is not a plain develop key: Lightroom stores it as an "Enhance"
+-- filter carrying data computed for that one image, so applyDevelopSettings
+-- cannot create it and copying it between photos breaks it. LrC 15 exposes
+-- the Develop panel's own path instead (LrDevelopController.setEnhance /
+-- changeDenoiseAmount), which only acts on the photo active in Develop.
+-- So the handler drives Develop: select one photo, let the panel catch up,
+-- apply, move on. Lightroom computes the denoise itself in the background.
+local MAX_DENOISE_PHOTO_IDS = 100
+local DENOISE_SELECT_TIMEOUT_SECONDS = 10
+-- The Enhance panel updates asynchronously after the active photo changes:
+-- right after a switch it can still describe the previous photo, or report
+-- Denoise unavailable until the new image has loaded.
+local DENOISE_PANEL_SETTLE_SECONDS = 0.5
+local DENOISE_PANEL_TIMEOUT_SECONDS = 8
+local DENOISE_CONFIRM_TIMEOUT_SECONDS = 1.5
+
+local function requireDenoiseAmount(value)
+    if type(value) ~= "number" or value ~= math.floor(value) or value < 1 or value > 100 then
+        error("amount must be an integer from 1 to 100")
+    end
+    return value
+end
+
+local function waitFor(predicate, timeoutSeconds)
+    local waited = 0
+    while waited < timeoutSeconds do
+        if predicate() then return true end
+        LrTasks.sleep(0.1)
+        waited = waited + 0.1
+    end
+    return predicate()
+end
+
+-- Selection only takes photos inside the current view source; fall back to
+-- All Photographs once if the photo is not reachable from it.
+local function activate(catalog, photo, state)
+    catalog:setSelectedPhotos(photo, { photo })
+    if waitFor(function() return catalog:getTargetPhoto() == photo end, DENOISE_SELECT_TIMEOUT_SECONDS) then
+        return true
+    end
+    if state.switchedSource then return false end
+    state.switchedSource = true
+    -- LrTasks.pcall, not pcall: these calls yield, and Lua 5.1's pcall
+    -- cannot yield ("Yielding is not allowed within a C or metamethod call").
+    local ok = LrTasks.pcall(function() catalog:setActiveSources({ catalog.kAllPhotos }) end)
+    if not ok then return false end
+    catalog:setSelectedPhotos(photo, { photo })
+    return waitFor(function() return catalog:getTargetPhoto() == photo end, DENOISE_SELECT_TIMEOUT_SECONDS)
+end
+
+-- Ground truth for "already has Denoise", independent of the panel, which may
+-- still describe the previously active photo. Any Enhance filter counts.
+local function hasEnhanceFilter(catalog, photo)
+    local found = false
+    catalog:withReadAccessDo(function()
+        local settings = photo:getDevelopSettings()
+        local filterList = settings and settings.FilterList
+        local filters = type(filterList) == "table" and filterList.Filters
+        if type(filters) == "table" then
+            for _, filter in ipairs(filters) do
+                if type(filter) == "table" and filter.Name == "Enhance" then found = true end
+            end
+        end
+    end)
+    return found
+end
+
+function DevelopHandler.applyDenoise(args)
+    args.photo_ids = requirePhotoIdArray(args.photo_ids, "photo_ids", MAX_DENOISE_PHOTO_IDS)
+    local amount = requireDenoiseAmount(args.amount)
+
+    local catalog = LrApplication.activeCatalog()
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    -- Remember the user's selection so it can be put back afterwards. Callers
+    -- running many batches back to back can skip that: putting it back loads
+    -- one more photo in Develop per call.
+    if args.restore_selection ~= nil and type(args.restore_selection) ~= "boolean" then
+        error("restore_selection must be a boolean")
+    end
+    local restoreSelection = args.restore_selection ~= false
+    local originalActive = restoreSelection and catalog:getTargetPhoto() or nil
+    local originalSelection = restoreSelection and (catalog:getTargetPhotos() or {}) or nil
+    local startedAt = LrDate.currentTime()
+
+    if LrApplicationView.getCurrentModuleName() ~= "develop" then
+        LrApplicationView.switchToModule("develop")
+    end
+    if not waitFor(function() return LrDevelopController.getEnhancePanelState() ~= nil end,
+            DENOISE_SELECT_TIMEOUT_SECONDS) then
+        error("Develop module did not open")
+    end
+
+    local results = {}
+    local counts = { applied = 0, amount_changed = 0, unchanged = 0, skipped = 0, failed = 0 }
+    local selectState = {}
+    local seen = {}
+
+    for _, entry in ipairs(resolved) do
+        local result = { id = tostring(entry.id) }
+        if not entry.photo then
+            result.status = "skipped"
+            result.reason = "photo not found"
+        elseif seen[entry.photo] then
+            result.status = "skipped"
+            result.reason = "duplicate"
+        elseif not activate(catalog, entry.photo, selectState) then
+            seen[entry.photo] = true
+            result.status = "skipped"
+            result.reason = "could not select the photo in Develop"
+        else
+            seen[entry.photo] = true
+            result.id = tostring(entry.photo.localIdentifier)
+            LrTasks.sleep(DENOISE_PANEL_SETTLE_SECONDS)
+            local panel
+            waitFor(function()
+                panel = LrDevelopController.getEnhancePanelState()
+                return panel ~= nil and panel.denoiseEnabled
+            end, DENOISE_PANEL_TIMEOUT_SECONDS)
+            local hasDenoise = hasEnhanceFilter(catalog, entry.photo)
+            if not panel then
+                result.status = "failed"
+                result.reason = "Develop panel state unavailable"
+            elseif not panel.denoiseEnabled then
+                result.status = "skipped"
+                result.reason = "Denoise is not available for this photo"
+            elseif hasDenoise and panel.denoiseState and panel.denoiseAmount == amount then
+                result.status = "unchanged"
+            else
+                local change = hasDenoise and panel.denoiseState and true or false
+                local previousAmount = panel.denoiseAmount
+                local ok, err = LrTasks.pcall(function()
+                    if change then
+                        LrDevelopController.changeDenoiseAmount(amount)
+                    else
+                        LrDevelopController.setEnhance("denoise", true, amount)
+                    end
+                end)
+                if ok then
+                    result.status = change and "amount_changed" or "applied"
+                    result.previous_amount = change and previousAmount or nil
+                    -- Let the panel register the change before the next photo
+                    -- becomes active; the pixels are computed in the background.
+                    result.confirmed = waitFor(function()
+                        local now = LrDevelopController.getEnhancePanelState()
+                        return now ~= nil and now.denoiseState and now.denoiseAmount == amount
+                    end, DENOISE_CONFIRM_TIMEOUT_SECONDS) and true or false
+                else
+                    result.status = "failed"
+                    result.reason = tostring(err)
+                end
+            end
+        end
+        counts[result.status] = counts[result.status] + 1
+        results[#results + 1] = result
+    end
+
+    if originalActive then
+        LrTasks.pcall(function() catalog:setSelectedPhotos(originalActive, originalSelection) end)
+    end
+
+    Log.info(string.format("applyDenoise %d%%: %d applied, %d changed, %d unchanged, %d skipped, %d failed",
+        amount, counts.applied, counts.amount_changed, counts.unchanged, counts.skipped, counts.failed))
+
+    return {
+        success = counts.failed == 0,
+        amount = amount,
+        applied = counts.applied,
+        amount_changed = counts.amount_changed,
+        unchanged = counts.unchanged,
+        skipped = counts.skipped,
+        failed = counts.failed,
+        results = results,
+        seconds = math.floor((LrDate.currentTime() - startedAt) * 10 + 0.5) / 10,
+        message = "Denoise runs in Lightroom's background; the Activity Center shows progress.",
     }
 end
 
