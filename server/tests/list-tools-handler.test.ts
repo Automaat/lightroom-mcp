@@ -42,11 +42,12 @@ const EXPECTED_TOOL_NAMES = [
   'apply_denoise',
   'list_masks',
   'invert_mask',
+  'create_mask',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 32 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(32);
+  it('contains exactly 33 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(33);
   });
 
   it('tool names are unique', () => {
@@ -123,6 +124,7 @@ describe('tool required fields', () => {
     ['apply_denoise', ['photo_ids', 'amount']],
     ['list_masks', ['photo_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
+    ['create_mask', ['photo_id', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
   });
