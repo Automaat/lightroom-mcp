@@ -731,7 +731,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "apply_develop_preset",
     luaHandler: "HandlerDevelop.applyDevelopPreset",
-    description: "Apply one exact Develop preset to one or more photos",
+    description:
+      "Apply one exact Develop preset to one or more photos. When the preset contains AI masks (Subject, Sky, Background, ...), Lightroom Classic 13.3+ recomputes each mask for every target photo after applying; ai_updated counts the photos recomputed and ai_update_failed lists the ids where the recompute failed. Earlier versions, and presets without AI masks, are applied as before.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -752,7 +753,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "copy_develop_settings",
     luaHandler: "HandlerDevelop.copyDevelopSettings",
-    description: "Copy Develop settings from one photo to others",
+    description:
+      "Copy Develop settings from one photo to others. When the copied settings contain AI masks (copied when settings is omitted), Lightroom Classic 13.3+ recomputes each mask for every target photo after copying; ai_updated counts the photos recomputed and ai_update_failed lists the ids where the recompute failed. Earlier versions, and copies without AI masks, behave as before.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
