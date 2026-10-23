@@ -58,6 +58,15 @@ function ExportHandler.exportPhotos(args)
         error("No photos found to export")
     end
 
+    -- Lightroom refuses a missing folder with its own error, in the UI
+    -- language; create it as export_photo_metadata and export_develop_preset do.
+    if LrFileUtils.exists(args.destination) == false then
+        LrFileUtils.createAllDirectories(args.destination)
+    end
+    if LrFileUtils.exists(args.destination) ~= "directory" then
+        error("destination is not a directory")
+    end
+
     -- destinationType=specificFolder makes LR honour
     -- LR_export_destinationPathPrefix; sourceFolder ignores it and
     -- writes next to the original. LR_format is set in the
