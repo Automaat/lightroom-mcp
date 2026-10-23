@@ -867,6 +867,30 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "invert_mask",
+    luaHandler: "HandlerMaskInvert.invertMask",
+    description:
+      "Invert a mask on a photo (Lightroom Classic 11.4+), chosen by its mask id from list_masks, never by the current selection. mode \"in_place\" inverts the mask itself. mode \"copy\" leaves the original untouched and creates an inverted copy, returning the copy's id as mask_id and the original's as source_mask_id. Lightroom's own duplicate resets the copy's local sliders to 0, so the tool copies the original's local sliders onto the copy in the same call (Lightroom folds this into the Duplicate and Invert history step; adjustments_copied counts the sliders written) and removes the copy and fails if a value does not stick. mode \"in_place\" on a mask with several components inverts only one of them; the result lists every tool with its inverted flag. Use the returned mask_id for later calls: Lightroom can regenerate mask ids when a mask is written through develop settings. An unknown mask id returns an error and changes nothing. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, inverts, then puts back the module, view source and selection. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: {
+          type: "string",
+          minLength: 1,
+          description: "ID of the mask to invert, from list_masks",
+        },
+        mode: {
+          type: "string",
+          enum: ["in_place", "copy"],
+          description: "in_place inverts the mask; copy keeps it and creates an inverted copy",
+        },
+      },
+      required: ["photo_id", "mask_id", "mode"],
+    },
+  },
+  {
     name: "create_mask",
     luaHandler: "HandlerMaskCreate.createMask",
     description:

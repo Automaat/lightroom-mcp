@@ -143,6 +143,10 @@
       "description": "List the masks on a photo with their ids, names and component tools."
     },
     {
+      "name": "invert_mask",
+      "description": "Invert a mask on a photo in place, or create an inverted copy of it."
+    },
+    {
       "name": "create_mask",
       "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
     }

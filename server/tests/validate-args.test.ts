@@ -28,6 +28,17 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('list_masks', { photo_id: 914, extra: 1 })).toContain('unknown property "extra"');
   });
 
+  it('requires a photo, a mask id and a mode for invert_mask', () => {
+    const valid = { photo_id: 914, mask_id: 'abc', mode: 'in_place' };
+    expect(validateToolArgs('invert_mask', valid)).toBeNull();
+    expect(validateToolArgs('invert_mask', { ...valid, mode: 'copy' })).toBeNull();
+    expect(validateToolArgs('invert_mask', { photo_id: 914, mode: 'copy' })).toContain('mask_id');
+    expect(validateToolArgs('invert_mask', { photo_id: 914, mask_id: 'abc' })).toContain('mode');
+    expect(validateToolArgs('invert_mask', { ...valid, mode: 'toggle' })).toContain('mode');
+    expect(validateToolArgs('invert_mask', { ...valid, mask_id: '' })).toContain('mask_id');
+    expect(validateToolArgs('invert_mask', { ...valid, extra: 1 })).toContain('unknown property "extra"');
+  });
+
   it('validates create_mask type and adjustment ranges', () => {
     expect(validateToolArgs('create_mask', { photo_id: 914, type: 'sky' })).toBeNull();
     expect(validateToolArgs('create_mask', { photo_id: '/a.dng', type: 'subject', adjustments: {} })).toBeNull();
