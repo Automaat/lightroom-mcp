@@ -5,6 +5,7 @@ import path from 'node:path';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
 import {
   DEVELOP_SETTING_KEYS,
+  LOCAL_ADJUSTMENT_KEYS,
   POINT_CURVE_SETTING_KEYS,
   TOOL_CONTRACTS,
 } from '../src/tool-contracts.js';
@@ -41,13 +42,15 @@ const EXPECTED_TOOL_NAMES = [
   'set_develop_settings',
   'apply_denoise',
   'list_masks',
+  'set_mask_adjustments',
+  'get_mask_adjustments',
   'invert_mask',
   'create_mask',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 33 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(33);
+  it('contains exactly 35 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(35);
   });
 
   it('tool names are unique', () => {
@@ -123,6 +126,8 @@ describe('tool required fields', () => {
     ['set_develop_settings', ['photo_id', 'settings']],
     ['apply_denoise', ['photo_ids', 'amount']],
     ['list_masks', ['photo_id']],
+    ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
+    ['get_mask_adjustments', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
   ])('%s requires %j', (name, required) => {
@@ -314,6 +319,22 @@ describe('develop setting schema', () => {
 const TEST_ONLY_ACTIONS: Record<string, string> = {
   set_selection: 'HandlerSelection.setSelection',
 };
+
+describe('local adjustment schema', () => {
+  it('matches the slider table the Lua handler validates against', () => {
+    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'LocalSliders.lua');
+    const luaNames = [...fs.readFileSync(luaPath, 'utf8').matchAll(/"(local_\w+)"/g)].map((m) => m[1]);
+
+    expect(luaNames).toEqual([...LOCAL_ADJUSTMENT_KEYS]);
+  });
+
+  it('offers every slider as a number property of set_mask_adjustments', () => {
+    const contract = TOOL_CONTRACTS.find((c) => c.name === 'set_mask_adjustments');
+    const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
+
+    expect(Object.keys(properties.adjustments.properties ?? {})).toEqual([...LOCAL_ADJUSTMENT_KEYS]);
+  });
+});
 
 describe('tool contracts vs Lua dispatch', () => {
   function parseLuaDispatch(): Record<string, string> {

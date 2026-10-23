@@ -28,6 +28,31 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('list_masks', { photo_id: 914, extra: 1 })).toContain('unknown property "extra"');
   });
 
+  it('requires photo, mask and a known numeric slider for set_mask_adjustments', () => {
+    const ok = { photo_id: 914, mask_id: 'm-1', adjustments: { local_Exposure: 0.5, local_Shadows: -20 } };
+
+    expect(validateToolArgs('set_mask_adjustments', ok)).toBeNull();
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, photo_id: '/a.dng' })).toBeNull();
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, mask_id: undefined })).toContain('mask_id');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, mask_id: '' })).toContain('mask_id');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: undefined })).toContain('adjustments');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: {} })).toContain('adjustments');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: { local_Bogus: 1 } })).toContain(
+      'unknown property "local_Bogus"',
+    );
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: { local_Exposure: '1' } })).toContain(
+      'adjustments.local_Exposure',
+    );
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, extra: 1 })).toContain('unknown property "extra"');
+  });
+
+  it('requires photo and mask for get_mask_adjustments', () => {
+    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914, mask_id: 'm-1' })).toBeNull();
+    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914 })).toContain('mask_id');
+    expect(validateToolArgs('get_mask_adjustments', { mask_id: 'm-1' })).toContain('photo_id');
+    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914, mask_id: 7 })).toContain('mask_id');
+  });
+
   it('requires a photo, a mask id and a mode for invert_mask', () => {
     const valid = { photo_id: 914, mask_id: 'abc', mode: 'in_place' };
     expect(validateToolArgs('invert_mask', valid)).toBeNull();

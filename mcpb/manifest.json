@@ -143,6 +143,14 @@
       "description": "List the masks on a photo with their ids, names and component tools."
     },
     {
+      "name": "set_mask_adjustments",
+      "description": "Change local adjustment sliders on an existing mask of a photo."
+    },
+    {
+      "name": "get_mask_adjustments",
+      "description": "Read the current local adjustment values of a mask on a photo."
+    },
+    {
       "name": "invert_mask",
       "description": "Invert a mask on a photo in place, or create an inverted copy of it."
     },

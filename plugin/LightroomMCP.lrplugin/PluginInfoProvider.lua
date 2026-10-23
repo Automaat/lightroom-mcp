@@ -20,6 +20,7 @@ local HandlerSelection = require 'HandlerSelection'
 local HandlerPreview = require 'HandlerPreview'
 local HandlerDevelop = require 'HandlerDevelop'
 local HandlerMasks = require 'HandlerMasks'
+local HandlerMaskAdjustments = require 'HandlerMaskAdjustments'
 local HandlerMaskInvert = require 'HandlerMaskInvert'
 local HandlerMaskCreate = require 'HandlerMaskCreate'
 local Log = require 'Log'
@@ -220,6 +221,8 @@ local DISPATCH = {
     set_develop_settings = HandlerDevelop.setDevelopSettings,
     apply_denoise = HandlerDevelop.applyDenoise,
     list_masks = HandlerMasks.listMasks,
+    set_mask_adjustments = HandlerMaskAdjustments.setMaskAdjustments,
+    get_mask_adjustments = HandlerMaskAdjustments.getMaskAdjustments,
     invert_mask = HandlerMaskInvert.invertMask,
     create_mask = HandlerMaskCreate.createMask,
 }
