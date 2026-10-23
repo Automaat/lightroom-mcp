@@ -6,6 +6,7 @@ import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js
 import {
   DEVELOP_SETTING_KEYS,
   LOCAL_ADJUSTMENT_KEYS,
+  MASK_CURVE_CHANNELS,
   POINT_CURVE_SETTING_KEYS,
   TOOL_CONTRACTS,
 } from '../src/tool-contracts.js';
@@ -50,11 +51,15 @@ const EXPECTED_TOOL_NAMES = [
   'get_mask_adjustments',
   'invert_mask',
   'create_mask',
+  'set_mask_curves',
+  'get_mask_curves',
+  'edit_mask_point_colors',
+  'get_mask_point_colors',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 39 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(39);
+  it('contains exactly 43 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(43);
   });
 
   it('tool names are unique', () => {
@@ -138,6 +143,10 @@ describe('tool required fields', () => {
     ['get_mask_adjustments', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
+    ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
+    ['get_mask_curves', ['photo_id', 'mask_id']],
+    ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
+    ['get_mask_point_colors', ['photo_id', 'mask_id']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
   });
@@ -342,6 +351,23 @@ describe('local adjustment schema', () => {
     const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
 
     expect(Object.keys(properties.adjustments.properties ?? {})).toEqual([...LOCAL_ADJUSTMENT_KEYS]);
+  });
+});
+
+describe('mask curve schema', () => {
+  it('matches the channel table the Lua handler writes through', () => {
+    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskCurves.lua');
+    const luaChannels = [...fs.readFileSync(luaPath, 'utf8').matchAll(/name = "(\w+)", parameter = "local_\w+curve"/g)]
+      .map((m) => m[1]);
+
+    expect(luaChannels).toEqual([...MASK_CURVE_CHANNELS]);
+  });
+
+  it('offers every channel as a property of set_mask_curves', () => {
+    const contract = TOOL_CONTRACTS.find((c) => c.name === 'set_mask_curves');
+    const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
+
+    expect(Object.keys(properties.curves.properties ?? {})).toEqual([...MASK_CURVE_CHANNELS]);
   });
 });
 

@@ -204,6 +204,63 @@ const maskIdSchema = (description: string) => ({
   description,
 });
 
+export const MASK_CURVE_CHANNELS = ["main", "red", "green", "blue"] as const;
+
+const MASK_CURVE_MIN_PAIRS = 2;
+const MASK_CURVE_MAX_PAIRS = 32;
+
+const maskCurveSchema = (description: string) => ({
+  type: "array",
+  items: { type: "integer", minimum: 0, maximum: 255 },
+  minItems: MASK_CURVE_MIN_PAIRS * 2,
+  maxItems: MASK_CURVE_MAX_PAIRS * 2,
+  description,
+});
+
+const maskCurveProperties = Object.fromEntries(
+  MASK_CURVE_CHANNELS.map((channel) => [
+    channel,
+    maskCurveSchema(
+      channel === "main"
+        ? "Flat input/output pairs for the RGB (luminance) curve, e.g. [0, 0, 64, 48, 192, 210, 255, 255]"
+        : `Flat input/output pairs for the ${channel} channel curve`,
+    ),
+  ]),
+);
+
+const swatchNumber = (description: string, minimum: number, maximum: number) => ({
+  type: "number",
+  minimum,
+  maximum,
+  description,
+});
+
+const swatchRange = (description: string) => ({
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    LowerNone: swatchNumber("Outer left limit", 0, 1),
+    LowerFull: swatchNumber("Inner left limit", 0, 1),
+    UpperFull: swatchNumber("Inner right limit", 0, 1),
+    UpperNone: swatchNumber("Outer right limit", 0, 1),
+  },
+  required: ["LowerNone", "LowerFull", "UpperFull", "UpperNone"],
+  description,
+});
+
+const pointColorSwatchProperties = {
+  SrcHue: swatchNumber("Source color hue, 0 to 6", 0, 6),
+  SrcSat: swatchNumber("Source color saturation, 0 to 1", 0, 1),
+  SrcLum: swatchNumber("Source color luminance, 0 to 1", 0, 1),
+  HueShift: swatchNumber("Hue shift, -1 to 1 (default 0)", -1, 1),
+  SatScale: swatchNumber("Saturation shift, -1 to 1 (default 0)", -1, 1),
+  LumScale: swatchNumber("Luminance shift, -1 to 1 (default 0)", -1, 1),
+  RangeAmount: swatchNumber("Range amount, 0 to 1 (default 0.5)", 0, 1),
+  HueRange: swatchRange("Hue range limits, each 0 to 1"),
+  SatRange: swatchRange("Saturation range limits, each 0 to 1"),
+  LumRange: swatchRange("Luminance range limits, each 0 to 1"),
+};
+
 const stringArray = (description: string, maxItems?: number) => ({
   type: "array",
   items: { type: "string" },
@@ -1122,6 +1179,91 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_id", "type"],
+    },
+  },
+  {
+    name: "set_mask_curves",
+    luaHandler: "HandlerMaskCurves.setMaskCurves",
+    description:
+      "Set the local tone curve of an existing mask, per channel (Lightroom Classic 12.3+; the SDK lists local_Maincurve, local_Redcurve, local_Greencurve and local_Bluecurve from SDK 12.3). Pass the photo, a mask id from list_masks and curves: any subset of main (RGB), red, green and blue, each a flat array of input/output pairs on the 0 to 255 scale, e.g. [0, 0, 64, 48, 192, 210, 255, 255] (2 to 32 pairs, integers, inputs strictly increasing, starting at input 0 and ending at input 255; [0, 0, 255, 255] is the straight line). Only the listed channels of that mask change; every other channel, every other mask and the global settings are left alone. Each write is read back and the call fails, restoring the channels it already wrote, if Lightroom does not keep the curve. A Lightroom version without local curves returns an error naming the minimum version, and nothing is written. Lightroom's mask API only acts on the photo active in Develop, so this switches to Develop, opens the photo, selects the mask, writes, then puts back the previously selected mask, module, view source and selection. Channels already at the value are skipped. Returns the curves read back, the channels that changed (from, to) and those already at the value. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("Mask id from list_masks"),
+        curves: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: maskCurveProperties,
+          description: "Channel names and the point arrays to set (e.g., {\"main\": [0, 0, 128, 140, 255, 255]})",
+        },
+      },
+      required: ["photo_id", "mask_id", "curves"],
+    },
+  },
+  {
+    name: "get_mask_curves",
+    luaHandler: "HandlerMaskCurves.getMaskCurves",
+    description:
+      "Read the local tone curve of an existing mask (Lightroom Classic 12.3+): main (RGB), red, green and blue as flat input/output arrays, exactly as Lightroom returns them. A channel Lightroom does not return is listed under unavailable; if none is returned the call fails and names the minimum version. Like set_mask_curves, this switches to Develop, opens the photo and selects the mask, then puts back the previously selected mask, module, view source and selection. An unknown mask id returns an error. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("Mask id from list_masks"),
+      },
+      required: ["photo_id", "mask_id"],
+    },
+  },
+  {
+    name: "edit_mask_point_colors",
+    luaHandler: "HandlerMaskPointColors.editMaskPointColors",
+    description:
+      "Add, update or delete the local Point Color swatches of an existing mask (Lightroom Classic 13.2+, the first SDK version with the Point Color calls). A mask holds up to 8 swatches, numbered from 1 in the order get_mask_point_colors lists them. action \"add\" needs swatch with SrcHue (0 to 6), SrcSat and SrcLum (0 to 1) plus optional HueShift, SatScale, LumScale (-1 to 1), RangeAmount (0 to 1) and HueRange, SatRange, LumRange (objects with LowerNone, LowerFull, UpperFull, UpperNone, each 0 to 1); a swatch with the same source color as an existing one is refused. action \"update\" needs index and a swatch holding only the fields to change; the rest keep their values. action \"delete\" needs index. action \"clear\" deletes every swatch of the mask. Only the targeted mask changes; other masks, the mask's sliders and the global Point Color settings are left alone. Each change is read back, and a swatch update that does not stick is restored. Mask ids come from list_masks. A Lightroom version without local Point Color returns an error naming the minimum version, and nothing is written. Lightroom's mask API only acts on the photo active in Develop, so this switches to Develop, opens the photo, selects the mask, edits, then puts back the previously selected mask and swatch, module, view source and selection. Returns the action, the affected index, whether anything changed and the swatches now on the mask. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("Mask id from list_masks"),
+        action: {
+          type: "string",
+          enum: ["add", "update", "delete", "clear"],
+          description: "What to do with the mask's Point Color swatches",
+        },
+        index: {
+          type: "integer",
+          minimum: 1,
+          maximum: 8,
+          description: "Swatch number, from 1; required for update and delete",
+        },
+        swatch: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: pointColorSwatchProperties,
+          description: "Swatch fields; add needs SrcHue, SrcSat and SrcLum, update takes any subset",
+        },
+      },
+      required: ["photo_id", "mask_id", "action"],
+    },
+  },
+  {
+    name: "get_mask_point_colors",
+    luaHandler: "HandlerMaskPointColors.getMaskPointColors",
+    description:
+      "Read the local Point Color swatches of an existing mask (Lightroom Classic 13.2+). Returns the swatches in Lightroom's order, each with its index (from 1, the number edit_mask_point_colors takes) and the fields SrcHue, SrcSat, SrcLum, HueShift, SatScale, LumScale, RangeAmount, HueRange, SatRange and LumRange Lightroom reports; the list is empty when the mask has none. Like edit_mask_point_colors, this switches to Develop, opens the photo and selects the mask, then puts back the previously selected mask, module, view source and selection. An unknown mask id returns an error. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("Mask id from list_masks"),
+      },
+      required: ["photo_id", "mask_id"],
     },
   },
 ];

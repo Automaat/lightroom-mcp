@@ -173,6 +173,22 @@
     {
       "name": "create_mask",
       "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
+    },
+    {
+      "name": "set_mask_curves",
+      "description": "Set the local tone curve of a mask on a photo, per channel."
+    },
+    {
+      "name": "get_mask_curves",
+      "description": "Read the local tone curve of a mask on a photo."
+    },
+    {
+      "name": "edit_mask_point_colors",
+      "description": "Add, update, delete or clear the local Point Color swatches of a mask."
+    },
+    {
+      "name": "get_mask_point_colors",
+      "description": "Read the local Point Color swatches of a mask on a photo."
     }
   ],
   "user_config": {
