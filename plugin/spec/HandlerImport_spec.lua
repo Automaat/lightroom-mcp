@@ -108,6 +108,60 @@ describe("HandlerImport.importPhotos", function()
         assert.are.equal(3, r.imported)
     end)
 
+    it("imports camera raw formats beyond Canon, Nikon and Sony, in any case", function()
+        local _, Handler = setup({
+            fs = {
+                exists = { ["/dir"] = true },
+                directories = { ["/dir"] = true },
+                dirContents = {
+                    "/dir/a.RAF", "/dir/b.CR3", "/dir/c.orf", "/dir/d.rw2", "/dir/e.pef",
+                    "/dir/f.srw", "/dir/g.3fr", "/dir/h.iiq", "/dir/i.HEIC", "/dir/j.hif",
+                },
+            },
+        })
+
+        local r = Handler.importPhotos({ source_path = "/dir" })
+
+        assert.are.equal(10, r.imported)
+        assert.are.equal(0, r.skipped)
+        assert.is_nil(r.skipped_by_extension)
+        assert.are.equal("Imported 10 photos", r.message)
+    end)
+
+    it("reports the files it skipped by extension", function()
+        local _, Handler = setup({
+            fs = {
+                exists = { ["/dir"] = true },
+                directories = { ["/dir"] = true },
+                dirContents = { "/dir/a.raf", "/dir/a.xmp", "/dir/b.xmp", "/dir/notes.txt", "/dir/README" },
+            },
+        })
+
+        local r = Handler.importPhotos({ source_path = "/dir" })
+
+        assert.are.equal(1, r.imported)
+        assert.are.equal(4, r.skipped)
+        assert.are.same({ xmp = 2, txt = 1, [""] = 1 }, r.skipped_by_extension)
+        assert.are.equal(
+            "Imported 1 photos; skipped 4 files with unsupported extensions ((none): 1, txt: 1, xmp: 2)",
+            r.message)
+    end)
+
+    it("names the skipped extensions when a folder has no importable photos", function()
+        local _, Handler = setup({
+            fs = {
+                exists = { ["/dir"] = true },
+                directories = { ["/dir"] = true },
+                dirContents = { "/dir/clip.mov", "/dir/clip.xmp" },
+            },
+        })
+
+        local ok, err = pcall(Handler.importPhotos, { source_path = "/dir" })
+
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("skipped files by extension: mov: 1, xmp: 1", 1, true))
+    end)
+
     it("acquires catalog write access per photo, not once for the batch", function()
         -- A batch-wide write lock wedges the bridge for the whole multi-minute
         -- import (issue #128); each photo must get its own short transaction so

@@ -569,7 +569,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "import_photos",
     luaHandler: "HandlerImport.importPhotos",
-    description: "Import photos into Lightroom catalog",
+    description:
+      "Import a photo, or every photo in a folder and its subfolders, into the Lightroom catalog. Folder imports take camera raw (CR3, RAF, ORF, RW2, NEF, ARW, DNG and other Camera Raw formats), JPEG, HEIC/HEIF, AVIF, JPEG XL, TIFF, PNG and PSD/PSB files; other files are skipped and counted by extension in the reply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

@@ -7,6 +7,26 @@ local Log = require 'Log'
 
 local ImportHandler = {}
 
+local IMPORTABLE_EXTENSIONS = {}
+for ext in ([[
+    3fr ari arw bay cap cr2 cr3 crw dcr dcs dng drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
+    nef nrw orf ori pef ptx pxn raf raw rw2 rwl sr2 srf srw x3f
+    avif heic heif hif jpe jpeg jpg jxl png psb psd tif tiff
+]]):gmatch("%S+") do
+    IMPORTABLE_EXTENSIONS[ext] = true
+end
+
+local function describeSkipped(skipped)
+    local names = {}
+    for ext in pairs(skipped) do names[#names + 1] = ext end
+    table.sort(names)
+    local parts = {}
+    for _, ext in ipairs(names) do
+        parts[#parts + 1] = string.format("%s: %d", ext == "" and "(none)" or ext, skipped[ext])
+    end
+    return table.concat(parts, ", ")
+end
+
 function ImportHandler.importPhotos(args)
     if not args.source_path then
         error("source_path is required")
@@ -27,6 +47,8 @@ function ImportHandler.importPhotos(args)
     -- Enumerate source files OUTSIDE any catalog lock; the filesystem walk
     -- needs no catalog access.
     local photosToImport = {}
+    local skippedByExtension = {}
+    local skippedCount = 0
     if sourceKind == 'directory' then
         -- Import all photos from directory, including nested subfolders.
         -- LrFileUtils.files lists only the immediate directory, so a source
@@ -37,10 +59,11 @@ function ImportHandler.importPhotos(args)
             -- the previous call was nil and raised "attempt to call field
             -- 'extension' (a nil value)" on every directory import.
             local ext = LrPathUtils.extension(file):lower()
-            if ext == 'jpg' or ext == 'jpeg' or ext == 'png' or
-               ext == 'tif' or ext == 'tiff' or ext == 'dng' or
-               ext == 'cr2' or ext == 'nef' or ext == 'arw' then
+            if IMPORTABLE_EXTENSIONS[ext] then
                 table.insert(photosToImport, file)
+            else
+                skippedByExtension[ext] = (skippedByExtension[ext] or 0) + 1
+                skippedCount = skippedCount + 1
             end
         end
     else
@@ -49,6 +72,9 @@ function ImportHandler.importPhotos(args)
     end
 
     if #photosToImport == 0 then
+        if skippedCount > 0 then
+            error("No photos found to import; skipped files by extension: " .. describeSkipped(skippedByExtension))
+        end
         error("No photos found to import")
     end
 
@@ -96,12 +122,19 @@ function ImportHandler.importPhotos(args)
         end)
     end
 
-    Log.info(string.format("Imported %d photos from: %s", importedCount, args.source_path))
+    Log.info(string.format("Imported %d photos from: %s (skipped %d)", importedCount, args.source_path, skippedCount))
 
+    local message = string.format("Imported %d photos", importedCount)
+    if skippedCount > 0 then
+        message = string.format("%s; skipped %d files with unsupported extensions (%s)",
+            message, skippedCount, describeSkipped(skippedByExtension))
+    end
     return {
         success = true,
         imported = importedCount,
-        message = string.format("Imported %d photos", importedCount)
+        skipped = skippedCount,
+        skipped_by_extension = skippedCount > 0 and skippedByExtension or nil,
+        message = message,
     }
 end
 
