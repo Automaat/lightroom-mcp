@@ -826,4 +826,18 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       required: ["photo_ids", "amount"],
     },
   },
+  {
+    name: "list_masks",
+    luaHandler: "HandlerMasks.listMasks",
+    description:
+      "List the masks on a photo (Lightroom Classic 11+): each mask's id, name and hidden state, and its component tools with id, type, subtype and inverted state. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, reads its masks, then puts back the module, view source and selection. A photo without masks returns an empty list. Mask and tool ids stay valid for later calls on the same photo while its masks are unchanged. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+      },
+      required: ["photo_id"],
+    },
+  },
 ];

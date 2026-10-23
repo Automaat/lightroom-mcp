@@ -79,6 +79,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerDevelop = nil
+    package.loaded.DevelopSession = nil
     return catalog, require 'HandlerDevelop', {
         pluginPresets = pluginPresets,
         files = files,

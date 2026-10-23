@@ -20,6 +20,14 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('apply_denoise', { photo_ids: tooMany, amount: 30 })).toContain('photo_ids');
   });
 
+  it('requires a single photo for list_masks', () => {
+    expect(validateToolArgs('list_masks', { photo_id: 914 })).toBeNull();
+    expect(validateToolArgs('list_masks', { photo_id: '/a.dng' })).toBeNull();
+    expect(validateToolArgs('list_masks', {})).toContain('photo_id');
+    expect(validateToolArgs('list_masks', { photo_id: [914] })).toContain('photo_id');
+    expect(validateToolArgs('list_masks', { photo_id: 914, extra: 1 })).toContain('unknown property "extra"');
+  });
+
   it('rejects a photo id that is neither a string nor a number', () => {
     const msg = validateToolArgs('get_photo_metadata', { photo_id: { nested: true } });
 

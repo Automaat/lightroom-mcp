@@ -137,6 +137,10 @@
     {
       "name": "apply_denoise",
       "description": "Turn on AI Denoise at a given amount on photos."
+    },
+    {
+      "name": "list_masks",
+      "description": "List the masks on a photo with their ids, names and component tools."
     }
   ],
   "user_config": {
