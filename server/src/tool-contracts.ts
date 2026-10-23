@@ -799,7 +799,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "apply_denoise",
     luaHandler: "HandlerDevelop.applyDenoise",
     description:
-      "Turn on AI Denoise at a given amount, or change its amount, on photos (Lightroom Classic 15+). Denoise is not a plain develop key, so this drives the Develop module: it switches to Develop, makes each photo active in turn, applies Denoise through Lightroom's own panel, then restores the selection. Lightroom computes the result in the background (Activity Center). Photos already at that amount are left alone; other develop settings are untouched. Up to 100 photos per call.",
+      "Turn on AI Denoise at a given amount, or change its amount, on photos (Lightroom Classic 15+). Denoise is not a plain develop key, so this drives the Develop module: it switches to Develop, makes each photo active in turn, applies Denoise through Lightroom's own panel, then puts back the module, view source and selection. Lightroom computes the result in the background (Activity Center). Photos already at that amount are left alone; other develop settings are untouched. One call runs at a time; a second call is rejected until the first finishes. Up to 100 photos per call; a call stops after about 240 s, sets complete to false and lists the ids it did not reach in remaining_ids, so call again with those.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -817,7 +817,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         restore_selection: {
           type: "boolean",
           description:
-            "Put the user's selection back afterwards (default true). Pass false when calling in back-to-back batches: restoring loads one more photo in Develop per call.",
+            "Put the user's module, view source and selection back afterwards (default true). Pass false when calling in back-to-back batches: restoring loads one more photo per call.",
         },
       },
       required: ["photo_ids", "amount"],
