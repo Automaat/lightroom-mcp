@@ -15,21 +15,25 @@ local MASK_TYPES = {
     background = { toolType = "aiSelection", subtype = "background" },
 }
 
+local TWO_DECIMAL_ROUNDING_TOLERANCE = 0.01
+local WHOLE_NUMBER_ROUNDING_TOLERANCE = 0.5
+local WRITE_CONFIRM_TIMEOUT_SECONDS = 2
+
 local ADJUSTMENTS = {
-    { name = "exposure", param = "local_Exposure", min = -5, max = 5 },
-    { name = "contrast", param = "local_Contrast", min = -100, max = 100 },
-    { name = "highlights", param = "local_Highlights", min = -100, max = 100 },
-    { name = "shadows", param = "local_Shadows", min = -100, max = 100 },
-    { name = "whites", param = "local_Whites", min = -100, max = 100 },
-    { name = "blacks", param = "local_Blacks", min = -100, max = 100 },
-    { name = "texture", param = "local_Texture", min = -100, max = 100 },
-    { name = "clarity", param = "local_Clarity", min = -100, max = 100 },
-    { name = "dehaze", param = "local_Dehaze", min = -100, max = 100 },
-    { name = "temperature", param = "local_Temperature", min = -100, max = 100 },
-    { name = "tint", param = "local_Tint", min = -100, max = 100 },
-    { name = "saturation", param = "local_Saturation", min = -100, max = 100 },
-    { name = "sharpness", param = "local_Sharpness", min = -100, max = 100 },
-    { name = "noise", param = "local_LuminanceNoise", min = -100, max = 100 },
+    { name = "exposure", param = "local_Exposure", min = -4, max = 4, tolerance = TWO_DECIMAL_ROUNDING_TOLERANCE },
+    { name = "contrast", param = "local_Contrast", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "highlights", param = "local_Highlights", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "shadows", param = "local_Shadows", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "whites", param = "local_Whites", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "blacks", param = "local_Blacks", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "texture", param = "local_Texture", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "clarity", param = "local_Clarity", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "dehaze", param = "local_Dehaze", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "temperature", param = "local_Temperature", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "tint", param = "local_Tint", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "saturation", param = "local_Saturation", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "sharpness", param = "local_Sharpness", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
+    { name = "noise", param = "local_LuminanceNoise", min = -100, max = 100, tolerance = WHOLE_NUMBER_ROUNDING_TOLERANCE },
 }
 
 local ADJUSTMENT_BY_NAME = {}
@@ -206,7 +210,9 @@ local function describeFailure(typeName, photoId, knownIds)
     if #fresh == 1 then
         return string.format("Lightroom created an empty %s mask on photo %s", typeName, photoId)
     end
-    return string.format("Lightroom found no %s to select on photo %s", typeName, photoId)
+    return string.format("Lightroom found no %s to select on photo %s; Lightroom shows an alert such as"
+        .. " \"No %s detected\" for this, so click OK in Lightroom before the next Develop call",
+        typeName, photoId, typeName)
 end
 
 local function setHistoryGrouping(seconds, trackingSeconds)
@@ -225,6 +231,23 @@ local function writeNeutralAdjustments(maskId, values)
     LrTasks.pcall(LrDevelopController.stopTracking, true)
     setHistoryGrouping(DEFAULT_GROUPING_THRESHOLD_SECONDS, DEFAULT_TRACKING_DELAY_SECONDS)
     if not ok then error(err, 0) end
+end
+
+local function confirmAdjustments(values)
+    for _, adjustment in ipairs(ADJUSTMENTS) do
+        local wanted = values[adjustment.name]
+        if wanted ~= nil then
+            local function readsWanted()
+                local ok, actual = LrTasks.pcall(LrDevelopController.getValue, adjustment.param)
+                return ok and type(actual) == "number" and math.abs(actual - wanted) <= adjustment.tolerance
+            end
+            if not DevelopSession.waitFor(readsWanted, WRITE_CONFIRM_TIMEOUT_SECONDS) then
+                local ok, actual = LrTasks.pcall(LrDevelopController.getValue, adjustment.param)
+                error(string.format("Lightroom did not keep %s %s (reads %s)", adjustment.name,
+                    formatNumber(wanted), ok and type(actual) == "number" and formatNumber(actual) or "nothing"), 0)
+            end
+        end
+    end
 end
 
 local function currentToolOrNil()
@@ -277,6 +300,7 @@ local function createInDevelop(catalog, photo, photoId, typeName, spec, values)
         created = awaitNewMask(knownIds)
         if not created then error(describeFailure(typeName, photoId, knownIds), 0) end
         writeNeutralAdjustments(created.ID, values)
+        confirmAdjustments(values)
     end)
 
     if not ok then

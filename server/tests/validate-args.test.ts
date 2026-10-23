@@ -34,7 +34,7 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('create_mask', {
       photo_id: 914,
       type: 'background',
-      adjustments: { exposure: -5, noise: 100, temperature: -100, tint: 12.5 },
+      adjustments: { exposure: -4, noise: 100, temperature: -100, tint: 12.5 },
     })).toBeNull();
     expect(validateToolArgs('create_mask', { photo_id: 914 })).toContain('type');
     expect(validateToolArgs('create_mask', { type: 'sky' })).toContain('photo_id');
@@ -43,7 +43,7 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('create_mask', {
       photo_id: 914,
       type: 'sky',
-      adjustments: { exposure: 5.1 },
+      adjustments: { exposure: 4.1 },
     })).toContain('adjustments.exposure');
     expect(validateToolArgs('create_mask', {
       photo_id: 914,

@@ -23,7 +23,7 @@ const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100
 });
 
 const MASK_ADJUSTMENT_PROPERTIES = {
-  exposure: maskAdjustmentSlider("Exposure in stops", -5, 5),
+  exposure: maskAdjustmentSlider("Exposure in stops", -4, 4),
   contrast: maskAdjustmentSlider("Contrast"),
   highlights: maskAdjustmentSlider("Highlights"),
   shadows: maskAdjustmentSlider("Shadows"),
@@ -870,7 +870,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "create_mask",
     luaHandler: "HandlerMaskCreate.createMask",
     description:
-      "Create a Subject, Sky or Background mask on a photo (Lightroom Classic 11+) and return the new mask id. Lightroom detects the area itself. Optional adjustments set the mask's local sliders in the same call; every slider you leave out is set to 0, so the mask never inherits the values last used in the Masking panel. If Lightroom finds nothing to select (for example no sky), the call fails and the photo gets no new mask. Masks already on the photo are left unchanged. The new mask is meant to appear as a single history step. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, creates the mask, then puts back the module, view source and selection. Detection can take several seconds. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+      "Create a Subject, Sky or Background mask on a photo (Lightroom Classic 11+) and return the new mask id. Lightroom detects the area itself. Optional adjustments set the mask's local sliders in the same call; every slider you leave out is set to 0, so the mask never inherits the values last used in the Masking panel. If Lightroom finds nothing to select (for example no sky), the call fails after about 30 seconds and the photo gets no new mask, but Lightroom shows an alert such as \"No sky detected\" that stays up until someone clicks OK in Lightroom, and until then every Develop call sees no masks. Masks already on the photo are left unchanged. Lightroom records the new mask as one \"Add Subject\", \"Add Sky\" or \"Add Background\" history step; adjustments other than 0 add one more history step that groups all the sliders. A Background mask is listed with tool type aiSelection and subtype object. Exposure is limited to the -4 to 4 range Lightroom allows for local masks. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, creates the mask, then puts back the module, view source and selection. Detection can take several seconds. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

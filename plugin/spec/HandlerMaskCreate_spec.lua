@@ -50,6 +50,7 @@ local function setup(opts)
         modules = {},
     }
     local polls = 0
+    local values = {}
     local module = "library"
     local active = photo
     local tool = opts.startTool or "loupe"
@@ -109,7 +110,10 @@ local function setup(opts)
         setValue = function(param, value)
             if opts.setValueFailsOn == param then error("setValue failed") end
             calls.setValue[#calls.setValue + 1] = { param = param, value = value }
+            local clamp = opts.clampTo and opts.clampTo[param]
+            values[param] = clamp and math.max(-clamp, math.min(clamp, value)) or value
         end,
+        getValue = function(param) return values[param] or 0 end,
         stopTracking = function() calls.stopTracking = calls.stopTracking + 1 end,
         setTrackingDelay = function(seconds) calls.trackingDelay[#calls.trackingDelay + 1] = seconds end,
         setMultipleAdjustmentThreshold = function(seconds) calls.threshold[#calls.threshold + 1] = seconds end,
@@ -283,6 +287,29 @@ describe("HandlerMaskCreate.createMask", function()
         assert.are.same({ "new-mask" }, calls.deleteMask)
     end)
 
+    it("removes the new mask when Lightroom reads back a different value than was written", function()
+        local Handler, calls, masks = setup({
+            existing = { existingMask("a") },
+            clampTo = { local_Contrast = 5 },
+        })
+
+        local err = errorOf(function()
+            Handler.createMask({ photo_id = "10", type = "subject", adjustments = { contrast = 20 } })
+        end)
+
+        assert.truthy(err:find("Lightroom did not keep contrast 20 (reads 5)", 1, true))
+        assert.are.same({ "a" }, idsOf(masks))
+        assert.are.same({ "new-mask" }, calls.deleteMask)
+    end)
+
+    it("tells the caller to dismiss Lightroom's alert when nothing is found", function()
+        local Handler = setup({ behavior = "nothing" })
+
+        local err = errorOf(function() Handler.createMask({ photo_id = "10", type = "sky" }) end)
+
+        assert.truthy(err:find("click OK in Lightroom", 1, true))
+    end)
+
     it("waits for a mask that Lightroom adds after detection finishes", function()
         local Handler, _, masks = setup({ behavior = "delayed", pollsBeforeAppear = 40 })
 
@@ -391,9 +418,9 @@ describe("HandlerMaskCreate.createMask", function()
             { { photo_id = "10", type = "people" }, "type must be one of: subject, sky, background" },
             { { photo_id = "10", type = "sky", adjustments = "bright" }, "adjustments must be an object" },
             { { photo_id = "10", type = "sky", adjustments = { gamma = 1 } }, "Unknown adjustment gamma" },
-            { { photo_id = "10", type = "sky", adjustments = { exposure = "1" } }, "exposure must be a number between -5 and 5" },
-            { { photo_id = "10", type = "sky", adjustments = { exposure = 5.5 } }, "exposure must be between -5 and 5 (got 5.5)" },
-            { { photo_id = "10", type = "sky", adjustments = { exposure = -5.1 } }, "exposure must be between -5 and 5 (got -5.1)" },
+            { { photo_id = "10", type = "sky", adjustments = { exposure = "1" } }, "exposure must be a number between -4 and 4" },
+            { { photo_id = "10", type = "sky", adjustments = { exposure = 4.5 } }, "exposure must be between -4 and 4 (got 4.5)" },
+            { { photo_id = "10", type = "sky", adjustments = { exposure = -4.1 } }, "exposure must be between -4 and 4 (got -4.1)" },
             { { photo_id = "10", type = "sky", adjustments = { clarity = 101 } }, "clarity must be between -100 and 100 (got 101)" },
             { { photo_id = "10", type = "sky", adjustments = { noise = -101 } }, "noise must be between -100 and 100 (got -101)" },
             { { photo_id = "10", type = "sky", adjustments = { tint = 0 / 0 } }, "tint must be a number between -100 and 100" },
@@ -416,7 +443,7 @@ describe("HandlerMaskCreate.createMask", function()
         Handler.createMask({
             photo_id = "10",
             type = "sky",
-            adjustments = { exposure = 5, contrast = -100, dehaze = 100, noise = 100 },
+            adjustments = { exposure = 4, contrast = -100, dehaze = 100, noise = 100 },
         })
 
         assert.are.equal(14, #calls.setValue)
