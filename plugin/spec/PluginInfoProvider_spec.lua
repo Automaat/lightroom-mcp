@@ -63,6 +63,7 @@ local function installStubs(prefs, asyncTasks, opts)
                     end,
                     reconnect = function()
                         if opts.socketOps then table.insert(opts.socketOps, "reconnect") end
+                        if opts.reconnectError then error(opts.reconnectError) end
                     end,
                     send = function(_, line)
                         if opts.sends then table.insert(opts.sends, line) end
@@ -338,6 +339,79 @@ describe("PluginInfoProvider server task", function()
         assert.is_false(_G.LightroomMCP_State.requestNeedsReconnect)
         assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
         assert.is_false(_G.LightroomMCP_State.responseNeedsReconnect)
+    end)
+
+    local function bindsInMode(binds, mode)
+        local found = {}
+        for _, b in ipairs(binds) do
+            if b.mode == mode then found[#found + 1] = b end
+        end
+        return found
+    end
+
+    local function runTicks(opts, onTick, lastTick)
+        local binds, ops, cleanups, ticks = {}, {}, {}, 0
+        installStubs(nil, nil, {
+            runTask = true, cleanups = cleanups, capturedBinds = binds, socketOps = ops,
+            reconnectError = opts.reconnectError,
+            onSleep = function(state)
+                ticks = ticks + 1
+                onTick(ticks, binds, cleanups, state)
+                if ticks >= lastTick then state.running = false end
+            end,
+        })
+        loadInfoProvider().startServer()
+        return binds, ops
+    end
+
+    local function contains(list, value)
+        for _, v in ipairs(list) do
+            if v == value then return true end
+        end
+        return false
+    end
+
+    it("rebinds the request listener after Lightroom closes both listeners with no client", function()
+        local binds, ops = runTicks({}, function(tick, b)
+            if tick == 1 then
+                b[2].onClosed()
+                b[1].onClosed()
+            end
+        end, 6)
+
+        local requests = bindsInMode(binds, "receive")
+        assert.are.equal(2, #requests)
+        assert.are.equal(58763, requests[2].port)
+        assert.is_true(#bindsInMode(binds, "send") >= 2)
+        assert.is_true(contains(ops, "close"))
+        assert.is_false(contains(ops, "reconnect"))
+        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
+
+        requests[1].onClosed()
+        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+    end)
+
+    it("rebinds the request listener when reconnecting it fails", function()
+        local binds, ops = runTicks({ reconnectError = "socket closed" }, function(tick, b)
+            if tick == 1 then b[1].onError(nil, "timeout") end
+        end, 6)
+
+        assert.are.equal(2, #bindsInMode(binds, "receive"))
+        assert.is_true(contains(ops, "reconnect"))
+        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+    end)
+
+    it("clears running when the live server task's context is cleaned up", function()
+        local runningAfterCleanup
+        runTicks({}, function(tick, _, cleanups, state)
+            if tick == 1 then
+                cleanups[1]()
+                runningAfterCleanup = state.running
+            end
+        end, 3)
+
+        assert.is_false(runningAfterCleanup)
     end)
 end)
 

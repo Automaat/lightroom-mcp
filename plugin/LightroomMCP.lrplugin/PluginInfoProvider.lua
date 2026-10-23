@@ -429,6 +429,7 @@ local function startServer()
                 return
             end
             addLog("Server task context cleanup")
+            pluginState.running = false
             if pluginState.requestSocket then
                 pcall(function() pluginState.requestSocket:close() end)
             end
@@ -442,13 +443,15 @@ local function startServer()
             pluginState.token = nil
         end)
 
-        local function bindRequest()
+        local function bindRequest(myGen)
+            local function isLive() return pluginState.requestGen == myGen end
             return LrSocket.bind {
                 functionContext = context,
                 plugin = _PLUGIN,
                 port = requestPort,
                 mode = "receive",
                 onConnected = function()
+                    if not isLive() then return end
                     pluginState.receiveConnected = true
                     pluginState.lastConnectedTime = os.time()
                     -- A stale lastRequestTime from a prior session (e.g. user
@@ -487,11 +490,13 @@ local function startServer()
                     end
                 end,
                 onClosed = function()
+                    if not isLive() then return end
                     pluginState.receiveConnected = false
-                    pluginState.requestNeedsReconnect = true
-                    addLog("REQUEST socket closed (client disconnected)")
+                    pluginState.requestNeedsRebind = true
+                    addLog("REQUEST socket closed (gen=" .. myGen .. ")")
                 end,
                 onError = function(_, err)
+                    if not isLive() then return end
                     local errStr = tostring(err)
                     if isBindFailure(errStr) then
                         logBindFailure("REQUEST", requestPort, errStr)
@@ -502,7 +507,7 @@ local function startServer()
                         end
                     else
                         pluginState.receiveConnected = false
-                        pluginState.requestNeedsReconnect = true
+                        pluginState.requestNeedsRebind = true
                         addLog("REQUEST socket error: " .. errStr)
                     end
                 end,
@@ -519,7 +524,9 @@ local function startServer()
         -- resetForReload, or a panel Stop->Start) doesn't enter the monitor
         -- loop with a stale reconnect/rebind pending and churn the sockets we
         -- just bound on the first tick.
+        pluginState.requestGen = 0
         pluginState.requestNeedsReconnect = false
+        pluginState.requestNeedsRebind = false
         pluginState.responseNeedsRebind = false
         pluginState.responseNeedsReconnect = false
 
@@ -570,8 +577,9 @@ local function startServer()
         -- pre-existing stale callbacks from a Reload Plug-in cycle were
         -- bound against gen=0 and stay ignored).
         pluginState.responseGen = pluginState.responseGen + 1
-        pluginState.requestSocket = bindRequest()
-        addLog("REQUEST bound on " .. requestPort)
+        pluginState.requestGen = pluginState.requestGen + 1
+        pluginState.requestSocket = bindRequest(pluginState.requestGen)
+        addLog("REQUEST bound on " .. requestPort .. " gen=" .. pluginState.requestGen)
         pluginState.responseSocket = bindResponse(pluginState.responseGen)
         addLog("RESPONSE bound on " .. responsePort .. " gen=" .. pluginState.responseGen)
 
@@ -586,9 +594,26 @@ local function startServer()
                 pluginState.running = false
                 break
             end
-            if pluginState.requestNeedsReconnect and pluginState.requestSocket then
+            if pluginState.requestNeedsRebind then
+                pluginState.requestGen = pluginState.requestGen + 1
+                local newGen = pluginState.requestGen
+                if pluginState.requestSocket then
+                    pcall(function() pluginState.requestSocket:close() end)
+                end
+                pluginState.receiveConnected = false
+                LrTasks.sleep(0.1)
+                if shutdownRequested() then break end
+                pluginState.requestSocket = bindRequest(newGen)
+                pluginState.requestNeedsRebind = false
                 pluginState.requestNeedsReconnect = false
-                pluginState.requestSocket:reconnect()
+                addLog("REQUEST rebound on " .. requestPort .. " gen=" .. newGen)
+            elseif pluginState.requestNeedsReconnect and pluginState.requestSocket then
+                pluginState.requestNeedsReconnect = false
+                local reconnected, reconnectErr = LrTasks.pcall(function() pluginState.requestSocket:reconnect() end)
+                if not reconnected then
+                    addLog("REQUEST reconnect failed, rebinding: " .. tostring(reconnectErr))
+                    pluginState.requestNeedsRebind = true
+                end
             end
             -- Response socket has two recovery paths:
             -- - rebind: full close+rebind for true client disconnect
@@ -710,6 +735,7 @@ local function resetForReload()
     -- deliberately NOT reset -- it must keep advancing so a superseded
     -- instance's cleanup handler stays a no-op (see startServer).
     pluginState.requestNeedsReconnect = false
+    pluginState.requestNeedsRebind = false
     pluginState.responseNeedsRebind = false
     pluginState.responseNeedsReconnect = false
     pluginState.lastEvent = nil
@@ -727,6 +753,7 @@ local function shutdown()
     pluginState.shuttingDown = true
     pluginState.running = false
     pluginState.requestNeedsReconnect = false
+    pluginState.requestNeedsRebind = false
     pluginState.responseNeedsRebind = false
     pluginState.responseNeedsReconnect = false
     pluginState.needsFullRestart = false
