@@ -42,6 +42,8 @@ const EXPECTED_TOOL_NAMES = [
   'set_develop_settings',
   'apply_denoise',
   'list_masks',
+  'delete_masks',
+  'delete_empty_masks',
   'set_mask_adjustments',
   'get_mask_adjustments',
   'invert_mask',
@@ -49,8 +51,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 35 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(35);
+  it('contains exactly 37 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(37);
   });
 
   it('tool names are unique', () => {
@@ -126,6 +128,8 @@ describe('tool required fields', () => {
     ['set_develop_settings', ['photo_id', 'settings']],
     ['apply_denoise', ['photo_ids', 'amount']],
     ['list_masks', ['photo_id']],
+    ['delete_masks', ['photo_id']],
+    ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
     ['get_mask_adjustments', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
@@ -181,6 +185,7 @@ describe('photo array schema', () => {
     ['export_photo_metadata', 'photo_ids'],
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
+    ['delete_empty_masks', 'photo_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
     const properties = tool?.inputSchema.properties as Record<

@@ -12,6 +12,7 @@ export interface ToolContract {
 const MAX_BULK_PHOTO_IDS = 1000;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
+const MAX_MASK_DELETE_IDS = 100;
 
 const MASK_TYPES = ["subject", "sky", "background"] as const;
 
@@ -893,6 +894,54 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
       },
       required: ["photo_id"],
+    },
+  },
+  {
+    name: "delete_masks",
+    luaHandler: "HandlerMaskDelete.deleteMasks",
+    description:
+      "Delete masks from one photo (Lightroom Classic 11+). Pass exactly one of: mask_ids (delete those masks), tool_ids (delete those component tools; a mask whose last tool is deleted is removed, as in Lightroom) or all=true (delete every mask on the photo). Ids come from list_masks. Every id is checked before anything is deleted: an unknown mask or tool id returns an error and the photo is left unchanged. Lightroom's mask API only acts on the photo active in Develop, so this switches to Develop, opens the photo and its masking tool, deletes, checks that Lightroom applied and saved the change, then puts back the module, view source and selection. Ids of the remaining masks can change afterwards, so call list_masks again. Returns the deleted mask and tool ids and the number of masks left. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_ids: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+          minItems: 1,
+          maxItems: MAX_MASK_DELETE_IDS,
+          description: "Mask ids from list_masks to delete",
+        },
+        tool_ids: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+          minItems: 1,
+          maxItems: MAX_MASK_DELETE_IDS,
+          description: "Component tool ids from list_masks to delete",
+        },
+        all: {
+          type: "boolean",
+          enum: [true],
+          description: "Pass true to delete every mask on the photo",
+        },
+      },
+      required: ["photo_id"],
+      oneOf: [{ required: ["mask_ids"] }, { required: ["tool_ids"] }, { required: ["all"] }],
+    },
+  },
+  {
+    name: "delete_empty_masks",
+    luaHandler: "HandlerMaskDelete.deleteEmptyMasks",
+    description:
+      "Delete all empty masks (masks with no component tools) from a list of photos (Lightroom Classic 14+). Uses the catalog, so it does not open the photos in Develop and leaves the module and selection alone. Returns photos_changed, the number of photos that lost at least one mask, photos_checked, and missing for ids that match no photo. Up to 1000 photos per call.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Photo IDs or file paths"),
+      },
+      required: ["photo_ids"],
     },
   },
   {
