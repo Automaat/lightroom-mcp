@@ -95,6 +95,99 @@ describe('validateToolArgs', () => {
     });
   });
 
+  it('requires exactly one deletion target for delete_masks', () => {
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
+    expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();
+    expect(validateToolArgs('delete_masks', { photo_id: '/a.dng', all: true })).toBeNull();
+    expect(validateToolArgs('delete_masks', { photo_id: 914 })).toContain('Invalid arguments for delete_masks');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m'], all: true })).toContain('oneOf');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m'], tool_ids: ['t'] })).toContain('oneOf');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, all: false })).toContain('all');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: [] })).toContain('mask_ids');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: [7] })).toContain('mask_ids');
+    expect(validateToolArgs('delete_masks', { mask_ids: ['m'] })).toContain('photo_id');
+    const tooMany = Array.from({ length: 101 }, (_, i) => `m-${i}`);
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: tooMany })).toContain('mask_ids');
+  });
+
+  it('requires a photo list for delete_empty_masks', () => {
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: [914, '/a.dng'] })).toBeNull();
+    expect(validateToolArgs('delete_empty_masks', {})).toContain('photo_ids');
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: [] })).toContain('photo_ids');
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: 914 })).toContain('photo_ids');
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: [914], extra: 1 })).toContain('unknown property "extra"');
+  });
+
+  it('requires photo, mask and a known numeric slider for set_mask_adjustments', () => {
+    const ok = { photo_id: 914, mask_id: 'm-1', adjustments: { local_Exposure: 0.5, local_Shadows: -20 } };
+
+    expect(validateToolArgs('set_mask_adjustments', ok)).toBeNull();
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, photo_id: '/a.dng' })).toBeNull();
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, mask_id: undefined })).toContain('mask_id');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, mask_id: '' })).toContain('mask_id');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: undefined })).toContain('adjustments');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: {} })).toContain('adjustments');
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: { local_Bogus: 1 } })).toContain(
+      'unknown property "local_Bogus"',
+    );
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, adjustments: { local_Exposure: '1' } })).toContain(
+      'adjustments.local_Exposure',
+    );
+    expect(validateToolArgs('set_mask_adjustments', { ...ok, extra: 1 })).toContain('unknown property "extra"');
+  });
+
+  it('requires photo and mask for get_mask_adjustments', () => {
+    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914, mask_id: 'm-1' })).toBeNull();
+    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914 })).toContain('mask_id');
+    expect(validateToolArgs('get_mask_adjustments', { mask_id: 'm-1' })).toContain('photo_id');
+    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914, mask_id: 7 })).toContain('mask_id');
+  });
+
+  it('requires a photo, a mask id and a mode for invert_mask', () => {
+    const valid = { photo_id: 914, mask_id: 'abc', mode: 'in_place' };
+    expect(validateToolArgs('invert_mask', valid)).toBeNull();
+    expect(validateToolArgs('invert_mask', { ...valid, mode: 'copy' })).toBeNull();
+    expect(validateToolArgs('invert_mask', { photo_id: 914, mode: 'copy' })).toContain('mask_id');
+    expect(validateToolArgs('invert_mask', { photo_id: 914, mask_id: 'abc' })).toContain('mode');
+    expect(validateToolArgs('invert_mask', { ...valid, mode: 'toggle' })).toContain('mode');
+    expect(validateToolArgs('invert_mask', { ...valid, mask_id: '' })).toContain('mask_id');
+    expect(validateToolArgs('invert_mask', { ...valid, extra: 1 })).toContain('unknown property "extra"');
+  });
+
+  it('validates create_mask type and adjustment ranges', () => {
+    expect(validateToolArgs('create_mask', { photo_id: 914, type: 'sky' })).toBeNull();
+    expect(validateToolArgs('create_mask', { photo_id: '/a.dng', type: 'subject', adjustments: {} })).toBeNull();
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'background',
+      adjustments: { exposure: -4, noise: 100, temperature: -100, tint: 12.5 },
+    })).toBeNull();
+    expect(validateToolArgs('create_mask', { photo_id: 914 })).toContain('type');
+    expect(validateToolArgs('create_mask', { type: 'sky' })).toContain('photo_id');
+    expect(validateToolArgs('create_mask', { photo_id: 914, type: 'people' })).toContain('type');
+    expect(validateToolArgs('create_mask', { photo_id: [914], type: 'sky' })).toContain('photo_id');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { exposure: 4.1 },
+    })).toContain('adjustments.exposure');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { contrast: -101 },
+    })).toContain('adjustments.contrast');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { exposure: '1' },
+    })).toContain('adjustments.exposure');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { vibrance: 1 },
+    })).toContain('unknown property "vibrance"');
+  });
+
   it('rejects a photo id that is neither a string nor a number', () => {
     const msg = validateToolArgs('get_photo_metadata', { photo_id: { nested: true } });
 

@@ -149,6 +149,30 @@
     {
       "name": "update_gradient_mask",
       "description": "Move or reshape an existing linear or radial gradient mask by tool id."
+    },
+    {
+      "name": "delete_masks",
+      "description": "Delete masks, or component tools of masks, from a photo by id, or all masks on it."
+    },
+    {
+      "name": "delete_empty_masks",
+      "description": "Delete all empty masks from a list of photos."
+    },
+    {
+      "name": "set_mask_adjustments",
+      "description": "Change local adjustment sliders on an existing mask of a photo."
+    },
+    {
+      "name": "get_mask_adjustments",
+      "description": "Read the current local adjustment values of a mask on a photo."
+    },
+    {
+      "name": "invert_mask",
+      "description": "Invert a mask on a photo in place, or create an inverted copy of it."
+    },
+    {
+      "name": "create_mask",
+      "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
     }
   ],
   "user_config": {

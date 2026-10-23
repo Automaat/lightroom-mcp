@@ -21,6 +21,10 @@ local HandlerPreview = require 'HandlerPreview'
 local HandlerDevelop = require 'HandlerDevelop'
 local HandlerMasks = require 'HandlerMasks'
 local HandlerGradientMasks = require 'HandlerGradientMasks'
+local HandlerMaskDelete = require 'HandlerMaskDelete'
+local HandlerMaskAdjustments = require 'HandlerMaskAdjustments'
+local HandlerMaskInvert = require 'HandlerMaskInvert'
+local HandlerMaskCreate = require 'HandlerMaskCreate'
 local Log = require 'Log'
 
 local DEFAULT_REQUEST_PORT = 58763
@@ -221,6 +225,12 @@ local DISPATCH = {
     list_masks = HandlerMasks.listMasks,
     create_gradient_mask = HandlerGradientMasks.createGradientMask,
     update_gradient_mask = HandlerGradientMasks.updateGradientMask,
+    delete_masks = HandlerMaskDelete.deleteMasks,
+    delete_empty_masks = HandlerMaskDelete.deleteEmptyMasks,
+    set_mask_adjustments = HandlerMaskAdjustments.setMaskAdjustments,
+    get_mask_adjustments = HandlerMaskAdjustments.getMaskAdjustments,
+    invert_mask = HandlerMaskInvert.invertMask,
+    create_mask = HandlerMaskCreate.createMask,
 }
 
 -- Generous wait so the very first response after handshake doesn't get
