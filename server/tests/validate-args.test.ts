@@ -95,6 +95,64 @@ describe('validateToolArgs', () => {
     });
   });
 
+  describe('create_range_mask', () => {
+    const luminance = { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6, falloff: 0.1 } };
+    const sample = { x: 0.2, y: 0.8, red: 0.46, green: 0.46, blue: 0.46 };
+    const color = { photo_id: '/a.dng', type: 'color', color: { sample, amount: 0.4 } };
+
+    it('accepts luminance and color ranges', () => {
+      expect(validateToolArgs('create_range_mask', luminance)).toBeNull();
+      expect(validateToolArgs('create_range_mask', color)).toBeNull();
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, mask_id: 'C1', mode: 'subtract', invert: true }),
+      ).toBeNull();
+      expect(validateToolArgs('create_range_mask', { ...color, name: 'Foliage' })).toBeNull();
+    });
+
+    it('requires a photo and a type, and offers no depth type', () => {
+      expect(validateToolArgs('create_range_mask', { type: 'luminance' })).toContain('photo_id');
+      expect(validateToolArgs('create_range_mask', { photo_id: 1 })).toContain('type');
+      expect(validateToolArgs('create_range_mask', { ...luminance, type: 'depth' })).toContain('type');
+    });
+
+    it('accepts one sample point only', () => {
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample: [sample, sample] } })).toContain(
+        'color.sample',
+      );
+      expect(validateToolArgs('create_range_mask', { ...color, color: { samples: [sample] } })).toContain(
+        'unknown property "samples"',
+      );
+      expect(validateToolArgs('create_range_mask', { ...color, color: { amount: 0.4 } })).toContain('sample');
+    });
+
+    it('bounds the numbers', () => {
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, luminance: { min: -0.1, max: 0.5 } }),
+      ).toContain('luminance.min');
+      expect(validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0.1 } })).toContain('max');
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0.1, max: 0.5, falloff: 2 } }),
+      ).toContain('luminance.falloff');
+      expect(
+        validateToolArgs('create_range_mask', { ...color, color: { sample: { ...sample, x: 1.5 } } }),
+      ).toContain('color.sample.x');
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample, amount: 0 } })).toContain(
+        'color.amount',
+      );
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample, amount: 1.1 } })).toContain(
+        'color.amount',
+      );
+      expect(validateToolArgs('create_range_mask', { ...luminance, mode: 'intersect' })).toContain('mode');
+    });
+
+    it('rejects unknown properties', () => {
+      expect(validateToolArgs('create_range_mask', { ...luminance, depth: {} })).toContain('unknown property "depth"');
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0, max: 1, extra: 1 } }),
+      ).toContain('unknown property "extra"');
+    });
+  });
+
   it('requires exactly one deletion target for delete_masks', () => {
     expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
     expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();

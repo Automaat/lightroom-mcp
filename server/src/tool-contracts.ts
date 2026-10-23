@@ -990,6 +990,80 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "create_range_mask",
+    luaHandler: "HandlerRangeMasks.createRangeMask",
+    description:
+      "Create a luminance or color range mask on a photo (Lightroom Classic 15.6 with process version 15.4 only). A luminance range selects the tones between min and max (0 black to 1 white) at full strength, fading out over falloff on each side; the ramps are clipped at 0 and 1. A color range selects colors near one sample: the sample's red, green and blue (0..1, sRGB, like the 0..255 value divided by 255) and its x and y position. Exactly one sample point is supported; a second one is rejected because Lightroom crashes on it. x and y are normalized coordinates of the full uncropped image (0..1, origin at the top-left corner of the uncropped photo, y growing downward; a crop does not move the origin). amount (greater than 0, at most 1, default 0.5) is how far from the sampled color still counts: small is narrow, 1 is broad. Depth range masks are not supported. Without mask_id this creates a new mask (optionally named), usually to be refined later; with mask_id (from list_masks or an earlier call) the range is added as a component of that mask with mode add (default) or subtract. Intersect is not supported. invert selects everything outside the range. The mask starts with no adjustments, so it changes nothing visible until adjustments are set on it. This writes Lightroom's undocumented develop-setting format: before writing it checks the Lightroom version, the photo's process version and the format of every mask already on the photo, then writes, reads the masks back, and restores the previous masks if Lightroom kept anything different. On an untested version or format the call fails and the photo is unchanged. It briefly opens the photo in Develop to confirm Lightroom lists the new tool as a rangeMask with subtype luminance or color, then puts back the module, view source and selection. Returns mask_id and tool_id, the type and the stored range. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        type: { type: "string", enum: ["luminance", "color"], description: "Kind of range mask" },
+        luminance: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            min: { type: "number", minimum: 0, maximum: 1, description: "Darkest tone selected at full strength" },
+            max: { type: "number", minimum: 0, maximum: 1, description: "Brightest tone selected at full strength" },
+            falloff: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              description: "Width of the fade on each side of min and max (default 0.1); 0 gives hard edges",
+            },
+          },
+          required: ["min", "max"],
+          description: "Luminance only: the tonal range to select",
+        },
+        color: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sample: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                x: { type: "number", minimum: 0, maximum: 1, description: "Horizontal position of the sample, 0 = left edge" },
+                y: { type: "number", minimum: 0, maximum: 1, description: "Vertical position of the sample, 0 = top edge" },
+                red: { type: "number", minimum: 0, maximum: 1, description: "Red of the sampled color" },
+                green: { type: "number", minimum: 0, maximum: 1, description: "Green of the sampled color" },
+                blue: { type: "number", minimum: 0, maximum: 1, description: "Blue of the sampled color" },
+              },
+              required: ["x", "y", "red", "green", "blue"],
+              description: "The single sample point: its position and sampled color",
+            },
+            amount: {
+              type: "number",
+              exclusiveMinimum: 0,
+              maximum: 1,
+              description: "How far from the sampled color still counts, small narrow to 1 broad (default 0.5)",
+            },
+          },
+          required: ["sample"],
+          description: "Color only: the sampled color and the refine amount",
+        },
+        invert: { type: "boolean", description: "Select everything outside the range (default false)" },
+        mask_id: {
+          type: "string",
+          minLength: 1,
+          description: "Add the range to this existing mask instead of creating a new one",
+        },
+        mode: {
+          type: "string",
+          enum: ["add", "subtract"],
+          description: "How a component combines with the mask (default add); subtract needs mask_id",
+        },
+        name: {
+          type: "string",
+          minLength: 1,
+          description: "Name of a new mask; not allowed together with mask_id",
+        },
+      },
+      required: ["photo_id", "type"],
+    },
+  },
+  {
     name: "delete_masks",
     luaHandler: "HandlerMaskDelete.deleteMasks",
     description:
