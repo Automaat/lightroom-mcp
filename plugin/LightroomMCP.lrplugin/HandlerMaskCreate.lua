@@ -53,6 +53,7 @@ local HISTORY_GROUPING_SECONDS = 10
 local DEFAULT_TRACKING_DELAY_SECONDS = 2
 local DEFAULT_GROUPING_THRESHOLD_SECONDS = 0.5
 local MASKING_TOOL = "masking"
+local NOTHING_FOUND_PREFIX = "Lightroom found no "
 
 local function requirePhotoId(value)
     if type(value) == "number" then return tostring(value) end
@@ -99,11 +100,12 @@ local function validateAdjustments(adjustments)
     return values
 end
 
-local function requireCreateApi()
-    DevelopSession.requireMaskApi("create_mask")
+local function requireCreateApi(toolName)
+    toolName = toolName or "create_mask"
+    DevelopSession.requireMaskApi(toolName)
     for _, name in ipairs(REQUIRED_API_FUNCTIONS) do
         if type(LrDevelopController[name]) ~= "function" then
-            error("create_mask needs " .. MASK_API_MINIMUM_VERSION .. " or later")
+            error(toolName .. " needs " .. MASK_API_MINIMUM_VERSION .. " or later")
         end
     end
 end
@@ -210,7 +212,7 @@ local function describeFailure(typeName, photoId, knownIds)
     if #fresh == 1 then
         return string.format("Lightroom created an empty %s mask on photo %s", typeName, photoId)
     end
-    return string.format("Lightroom found no %s to select on photo %s; Lightroom shows an alert such as"
+    return string.format(NOTHING_FOUND_PREFIX .. "%s to select on photo %s; Lightroom shows an alert such as"
         .. " \"No %s detected\" for this, so click OK in Lightroom before the next Develop call",
         typeName, photoId, typeName)
 end
@@ -322,6 +324,16 @@ local function createInDevelop(catalog, photo, photoId, typeName, spec, values)
         end
     end
     return findMask(after, created.ID) or created
+end
+
+MaskCreateHandler.requireMaskType = requireMaskType
+MaskCreateHandler.validateAdjustments = validateAdjustments
+MaskCreateHandler.requireCreateApi = requireCreateApi
+MaskCreateHandler.createInDevelop = createInDevelop
+MaskCreateHandler.normalizeMask = normalizeMask
+
+function MaskCreateHandler.isNothingFoundFailure(message)
+    return type(message) == "string" and message:find(NOTHING_FOUND_PREFIX, 1, true) ~= nil
 end
 
 function MaskCreateHandler.createMask(args)
