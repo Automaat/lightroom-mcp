@@ -17,7 +17,10 @@ local function setup(opts)
     opts = opts or {}
     local photos, stores, storeOf = {}, {}, {}
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
-        local photo = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
+        local photo = helper.fakePhoto({
+            id = spec.id, path = "/" .. spec.id .. ".jpg",
+            dimensions = not spec.noDimensions and (spec.dimensions or { width = 3000, height = 2000 }) or nil,
+        })
         stores[spec.id] = Store.attach(photo, spec)
         storeOf[photo] = stores[spec.id]
         photos[#photos + 1] = photo
@@ -93,7 +96,7 @@ local function existingGradients()
     return {
         correction("Sky", {
             linearComponent({ MaskID = "C1T1" }),
-            radialComponent({ MaskID = "C1T2", Flipped = true }),
+            radialComponent({ MaskID = "C1T2", Flipped = true, Angle = 0 }),
         }, { CorrectionID = "C1" }),
     }
 end
@@ -336,7 +339,7 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         assert.are.equal(0.5, written[1].ZeroX)
         local radial = written[2]
         assert.are.equal(80, radial.Feather)
-        assert.are.equal(10, radial.Angle)
+        assert.are.equal(0, radial.Angle)
         assert.is_true(radial.MaskInverted)
         assert.are.equal(50, radial.Midpoint)
         assert.are.equal("radial", result.shape)
@@ -361,7 +364,46 @@ describe("HandlerGradientMasks.updateGradientMask", function()
 
         assert.are.equal(45, result.geometry.rotation)
         assert.are.equal(50, result.geometry.feather)
-        assert.are.equal(0.7, stores["1"].writes[1][1].CorrectionMasks[2].Right)
+        assert.is_true(math.abs(result.geometry.width - 0.4) < 1e-5)
+        assert.is_true(math.abs(result.geometry.height - 0.6) < 1e-5)
+        assert.are.equal(45, stores["1"].writes[1][1].CorrectionMasks[2].Angle)
+    end)
+
+    it("stores a rotated radial in the pixel space of the photo and reports the requested size", function()
+        local Handler, stores = setup({ photos = { { id = "1", dimensions = { width = 3000, height = 2000 } } } })
+
+        local result = Handler.createGradientMask(radialRequest({
+            center = point(0.5, 0.4), width = 0.2, height = 0.2, rotation = 90,
+        }))
+
+        local component = stores["1"].writes[1][1].CorrectionMasks[1]
+        assert.is_true(math.abs(component.Left - (0.5 + 0.1 / 1.5)) < 1e-9)
+        assert.is_true(math.abs(component.Right - (0.5 - 0.1 / 1.5)) < 1e-9)
+        assert.is_true(math.abs(component.Top - 0.25) < 1e-9)
+        assert.is_true(math.abs(component.Bottom - 0.55) < 1e-9)
+        assert.are.equal(90, component.Angle)
+        assert.is_true(math.abs(result.geometry.width - 0.2) < 1e-5)
+        assert.is_true(math.abs(result.geometry.height - 0.2) < 1e-5)
+    end)
+
+    it("refuses a rotated radial when Lightroom reports no photo size, before anything is written", function()
+        local Handler, stores = setup({ photos = { { id = "1", noDimensions = true } } })
+
+        local message = errorOf(function()
+            Handler.createGradientMask(radialRequest({ rotation = 30 }))
+        end)
+
+        assert.is_truthy(message:find("size", 1, true))
+        assert.are.equal(0, #stores["1"].writes)
+    end)
+
+    it("places an unrotated radial without needing the photo size", function()
+        local Handler, stores = setup({ photos = { { id = "1", noDimensions = true } } })
+
+        local result = Handler.createGradientMask(radialRequest())
+
+        assert.is_true(result.success)
+        assert.are.equal(1, #stores["1"].writes)
     end)
 
     it("rejects out-of-image coordinates and degenerate gradients without writing", function()

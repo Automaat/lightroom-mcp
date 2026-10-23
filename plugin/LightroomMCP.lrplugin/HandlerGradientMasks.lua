@@ -28,6 +28,15 @@ local function resolvePhoto(catalog, photoId)
     return photo
 end
 
+local function readAspect(catalog, photo)
+    local dimensions
+    catalog:withReadAccessDo(function() dimensions = photo:getRawMetadata("dimensions") end)
+    if type(dimensions) ~= "table" then return nil end
+    local width, height = tonumber(dimensions.width), tonumber(dimensions.height)
+    if width == nil or height == nil or width <= 0 or height <= 0 then return nil end
+    return width / height
+end
+
 local function toolListed(masks, maskId, toolId, toolType)
     for _, mask in ipairs(masks) do
         if tostring(mask.ID) == tostring(maskId) then
@@ -54,10 +63,10 @@ local function problemUnlessListed(maskId, toolId, toolType)
         toolType, tostring(toolId), tostring(maskId))
 end
 
-local function resultFor(photoId, entries, location)
+local function resultFor(photoId, entries, location, aspect)
     local entry = entries[location.entry]
     local component = entry.CorrectionMasks[location.component]
-    local shape, geometry = GradientGeometry.geometryOf(component)
+    local shape, geometry = GradientGeometry.geometryOf(component, aspect)
     return {
         success = true,
         photo_id = photoId,
@@ -69,8 +78,8 @@ local function resultFor(photoId, entries, location)
     }
 end
 
-local function addGradient(entries, request)
-    local component = GradientGeometry.newComponent(request.shape, request.geometry, request.mode)
+local function addGradient(entries, request, aspect)
+    local component = GradientGeometry.newComponent(request.shape, request.geometry, request.mode, aspect)
     if request.maskId == nil then
         local name = request.name or component.MaskName
         entries[#entries + 1] = GuardedMaskWrite.newCorrection(name, { component })
@@ -91,8 +100,9 @@ function GradientMaskHandler.createGradientMask(args)
 
     local catalog = LrApplication.activeCatalog()
     local photo = resolvePhoto(catalog, photoId)
+    local aspect = readAspect(catalog, photo)
     local existing = GuardedMaskWrite.preflight(catalog, photo)
-    addGradient(existing, request)
+    addGradient(existing, request, aspect)
 
     local location
     local toolType = GradientGeometry.TOOL_TYPE_OF_SHAPE[request.shape]
@@ -100,7 +110,7 @@ function GradientMaskHandler.createGradientMask(args)
         return GuardedMaskWrite.apply(catalog, photo, {
             description = "Create gradient mask",
             build = function(entries)
-                location = addGradient(entries, request)
+                location = addGradient(entries, request, aspect)
                 return entries
             end,
             crossCheck = function(actual)
@@ -111,25 +121,25 @@ function GradientMaskHandler.createGradientMask(args)
         })
     end)
 
-    local result = resultFor(photoId, written.entries, location)
+    local result = resultFor(photoId, written.entries, location, aspect)
     result.new_mask = request.maskId == nil
     Log.info(string.format("Placed %s gradient %s in mask %s on photo %s",
         request.shape, result.tool_id, result.mask_id, photoId))
     return result
 end
 
-local function reshapeGradient(entries, request)
+local function reshapeGradient(entries, request, aspect)
     local entryIndex, componentIndex, component = GuardedMaskWrite.findComponent(entries, request.toolId)
     if not entryIndex then
         error("Gradient tool not found on this photo: " .. request.toolId, 0)
     end
-    local shape, geometry = GradientGeometry.geometryOf(component)
+    local shape, geometry = GradientGeometry.geometryOf(component, aspect)
     if not shape then
         error(string.format("Tool %s is a %s mask, not a linear or radial gradient",
             request.toolId, tostring(component.What)), 0)
     end
     local merged = GradientGeometry.mergeChanges(shape, geometry, request.changes)
-    GradientGeometry.applyGeometry(shape, component, merged)
+    GradientGeometry.applyGeometry(shape, component, merged, aspect)
     local entry = entries[entryIndex]
     entry.CorrectionReferenceX = nil
     entry.CorrectionReferenceY = nil
@@ -143,15 +153,16 @@ function GradientMaskHandler.updateGradientMask(args)
 
     local catalog = LrApplication.activeCatalog()
     local photo = resolvePhoto(catalog, photoId)
+    local aspect = readAspect(catalog, photo)
     local existing = GuardedMaskWrite.preflight(catalog, photo)
-    reshapeGradient(existing, request)
+    reshapeGradient(existing, request, aspect)
 
     local location
     local written = DevelopSession.withPhoto("update_gradient_mask", catalog, photo, function()
         return GuardedMaskWrite.apply(catalog, photo, {
             description = "Update gradient mask",
             build = function(entries)
-                location = reshapeGradient(entries, request)
+                location = reshapeGradient(entries, request, aspect)
                 return entries
             end,
             crossCheck = function(actual)
@@ -163,7 +174,7 @@ function GradientMaskHandler.updateGradientMask(args)
         })
     end)
 
-    local result = resultFor(photoId, written.entries, location)
+    local result = resultFor(photoId, written.entries, location, aspect)
     Log.info(string.format("Reshaped %s gradient %s in mask %s on photo %s",
         result.shape, result.tool_id, result.mask_id, photoId))
     return result

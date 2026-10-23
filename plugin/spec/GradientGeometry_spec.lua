@@ -165,7 +165,7 @@ describe("GradientGeometry stored form", function()
 
     it("stores a radial gradient as a box around the center", function()
         local geometry = GradientGeometry.parseCreate(radialArgs({
-            center = point(0.5, 0.4), rotation = 30, feather = 20, area = "outside",
+            center = point(0.5, 0.4), rotation = 0, feather = 20, area = "outside",
         })).geometry
 
         local component = GradientGeometry.newComponent("radial", geometry, "add")
@@ -175,13 +175,49 @@ describe("GradientGeometry stored form", function()
         assert.is_true(math.abs(component.Right - 0.7) < 1e-9)
         assert.is_true(math.abs(component.Top - 0.1) < 1e-9)
         assert.is_true(math.abs(component.Bottom - 0.7) < 1e-9)
-        assert.are.equal(30, component.Angle)
+        assert.are.equal(0, component.Angle)
         assert.are.equal(20, component.Feather)
         assert.are.equal(50, component.Midpoint)
         assert.are.equal(0, component.Roundness)
         assert.are.equal(2, component.Version)
         assert.is_true(component.MaskInverted)
         assert.is_nil(component.Flipped)
+    end)
+
+    it("stores the half extents of a rotated radial as the rotated semi axes, as Lightroom reads them", function()
+        local geometry = GradientGeometry.parseCreate(radialArgs({
+            center = point(0.5, 0.4), width = 0.4, height = 0.6, rotation = 90,
+        })).geometry
+
+        local component = GradientGeometry.newComponent("radial", geometry, "add", 1)
+
+        assert.is_true(math.abs(component.Left - 0.8) < 1e-9)
+        assert.is_true(math.abs(component.Right - 0.2) < 1e-9)
+        assert.is_true(math.abs(component.Top - 0.2) < 1e-9)
+        assert.is_true(math.abs(component.Bottom - 0.6) < 1e-9)
+        assert.are.equal(90, component.Angle)
+    end)
+
+    it("scales a rotated radial by the photo aspect ratio so it is an ellipse in pixels", function()
+        local geometry = GradientGeometry.parseCreate(radialArgs({
+            center = point(0.5, 0.4), width = 0.2, height = 0.2, rotation = 90,
+        })).geometry
+
+        local component = GradientGeometry.newComponent("radial", geometry, "add", 1.5)
+
+        assert.is_true(math.abs(component.Left - (0.5 + 0.1 / 1.5)) < 1e-9)
+        assert.is_true(math.abs(component.Right - (0.5 - 0.1 / 1.5)) < 1e-9)
+        assert.is_true(math.abs(component.Top - 0.25) < 1e-9)
+        assert.is_true(math.abs(component.Bottom - 0.55) < 1e-9)
+    end)
+
+    it("needs the photo size only for a rotated radial", function()
+        local flat = GradientGeometry.parseCreate(radialArgs({ rotation = 0 })).geometry
+        local turned = GradientGeometry.parseCreate(radialArgs({ rotation = 20 })).geometry
+
+        assert.are.equal("Mask/CircularGradient", GradientGeometry.newComponent("radial", flat, "add").What)
+        local message = errorOf(function() GradientGeometry.newComponent("radial", turned, "add") end)
+        assert.is_truthy(message:find("size", 1, true))
     end)
 
     it("marks a subtract component with blend mode 1", function()
@@ -195,12 +231,29 @@ describe("GradientGeometry stored form", function()
 
     it("reads geometry back from a stored component", function()
         local geometry = GradientGeometry.parseCreate(radialArgs({ rotation = 15, area = "outside" })).geometry
-        local component = GradientGeometry.newComponent("radial", geometry, "add")
+        local component = GradientGeometry.newComponent("radial", geometry, "add", 1.5)
 
-        local shape, read = GradientGeometry.geometryOf(component)
+        local shape, read = GradientGeometry.geometryOf(component, 1.5)
 
         assert.are.equal("radial", shape)
         assert.are.same(geometry, read)
+    end)
+
+    it("reads back the requested size and rotation for any rotation and aspect ratio", function()
+        for _, aspect in ipairs({ 1, 1.5, 0.75 }) do
+            for _, rotation in ipairs({ -120, -45, 0, 17, 45, 60, 90, 135, 200 }) do
+                local geometry = GradientGeometry.parseCreate(radialArgs({
+                    width = 0.3, height = 0.5, rotation = rotation,
+                })).geometry
+                local component = GradientGeometry.newComponent("radial", geometry, "add", aspect)
+
+                local _, read = GradientGeometry.geometryOf(component, aspect)
+
+                assert.is_true(math.abs(read.width - 0.3) < 1e-5)
+                assert.is_true(math.abs(read.height - 0.5) < 1e-5)
+                assert.are.equal(rotation, read.rotation)
+            end
+        end
     end)
 
     it("reports no shape for other mask types", function()

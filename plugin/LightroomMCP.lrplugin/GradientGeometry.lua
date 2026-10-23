@@ -210,7 +210,13 @@ local function round(value)
     return math.floor(value * STORED_DECIMALS + 0.5) / STORED_DECIMALS
 end
 
-function GradientGeometry.geometryOf(component)
+local function requireAspect(aspect, rotation)
+    if aspect ~= nil then return aspect end
+    if rotation == 0 then return 1 end
+    fail("the photo's size is needed to place a rotated radial gradient, and Lightroom did not report it")
+end
+
+function GradientGeometry.geometryOf(component, aspect)
     local shape = SHAPE_OF_WHAT[component.What]
     if shape == nil then return nil end
     if shape == LINEAR then
@@ -219,13 +225,18 @@ function GradientGeometry.geometryOf(component)
             ["end"] = { x = round(component.ZeroX), y = round(component.ZeroY) },
         }
     end
+    local ratio = requireAspect(aspect, component.Angle)
+    local radians = math.rad(component.Angle)
+    local cosine, sine = math.cos(radians), math.sin(radians)
+    local boxHalfWidth = (component.Right - component.Left) / 2 * ratio
+    local boxHalfHeight = (component.Bottom - component.Top) / 2
     return shape, {
         center = {
             x = round((component.Left + component.Right) / 2),
             y = round((component.Top + component.Bottom) / 2),
         },
-        width = round(component.Right - component.Left),
-        height = round(component.Bottom - component.Top),
+        width = round(2 * math.abs(boxHalfWidth * cosine + boxHalfHeight * sine) / ratio),
+        height = round(2 * math.abs(boxHalfHeight * cosine - boxHalfWidth * sine)),
         rotation = round(component.Angle),
         feather = round(component.Feather),
         area = component.MaskInverted and AREA_OUTSIDE or AREA_INSIDE,
@@ -247,7 +258,7 @@ function GradientGeometry.mergeChanges(shape, geometry, changes)
     return merged
 end
 
-function GradientGeometry.applyGeometry(shape, component, geometry)
+function GradientGeometry.applyGeometry(shape, component, geometry, aspect)
     if shape == LINEAR then
         component.FullX = geometry.start.x
         component.FullY = geometry.start.y
@@ -255,10 +266,16 @@ function GradientGeometry.applyGeometry(shape, component, geometry)
         component.ZeroY = geometry["end"].y
         return component
     end
-    component.Left = geometry.center.x - geometry.width / 2
-    component.Right = geometry.center.x + geometry.width / 2
-    component.Top = geometry.center.y - geometry.height / 2
-    component.Bottom = geometry.center.y + geometry.height / 2
+    local ratio = requireAspect(aspect, geometry.rotation)
+    local radians = math.rad(geometry.rotation)
+    local cosine, sine = math.cos(radians), math.sin(radians)
+    local semiWidth, semiHeight = geometry.width / 2 * ratio, geometry.height / 2
+    local boxHalfWidth = (semiWidth * cosine - semiHeight * sine) / ratio
+    local boxHalfHeight = semiWidth * sine + semiHeight * cosine
+    component.Left = geometry.center.x - boxHalfWidth
+    component.Right = geometry.center.x + boxHalfWidth
+    component.Top = geometry.center.y - boxHalfHeight
+    component.Bottom = geometry.center.y + boxHalfHeight
     component.Angle = geometry.rotation
     component.Feather = geometry.feather
     component.MaskInverted = geometry.area == AREA_OUTSIDE
@@ -266,7 +283,7 @@ function GradientGeometry.applyGeometry(shape, component, geometry)
     return component
 end
 
-function GradientGeometry.newComponent(shape, geometry, mode)
+function GradientGeometry.newComponent(shape, geometry, mode, aspect)
     local component = {
         What = WHAT_OF_SHAPE[shape],
         MaskActive = true,
@@ -280,7 +297,7 @@ function GradientGeometry.newComponent(shape, geometry, mode)
         component.Roundness = RADIAL_ROUNDNESS
         component.Version = RADIAL_VERSION
     end
-    return GradientGeometry.applyGeometry(shape, component, geometry)
+    return GradientGeometry.applyGeometry(shape, component, geometry, aspect)
 end
 
 GradientGeometry.TOOL_TYPE_OF_SHAPE = { [LINEAR] = "gradient", [RADIAL] = "radialGradient" }
