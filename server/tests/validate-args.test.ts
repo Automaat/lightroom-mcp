@@ -28,6 +28,29 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('list_masks', { photo_id: 914, extra: 1 })).toContain('unknown property "extra"');
   });
 
+  it('requires exactly one deletion target for delete_masks', () => {
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
+    expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();
+    expect(validateToolArgs('delete_masks', { photo_id: '/a.dng', all: true })).toBeNull();
+    expect(validateToolArgs('delete_masks', { photo_id: 914 })).toContain('Invalid arguments for delete_masks');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m'], all: true })).toContain('oneOf');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m'], tool_ids: ['t'] })).toContain('oneOf');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, all: false })).toContain('all');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: [] })).toContain('mask_ids');
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: [7] })).toContain('mask_ids');
+    expect(validateToolArgs('delete_masks', { mask_ids: ['m'] })).toContain('photo_id');
+    const tooMany = Array.from({ length: 101 }, (_, i) => `m-${i}`);
+    expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: tooMany })).toContain('mask_ids');
+  });
+
+  it('requires a photo list for delete_empty_masks', () => {
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: [914, '/a.dng'] })).toBeNull();
+    expect(validateToolArgs('delete_empty_masks', {})).toContain('photo_ids');
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: [] })).toContain('photo_ids');
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: 914 })).toContain('photo_ids');
+    expect(validateToolArgs('delete_empty_masks', { photo_ids: [914], extra: 1 })).toContain('unknown property "extra"');
+  });
+
   it('rejects a photo id that is neither a string nor a number', () => {
     const msg = validateToolArgs('get_photo_metadata', { photo_id: { nested: true } });
 

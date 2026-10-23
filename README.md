@@ -188,6 +188,8 @@ If you'd rather drop the plugin in by hand:
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools (LrC 11+); briefly opens the photo in Develop. |
+| `delete_masks` | Delete masks or component tools by id, or all masks, from a photo (LrC 11+); an unknown id deletes nothing; briefly opens the photo in Develop. |
+| `delete_empty_masks` | Delete all empty masks from many photos and report how many photos changed (LrC 14+); no Develop switch. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
 

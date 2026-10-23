@@ -141,6 +141,14 @@
     {
       "name": "list_masks",
       "description": "List the masks on a photo with their ids, names and component tools."
+    },
+    {
+      "name": "delete_masks",
+      "description": "Delete masks, or component tools of masks, from a photo by id, or all masks on it."
+    },
+    {
+      "name": "delete_empty_masks",
+      "description": "Delete all empty masks from a list of photos."
     }
   ],
   "user_config": {

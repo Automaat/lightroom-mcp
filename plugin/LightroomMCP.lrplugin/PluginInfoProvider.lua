@@ -20,6 +20,7 @@ local HandlerSelection = require 'HandlerSelection'
 local HandlerPreview = require 'HandlerPreview'
 local HandlerDevelop = require 'HandlerDevelop'
 local HandlerMasks = require 'HandlerMasks'
+local HandlerMaskDelete = require 'HandlerMaskDelete'
 local Log = require 'Log'
 
 local DEFAULT_REQUEST_PORT = 58763
@@ -218,6 +219,8 @@ local DISPATCH = {
     set_develop_settings = HandlerDevelop.setDevelopSettings,
     apply_denoise = HandlerDevelop.applyDenoise,
     list_masks = HandlerMasks.listMasks,
+    delete_masks = HandlerMaskDelete.deleteMasks,
+    delete_empty_masks = HandlerMaskDelete.deleteEmptyMasks,
 }
 
 -- Generous wait so the very first response after handshake doesn't get
