@@ -13,6 +13,32 @@ const MAX_BULK_PHOTO_IDS = 1000;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 
+const MASK_TYPES = ["subject", "sky", "background"] as const;
+
+const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100) => ({
+  type: "number",
+  minimum,
+  maximum,
+  description: `${description} (${minimum} to ${maximum})`,
+});
+
+const MASK_ADJUSTMENT_PROPERTIES = {
+  exposure: maskAdjustmentSlider("Exposure in stops", -5, 5),
+  contrast: maskAdjustmentSlider("Contrast"),
+  highlights: maskAdjustmentSlider("Highlights"),
+  shadows: maskAdjustmentSlider("Shadows"),
+  whites: maskAdjustmentSlider("Whites"),
+  blacks: maskAdjustmentSlider("Blacks"),
+  texture: maskAdjustmentSlider("Texture"),
+  clarity: maskAdjustmentSlider("Clarity"),
+  dehaze: maskAdjustmentSlider("Dehaze"),
+  temperature: maskAdjustmentSlider("Temperature"),
+  tint: maskAdjustmentSlider("Tint"),
+  saturation: maskAdjustmentSlider("Saturation"),
+  sharpness: maskAdjustmentSlider("Sharpness"),
+  noise: maskAdjustmentSlider("Noise reduction"),
+};
+
 export const POINT_CURVE_SETTING_KEYS = [
   "ToneCurvePV2012",
   "ToneCurvePV2012Red",
@@ -838,6 +864,31 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
       },
       required: ["photo_id"],
+    },
+  },
+  {
+    name: "create_mask",
+    luaHandler: "HandlerMaskCreate.createMask",
+    description:
+      "Create a Subject, Sky or Background mask on a photo (Lightroom Classic 11+) and return the new mask id. Lightroom detects the area itself. Optional adjustments set the mask's local sliders in the same call; every slider you leave out is set to 0, so the mask never inherits the values last used in the Masking panel. If Lightroom finds nothing to select (for example no sky), the call fails and the photo gets no new mask. Masks already on the photo are left unchanged. The new mask is meant to appear as a single history step. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, creates the mask, then puts back the module, view source and selection. Detection can take several seconds. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        type: {
+          type: "string",
+          enum: [...MASK_TYPES],
+          description: "What Lightroom should select: subject, sky or background",
+        },
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Local adjustment sliders for the new mask. Omitted sliders start at 0.",
+        },
+      },
+      required: ["photo_id", "type"],
     },
   },
 ];

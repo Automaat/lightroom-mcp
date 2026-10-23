@@ -28,6 +28,40 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('list_masks', { photo_id: 914, extra: 1 })).toContain('unknown property "extra"');
   });
 
+  it('validates create_mask type and adjustment ranges', () => {
+    expect(validateToolArgs('create_mask', { photo_id: 914, type: 'sky' })).toBeNull();
+    expect(validateToolArgs('create_mask', { photo_id: '/a.dng', type: 'subject', adjustments: {} })).toBeNull();
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'background',
+      adjustments: { exposure: -5, noise: 100, temperature: -100, tint: 12.5 },
+    })).toBeNull();
+    expect(validateToolArgs('create_mask', { photo_id: 914 })).toContain('type');
+    expect(validateToolArgs('create_mask', { type: 'sky' })).toContain('photo_id');
+    expect(validateToolArgs('create_mask', { photo_id: 914, type: 'people' })).toContain('type');
+    expect(validateToolArgs('create_mask', { photo_id: [914], type: 'sky' })).toContain('photo_id');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { exposure: 5.1 },
+    })).toContain('adjustments.exposure');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { contrast: -101 },
+    })).toContain('adjustments.contrast');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { exposure: '1' },
+    })).toContain('adjustments.exposure');
+    expect(validateToolArgs('create_mask', {
+      photo_id: 914,
+      type: 'sky',
+      adjustments: { vibrance: 1 },
+    })).toContain('unknown property "vibrance"');
+  });
+
   it('rejects a photo id that is neither a string nor a number', () => {
     const msg = validateToolArgs('get_photo_metadata', { photo_id: { nested: true } });
 

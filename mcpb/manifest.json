@@ -141,6 +141,10 @@
     {
       "name": "list_masks",
       "description": "List the masks on a photo with their ids, names and component tools."
+    },
+    {
+      "name": "create_mask",
+      "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
     }
   ],
   "user_config": {
