@@ -70,6 +70,8 @@ Bundle is pure Lua — same content ships in both `LightroomMCP-macos.lrplugin.z
 
 Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/LightroomMCP.log`.
 
+**Start-up**: Lightroom runs `LrInitPlugin` (auto-start) only when its window is first activated, not at launch: a background launch (`open -g`, automation that leaves another app in front) starts no server until Lightroom is brought to the front (`osascript -e 'tell application "Adobe Lightroom Classic" to activate'`). Verified on LrC 15.6 macOS.
+
 **Reload behaviour**: "Reload Plug-in" loads a fresh Lua state but does **not** reliably cancel the old task's `LrFunctionContext` — the old monitor loop can keep running and hold a port (LrC 15.5.1 macOS). The new instance rewrites the token file; the old loop polls it (`isSuperseded`) and exits on a foreign token, releasing its ports via the context cleanup handler. The new instance's binds fail with `failed to open` until then and recover through the reconnect path.
 
 "Reload Plug-in" does not see a `.lua` file added to the bundle after Lightroom started: `require` fails with `Could not load toolkit script` and the plug-in is disabled. Restart Lightroom after adding a file.
