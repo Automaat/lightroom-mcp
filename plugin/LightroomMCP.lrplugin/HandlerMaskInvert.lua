@@ -12,6 +12,18 @@ local MASK_READ_TIMEOUT_SECONDS = 5
 local INVERSION_VISIBLE_TIMEOUT_SECONDS = 5
 local INVERT_API_FUNCTIONS = { "goToMasking", "invertMask", "duplicateAndInvertMask" }
 local INVERT_API_MINIMUM_VERSION = "Lightroom Classic 11.4"
+local SELECT_TIMEOUT_SECONDS = 8
+local RESELECT_SECONDS = 1
+local POLL_SECONDS = 0.1
+local COPY_CONFIRM_TIMEOUT_SECONDS = 2
+local TWO_DECIMAL_ROUNDING_TOLERANCE = 0.01
+local WHOLE_NUMBER_ROUNDING_TOLERANCE = 0.5
+local COPIED_SLIDERS = {
+    "local_Exposure", "local_Contrast", "local_Highlights", "local_Shadows", "local_Whites",
+    "local_Blacks", "local_Texture", "local_Clarity", "local_Dehaze", "local_Temperature",
+    "local_Tint", "local_Saturation", "local_Sharpness", "local_LuminanceNoise", "local_Moire",
+    "local_Defringe",
+}
 local MODE_IN_PLACE = "in_place"
 local MODE_COPY = "copy"
 
@@ -158,11 +170,78 @@ local function newMaskIds(knownIds, masksAfter)
     return fresh
 end
 
+local function readSelectedMask()
+    local ok, id = LrTasks.pcall(LrDevelopController.getSelectedMask)
+    if ok and type(id) == "string" and id ~= "" then return id end
+    return nil
+end
+
+local function selectMaskAndWait(maskId)
+    local sinceSelect = RESELECT_SECONDS
+    return DevelopSession.waitFor(function()
+        if readSelectedMask() == maskId then return true end
+        if sinceSelect >= RESELECT_SECONDS then
+            LrTasks.pcall(LrDevelopController.selectMask, maskId)
+            sinceSelect = 0
+        end
+        sinceSelect = sinceSelect + POLL_SECONDS
+        return false
+    end, SELECT_TIMEOUT_SECONDS)
+end
+
+local function readSliderValue(name)
+    local ok, value = LrTasks.pcall(LrDevelopController.getValue, name)
+    if ok and type(value) == "number" and value == value then return value end
+    return nil
+end
+
+local function toleranceOf(name)
+    if name == "local_Exposure" then return TWO_DECIMAL_ROUNDING_TOLERANCE end
+    return WHOLE_NUMBER_ROUNDING_TOLERANCE
+end
+
+local function readSliderValues()
+    local values = {}
+    for _, name in ipairs(COPIED_SLIDERS) do
+        values[name] = readSliderValue(name)
+    end
+    return values
+end
+
+local function copyAdjustments(values, copyId)
+    if not selectMaskAndWait(copyId) then
+        error("Could not select the inverted copy " .. copyId, 0)
+    end
+    local copied = 0
+    for _, name in ipairs(COPIED_SLIDERS) do
+        local wanted = values[name]
+        if wanted ~= nil and math.abs(wanted) > toleranceOf(name) then
+            LrDevelopController.setValue(name, wanted)
+            local kept = DevelopSession.waitFor(function()
+                local actual = readSliderValue(name)
+                return actual ~= nil and math.abs(actual - wanted) <= toleranceOf(name)
+            end, COPY_CONFIRM_TIMEOUT_SECONDS)
+            if not kept then
+                error(string.format("Lightroom did not keep %s %g on the copy", name, wanted), 0)
+            end
+            copied = copied + 1
+        end
+    end
+    return copied
+end
+
 local function invertAsCopy(photoId, maskId)
     local masksBefore = readAllMasks(photoId)
     local original = requireMaskOnPhoto(masksBefore, maskId, photoId)
     local originalFingerprint = fingerprint(original)
     local idsBefore = idsOf(masksBefore)
+
+    LrDevelopController.goToMasking()
+    local previousMask = readSelectedMask()
+    if not selectMaskAndWait(maskId) then
+        error("Could not select mask " .. maskId .. " on photo " .. photoId .. " in Develop", 0)
+    end
+    local originalValues = readSliderValues()
 
     callInvertFunction("duplicateAndInvertMask", maskId)
 
@@ -186,11 +265,24 @@ local function invertAsCopy(photoId, maskId)
         Log.warn(string.format("invert_mask copy of %s changed the original mask on photo %s", maskId, photoId))
     end
 
+    local copyId = fresh[1]
+    local copiedOk, copiedCount = LrTasks.pcall(copyAdjustments, originalValues, copyId)
+    if not copiedOk then
+        local removed = LrTasks.pcall(LrDevelopController.deleteMask, copyId)
+        error(string.format("Lightroom does not copy the local adjustments to an inverted copy and they could"
+            .. " not be copied (%s); %s", tostring(copiedCount),
+            removed and "the copy was removed" or "remove the copy " .. copyId .. " in Develop"), 0)
+    end
+    if previousMask and previousMask ~= copyId then
+        LrTasks.pcall(LrDevelopController.selectMask, previousMask)
+    end
+
     return {
         mode = MODE_COPY,
         source_mask_id = maskId,
-        mask_id = fresh[1],
-        mask = describeMask(findMask(masksAfter, fresh[1])),
+        mask_id = copyId,
+        adjustments_copied = copiedCount,
+        mask = describeMask(findMask(readAllMasks(photoId), copyId)),
     }
 end
 
