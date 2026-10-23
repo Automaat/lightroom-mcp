@@ -736,10 +736,46 @@ describe("HandlerDevelop.copyDevelopSettings", function()
         assert.are.equal(2, r.copied)
         assert.are.equal(2, r.ai_updated)
         assert.are.same({}, r.ai_update_failed)
-        assert.are.equal(AI_MASK_SETTINGS, t1.getRawMetadata(t1, "__aiUpdateAfterSettings"))
+        assert.are.same(AI_MASK_SETTINGS, t1.getRawMetadata(t1, "__aiUpdateAfterSettings"))
         assert.are.equal(1, t2.getRawMetadata(t2, "__aiUpdateCalls"))
         assert.are.equal(2, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("drops the source's computed AI mask data so each target recomputes its own", function()
+        local sourceSettings = {
+            Exposure2012 = 1.0,
+            MaskGroupBasedCorrections = {
+                {
+                    CorrectionName = "Mask 1",
+                    CorrectionMasks = {
+                        {
+                            What = "Mask/Image",
+                            MaskSubType = 1,
+                            Origin = "619,0",
+                            MaskDigest = "mask-digest",
+                            InputDigest = "input-digest",
+                            LocalInputDigest = "local-digest",
+                        },
+                        { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
+                    },
+                },
+            },
+        }
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = sourceSettings })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local _, Handler = setup({ photos = { source, t1 } })
+
+        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        local applied = t1.getRawMetadata(t1, "__appliedSettings")
+        assert.are.equal(1.0, applied.Exposure2012)
+        assert.are.same({
+            { What = "Mask/Image", MaskSubType = 1, Origin = "619,0" },
+            { What = "Mask/Gradient", MaskDigest = "kept-on-geometry-masks" },
+        }, applied.MaskGroupBasedCorrections[1].CorrectionMasks)
+        assert.are.equal("Mask 1", applied.MaskGroupBasedCorrections[1].CorrectionName)
+        assert.are.equal("mask-digest", sourceSettings.MaskGroupBasedCorrections[1].CorrectionMasks[1].MaskDigest)
     end)
 
     it("lists targets whose AI mask recompute failed", function()
