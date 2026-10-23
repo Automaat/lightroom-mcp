@@ -173,6 +173,10 @@
     {
       "name": "create_mask",
       "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
+    },
+    {
+      "name": "combine_mask",
+      "description": "Add, subtract or intersect a Subject, Sky or Background component on an existing mask."
     }
   ],
   "user_config": {

@@ -4,16 +4,10 @@ local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
+local MaskTypes = require 'MaskTypes'
 local PhotoLookup = require 'PhotoLookup'
 
 local MaskCreateHandler = {}
-
-local MASK_TYPE_NAMES = { "subject", "sky", "background" }
-local MASK_TYPES = {
-    subject = { toolType = "aiSelection", subtype = "subject" },
-    sky = { toolType = "aiSelection", subtype = "sky" },
-    background = { toolType = "aiSelection", subtype = "background" },
-}
 
 local TWO_DECIMAL_ROUNDING_TOLERANCE = 0.01
 local WHOLE_NUMBER_ROUNDING_TOLERANCE = 0.5
@@ -60,14 +54,6 @@ local function requirePhotoId(value)
         error("photo_id is required")
     end
     return value
-end
-
-local function requireMaskType(value)
-    local spec = type(value) == "string" and MASK_TYPES[value] or nil
-    if not spec then
-        error("type must be one of: " .. table.concat(MASK_TYPE_NAMES, ", "))
-    end
-    return value, spec
 end
 
 local function formatNumber(value)
@@ -326,7 +312,7 @@ end
 
 function MaskCreateHandler.createMask(args)
     local photoId = requirePhotoId(args.photo_id)
-    local typeName, spec = requireMaskType(args.type)
+    local typeName, spec = MaskTypes.require(args.type)
     local values = validateAdjustments(args.adjustments)
     requireCreateApi()
 

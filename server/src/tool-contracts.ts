@@ -15,6 +15,7 @@ const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
 
 const MASK_TYPES = ["subject", "sky", "background"] as const;
+const MASK_COMBINE_OPERATIONS = ["add", "subtract", "intersect"] as const;
 
 const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100) => ({
   type: "number",
@@ -1122,6 +1123,31 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_id", "type"],
+    },
+  },
+  {
+    name: "combine_mask",
+    luaHandler: "HandlerMaskCombine.combineMask",
+    description:
+      "Add, subtract or intersect a Subject, Sky or Background component on an existing mask (Lightroom Classic 11+) and return the new component's id as tool_id. The mask is chosen by its id from list_masks, never by the current selection: the tool selects that mask in Lightroom and checks the selection before it changes anything. operation \"add\" widens the mask by the detected area, \"subtract\" removes it (for example sky minus subject), \"intersect\" keeps only the overlap with the mask's existing area. The type values are the same ones create_mask accepts, and mask types added later become available here too. Lightroom detects the area itself and can take several seconds. If Lightroom finds nothing to select (for example no sky), the call fails after about 30 seconds and the mask keeps its components, but Lightroom shows an alert such as \"No sky detected\" that stays up until someone clicks OK in Lightroom, and until then every Develop call sees no masks. An unknown mask id returns an error before anything changes. Lightroom records the new component as one history step. A Background component is listed with tool type aiSelection and subtype object. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, combines, then puts back the previously selected mask, tool, module, view source and selection. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("ID of the mask to combine into, from list_masks"),
+        operation: {
+          type: "string",
+          enum: [...MASK_COMBINE_OPERATIONS],
+          description: "add widens the mask, subtract removes the area from it, intersect keeps only the overlap",
+        },
+        type: {
+          type: "string",
+          enum: [...MASK_TYPES],
+          description: "What Lightroom should select for the component: subject, sky or background",
+        },
+      },
+      required: ["photo_id", "mask_id", "operation", "type"],
     },
   },
 ];

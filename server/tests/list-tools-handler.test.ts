@@ -50,11 +50,12 @@ const EXPECTED_TOOL_NAMES = [
   'get_mask_adjustments',
   'invert_mask',
   'create_mask',
+  'combine_mask',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 39 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(39);
+  it('contains exactly 40 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(40);
   });
 
   it('tool names are unique', () => {
@@ -138,6 +139,7 @@ describe('tool required fields', () => {
     ['get_mask_adjustments', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
+    ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
   });
@@ -342,6 +344,25 @@ describe('local adjustment schema', () => {
     const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
 
     expect(Object.keys(properties.adjustments.properties ?? {})).toEqual([...LOCAL_ADJUSTMENT_KEYS]);
+  });
+});
+
+describe('AI mask types', () => {
+  function typeEnumOf(toolName: string): string[] {
+    const contract = TOOL_CONTRACTS.find((c) => c.name === toolName);
+    const properties = contract?.inputSchema.properties as Record<string, { enum?: string[] }>;
+    return properties.type.enum ?? [];
+  }
+
+  it('offers the types the Lua type table knows to create_mask and combine_mask alike', () => {
+    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskTypes.lua');
+    const source = fs.readFileSync(luaPath, 'utf8');
+    const namesBlock = source.match(/MaskTypes\.NAMES = \{([^}]*)\}/)?.[1] ?? '';
+    const luaNames = [...namesBlock.matchAll(/"(\w+)"/g)].map((m) => m[1]);
+
+    expect(luaNames.length).toBeGreaterThan(0);
+    expect(typeEnumOf('create_mask')).toEqual(luaNames);
+    expect(typeEnumOf('combine_mask')).toEqual(luaNames);
   });
 });
 
