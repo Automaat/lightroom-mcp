@@ -143,6 +143,14 @@
       "description": "List the masks on a photo with their ids, names and component tools."
     },
     {
+      "name": "create_gradient_mask",
+      "description": "Place a linear or radial gradient mask on a photo from normalized image coordinates."
+    },
+    {
+      "name": "update_gradient_mask",
+      "description": "Move or reshape an existing linear or radial gradient mask by tool id."
+    },
+    {
       "name": "delete_masks",
       "description": "Delete masks, or component tools of masks, from a photo by id, or all masks on it."
     },

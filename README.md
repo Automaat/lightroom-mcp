@@ -188,6 +188,8 @@ If you'd rather drop the plugin in by hand:
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools (LrC 11+); briefly opens the photo in Develop. |
+| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `update_gradient_mask` | Move or reshape an existing linear or radial gradient by tool id; same guarded write. |
 | `delete_masks` | Delete masks or component tools by id, or all masks, from a photo (LrC 11+); an unknown id deletes nothing; briefly opens the photo in Develop. |
 | `delete_empty_masks` | Delete all empty masks from many photos and report how many photos changed (LrC 14+); no Develop switch. |
 | `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ...) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |

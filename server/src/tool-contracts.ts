@@ -40,6 +40,52 @@ const MASK_ADJUSTMENT_PROPERTIES = {
   noise: maskAdjustmentSlider("Noise reduction"),
 };
 
+const normalizedPoint = (description: string) => ({
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    x: { type: "number", minimum: 0, maximum: 1, description: "Horizontal position, 0 = left edge, 1 = right edge" },
+    y: { type: "number", minimum: 0, maximum: 1, description: "Vertical position, 0 = top edge, 1 = bottom edge" },
+  },
+  required: ["x", "y"],
+  description,
+});
+
+const gradientGeometryProperties = {
+  start: normalizedPoint("Linear only: where the effect is full strength"),
+  end: normalizedPoint("Linear only: where the effect has faded to nothing"),
+  center: normalizedPoint("Radial only: center of the ellipse"),
+  width: {
+    type: "number",
+    exclusiveMinimum: 0,
+    maximum: 2,
+    description: "Radial only: ellipse width as a fraction of the image width (not pixels), measured before rotation",
+  },
+  height: {
+    type: "number",
+    exclusiveMinimum: 0,
+    maximum: 2,
+    description: "Radial only: ellipse height as a fraction of the image height (not pixels), measured before rotation",
+  },
+  rotation: {
+    type: "number",
+    minimum: -360,
+    maximum: 360,
+    description: "Radial only: clockwise rotation in degrees around the center, in the photo's pixel space (default 0)",
+  },
+  feather: {
+    type: "number",
+    minimum: 0,
+    maximum: 100,
+    description: "Radial only: edge softness, 0 hard to 100 soft (default 50)",
+  },
+  area: {
+    type: "string",
+    enum: ["inside", "outside"],
+    description: "Radial only: apply the effect inside (default) or outside the ellipse",
+  },
+} as const;
+
 export const POINT_CURVE_SETTING_KEYS = [
   "ToneCurvePV2012",
   "ToneCurvePV2012Red",
@@ -894,6 +940,53 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
       },
       required: ["photo_id"],
+    },
+  },
+  {
+    name: "create_gradient_mask",
+    luaHandler: "HandlerGradientMasks.createGradientMask",
+    description:
+      "Place a linear or radial gradient mask on a photo (Lightroom Classic 15.6 with process version 15.4 only). All positions are normalized coordinates of the full uncropped image: x and y from 0 to 1, origin at the top-left corner of the uncropped photo, y growing downward; a crop does not move the origin, so on a cropped photo convert from the visible area first. Anything outside 0..1 is rejected and nothing is written. Linear: the effect is full strength at start and fades to nothing at end, like dragging the Linear Gradient tool from start to end. Radial: center is the middle of the ellipse, width and height are fractions of the image width and height (not pixels), rotation is clockwise degrees around the center, applied in the photo's pixel space so the ellipse keeps its width and height, feather runs 0 (hard) to 100 (soft), and area picks the inside or outside of the ellipse. Without mask_id this creates a new mask (optionally named); with mask_id (from list_masks or an earlier call) the gradient is added as a component of that mask, with mode add (default) or subtract. Intersect is not supported. The mask starts with no adjustments, so it changes nothing visible until adjustments are set on it. This writes Lightroom's undocumented develop-setting format: before writing it checks the Lightroom version, the photo's process version and the format of every mask already on the photo, then writes, reads the masks back, and restores the previous masks if Lightroom kept anything different. On an untested version or format the call fails and the photo is unchanged. It briefly opens the photo in Develop to confirm Lightroom lists the new tool, then puts back the module, view source and selection. Returns mask_id and tool_id (use tool_id with update_gradient_mask), the shape and the stored geometry. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        shape: { type: "string", enum: ["linear", "radial"], description: "Gradient type" },
+        ...gradientGeometryProperties,
+        mask_id: {
+          type: "string",
+          minLength: 1,
+          description: "Add the gradient to this existing mask instead of creating a new one",
+        },
+        mode: {
+          type: "string",
+          enum: ["add", "subtract"],
+          description: "How a component combines with the mask (default add); subtract needs mask_id",
+        },
+        name: {
+          type: "string",
+          minLength: 1,
+          description: "Name of a new mask; not allowed together with mask_id",
+        },
+      },
+      required: ["photo_id", "shape"],
+    },
+  },
+  {
+    name: "update_gradient_mask",
+    luaHandler: "HandlerGradientMasks.updateGradientMask",
+    description:
+      "Move or reshape an existing linear or radial gradient, found by tool_id (from list_masks or create_gradient_mask). Give only the fields to change; the rest keep their values. Linear gradients take start and end, radial gradients take center, width, height, rotation, feather and area; a field of the other shape is rejected. Coordinates use the same normalized 0..1 system of the full uncropped image as create_gradient_mask and anything outside it is rejected before anything is written. The tool id, the mask id and the mask's adjustments are kept. Same safeguards as create_gradient_mask: Lightroom Classic 15.6 with process version 15.4 only, the full mask list is read back after the write and the previous masks are restored if Lightroom kept anything different, and the photo briefly opens in Develop. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        tool_id: { type: "string", minLength: 1, description: "Tool id of the gradient to change" },
+        ...gradientGeometryProperties,
+      },
+      required: ["photo_id", "tool_id"],
     },
   },
   {

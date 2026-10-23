@@ -28,6 +28,73 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('list_masks', { photo_id: 914, extra: 1 })).toContain('unknown property "extra"');
   });
 
+  describe('gradient mask tools', () => {
+    const linear = {
+      photo_id: 1,
+      shape: 'linear',
+      start: { x: 0.5, y: 0.2 },
+      end: { x: 0.5, y: 0.6 },
+    };
+    const radial = {
+      photo_id: '/a.dng',
+      shape: 'radial',
+      center: { x: 0.5, y: 0.5 },
+      width: 0.4,
+      height: 0.6,
+      rotation: 30,
+      feather: 20,
+      area: 'outside',
+      mask_id: 'abc',
+      mode: 'subtract',
+    };
+
+    it('accepts linear and radial gradients', () => {
+      expect(validateToolArgs('create_gradient_mask', linear)).toBeNull();
+      expect(validateToolArgs('create_gradient_mask', radial)).toBeNull();
+      expect(validateToolArgs('create_gradient_mask', { ...linear, name: 'Sky' })).toBeNull();
+    });
+
+    it('requires a photo and a shape', () => {
+      expect(validateToolArgs('create_gradient_mask', { shape: 'linear' })).toContain('photo_id');
+      expect(validateToolArgs('create_gradient_mask', { photo_id: 1 })).toContain('shape');
+      expect(validateToolArgs('create_gradient_mask', { ...linear, shape: 'brush' })).toContain('shape');
+    });
+
+    it('rejects coordinates outside the image', () => {
+      expect(validateToolArgs('create_gradient_mask', { ...linear, end: { x: 0.5, y: 1.1 } })).toContain('end');
+      expect(validateToolArgs('create_gradient_mask', { ...linear, start: { x: -0.1, y: 0.5 } })).toContain('start');
+      expect(validateToolArgs('create_gradient_mask', { ...radial, center: { x: 2, y: 0.5 } })).toContain('center');
+    });
+
+    it('rejects pixel-style or incomplete points and unknown properties', () => {
+      expect(validateToolArgs('create_gradient_mask', { ...linear, start: { x: 0.5 } })).toContain('start');
+      expect(validateToolArgs('create_gradient_mask', { ...linear, start: [0.5, 0.5] })).toContain('start');
+      expect(validateToolArgs('create_gradient_mask', { ...linear, start: { x: '0.5', y: 0.5 } })).toContain('start');
+      expect(validateToolArgs('create_gradient_mask', { ...linear, extra: 1 })).toContain('unknown property "extra"');
+    });
+
+    it('bounds the radial fields', () => {
+      expect(validateToolArgs('create_gradient_mask', { ...radial, width: 0 })).toContain('width');
+      expect(validateToolArgs('create_gradient_mask', { ...radial, height: 3 })).toContain('height');
+      expect(validateToolArgs('create_gradient_mask', { ...radial, feather: 101 })).toContain('feather');
+      expect(validateToolArgs('create_gradient_mask', { ...radial, rotation: 400 })).toContain('rotation');
+      expect(validateToolArgs('create_gradient_mask', { ...radial, area: 'around' })).toContain('area');
+      expect(validateToolArgs('create_gradient_mask', { ...radial, mode: 'intersect' })).toContain('mode');
+    });
+
+    it('updates a gradient by tool id with any subset of fields', () => {
+      expect(validateToolArgs('update_gradient_mask', { photo_id: 1, tool_id: 'T1', feather: 5 })).toBeNull();
+      expect(
+        validateToolArgs('update_gradient_mask', { photo_id: 1, tool_id: 'T1', end: { x: 0.1, y: 0.9 } }),
+      ).toBeNull();
+      expect(validateToolArgs('update_gradient_mask', { photo_id: 1, feather: 5 })).toContain('tool_id');
+      expect(validateToolArgs('update_gradient_mask', { photo_id: 1, tool_id: 'T1', feather: 500 })).toContain('feather');
+      expect(
+        validateToolArgs('update_gradient_mask', { photo_id: 1, tool_id: 'T1', shape: 'radial' }),
+      ).toContain('unknown property "shape"');
+    });
+  });
+
   it('requires exactly one deletion target for delete_masks', () => {
     expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
     expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();
