@@ -51,7 +51,7 @@ local function loadInit(opts)
     -- failure lands in the OS-resolved file sink, not the unreliable LrLogger
     -- channel (issue #128). Stub Log to observe what it would log.
     package.loaded.Log = {
-        info = function() end,
+        info = function(msg) observed.loggedInfo = msg end,
         warn = function() end,
         error = function(msg) observed.loggedError = msg end,
         filePath = function() return nil end,
@@ -79,6 +79,12 @@ describe("PluginInit auto-start", function()
         local o = loadInit({ autoStartServer = false })
         assert.is_false(o.usedPostAsyncTaskWithContext)
         assert.is_false(o.started)
+        assert.are.equal("Plugin initialized, auto-start off", o.loggedInfo)
+    end)
+
+    it("logs that Lightroom ran the init script", function()
+        local o = loadInit({ autoStartServer = true })
+        assert.are.equal("Plugin initialized, auto-start on", o.loggedInfo)
     end)
 
     it("defaults auto-start to true when the pref is unset", function()

@@ -20,6 +20,7 @@ if autoStart == nil then
     autoStart = true
     prefs.autoStartServer = true
 end
+Log.info("Plugin initialized, auto-start " .. (autoStart and "on" or "off"))
 
 if autoStart then
     -- Must use postAsyncTaskWithContext, NOT LrTasks.startAsyncTask. A bare
