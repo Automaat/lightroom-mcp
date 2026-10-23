@@ -188,6 +188,7 @@ If you'd rather drop the plugin in by hand:
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools (LrC 11+); briefly opens the photo in Develop. |
+| `create_mask` | Create a Subject, Sky or Background mask with optional local adjustments and get its id (LrC 11+); briefly opens the photo in Develop. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
 
