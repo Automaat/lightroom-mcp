@@ -44,6 +44,8 @@ const EXPECTED_TOOL_NAMES = [
   'list_masks',
   'create_gradient_mask',
   'update_gradient_mask',
+  'create_brush_mask',
+  'add_brush_strokes',
   'delete_masks',
   'delete_empty_masks',
   'set_mask_adjustments',
@@ -53,8 +55,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 39 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(39);
+  it('contains exactly 41 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(41);
   });
 
   it('tool names are unique', () => {
@@ -132,6 +134,8 @@ describe('tool required fields', () => {
     ['list_masks', ['photo_id']],
     ['create_gradient_mask', ['photo_id', 'shape']],
     ['update_gradient_mask', ['photo_id', 'tool_id']],
+    ['create_brush_mask', ['photo_id', 'strokes']],
+    ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
     ['delete_masks', ['photo_id']],
     ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],

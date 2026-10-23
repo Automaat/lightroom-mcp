@@ -578,6 +578,26 @@ describe("GuardedMaskWrite.compareEntries", function()
             oneEntry(brush({ "d 0.1 0.2", "d 0.3 0.3" }))))
     end)
 
+    it("ignores a flow token one side lacks but compares it when both have it", function()
+        local brush = function(dabs)
+            return {
+                What = "Mask/Aggregate",
+                Masks = { { What = "Mask/Paint", Dabs = dabs, Radius = 0.1, Flow = 0.3, CenterWeight = 0 } },
+            }
+        end
+
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "d 0.100000 0.200000" }))))
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.3000", "d 0.100000 0.200000" }))))
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.299998", "d 0.100000 0.200000" }))))
+        assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.5000", "d 0.100000 0.200000" }))))
+        assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.3000", "d 0.1 0.3" }))))
+    end)
+
     it("reports a lost table", function()
         local actual = oneEntry(linearComponent())
         actual[1].CorrectionMasks = nil
