@@ -183,8 +183,8 @@ If you'd rather drop the plugin in by hand:
 | `compare_develop_presets` | Diff an approved historical preset against a candidate. |
 | `create_develop_preset` | Capture explicit settings from a photo as a versioned plugin checkpoint. |
 | `export_develop_preset` | Copy a custom/checkpoint preset backing file without overwriting. |
-| `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name. |
-| `copy_develop_settings` | Copy develop settings between photos. |
+| `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
+| `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 

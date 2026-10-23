@@ -661,6 +661,66 @@ function DevelopHandler.exportDevelopPreset(args)
     return result
 end
 
+local AI_MASK_KIND = "Mask/Image"
+local AI_UPDATE_UNSUPPORTED_NOTE = "; AI mask update needs Lightroom Classic 13.3 or later"
+
+local function containsAIMasks(settings)
+    local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
+    if type(groups) ~= "table" then
+        return false
+    end
+    for _, correction in ipairs(groups) do
+        local masks = type(correction) == "table" and correction.CorrectionMasks
+        if type(masks) == "table" then
+            for _, mask in ipairs(masks) do
+                if type(mask) == "table" and mask.What == AI_MASK_KIND then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function presetContainsAIMasks(preset)
+    return containsAIMasks(callPresetMethod(preset, "getSetting"))
+end
+
+-- applyDevelopSettings has no AI flag and the applyDevelopPreset one reportedly
+-- reopens the modal-dialog lockup, so recompute in a second write transaction
+-- (same-transaction calls do not see the new settings).
+local function recomputeAISettings(catalog, applied)
+    local updated = 0
+    local failed = {}
+    if #applied == 0 then
+        return updated, failed, true
+    end
+    if type(applied[1].photo.updateAISettings) ~= "function" then
+        return updated, failed, false
+    end
+    catalog:withWriteAccessDo("Update AI Settings", function()
+        for _, entry in ipairs(applied) do
+            local ok = LrTasks.pcall(function() entry.photo:updateAISettings() end)
+            if ok then
+                updated = updated + 1
+            else
+                failed[#failed + 1] = tostring(entry.id)
+            end
+        end
+    end)
+    return updated, failed, true
+end
+
+local function aiUpdateMessageSuffix(supported, failed)
+    if not supported then
+        return AI_UPDATE_UNSUPPORTED_NOTE
+    end
+    if #failed > 0 then
+        return string.format("; AI mask update failed for %d photos", #failed)
+    end
+    return ""
+end
+
 function DevelopHandler.applyDevelopPreset(args)
     args.photo_ids = requirePhotoIdArray(args.photo_ids, "photo_ids", MAX_BULK_PHOTO_IDS)
     local selectedPreset = findPreset(args)
@@ -675,6 +735,7 @@ function DevelopHandler.applyDevelopPreset(args)
     -- not write, so holding the exclusive gate across it only serializes
     -- every other handler behind it.
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+    local applied = {}
 
     catalog:withWriteAccessDo("Apply Develop Preset", function()
         for _, resolvedEntry in ipairs(resolved) do
@@ -685,6 +746,7 @@ function DevelopHandler.applyDevelopPreset(args)
                     resolvedEntry.photo:applyDevelopPreset(selectedPreset.preset)
                 end
                 appliedCount = appliedCount + 1
+                applied[appliedCount] = resolvedEntry
             else
                 missingCount = missingCount + 1
                 missingIds[missingCount] = tostring(resolvedEntry.id)
@@ -692,7 +754,13 @@ function DevelopHandler.applyDevelopPreset(args)
         end
     end)
 
-    Log.info(string.format("Applied preset %s to %d photos", selectedPreset.name, appliedCount))
+    local aiUpdated, aiFailed, aiSupported = 0, {}, true
+    if presetContainsAIMasks(selectedPreset.preset) then
+        aiUpdated, aiFailed, aiSupported = recomputeAISettings(catalog, applied)
+    end
+
+    Log.info(string.format("Applied preset %s to %d photos (AI masks recomputed: %d, failed: %d)",
+        selectedPreset.name, appliedCount, aiUpdated, #aiFailed))
 
     return {
         success = true,
@@ -702,8 +770,10 @@ function DevelopHandler.applyDevelopPreset(args)
         scope = selectedPreset.scope,
         uuid = selectedPreset.uuid,
         missing = missingIds,
+        ai_updated = aiUpdated,
+        ai_update_failed = aiFailed,
         message = string.format("Applied preset %s to %d photos (%d ids not found)",
-            selectedPreset.name, appliedCount, missingCount),
+            selectedPreset.name, appliedCount, missingCount) .. aiUpdateMessageSuffix(aiSupported, aiFailed),
     }
 end
 
@@ -737,12 +807,14 @@ function DevelopHandler.copyDevelopSettings(args)
     local missingCount = 0
 
     local resolved = PhotoLookup.resolveMany(catalog, args.target_ids)
+    local applied = {}
 
     catalog:withWriteAccessDo("Copy Develop Settings", function()
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 entry.photo:applyDevelopSettings(toApply)
                 copiedCount = copiedCount + 1
+                applied[copiedCount] = entry
             else
                 missingCount = missingCount + 1
                 missingIds[missingCount] = tostring(entry.id)
@@ -750,15 +822,23 @@ function DevelopHandler.copyDevelopSettings(args)
         end
     end)
 
-    Log.info(string.format("Copied develop settings from %s to %d photos", args.source_id, copiedCount))
+    local aiUpdated, aiFailed, aiSupported = 0, {}, true
+    if containsAIMasks(toApply) then
+        aiUpdated, aiFailed, aiSupported = recomputeAISettings(catalog, applied)
+    end
+
+    Log.info(string.format("Copied develop settings from %s to %d photos (AI masks recomputed: %d, failed: %d)",
+        args.source_id, copiedCount, aiUpdated, #aiFailed))
 
     return {
         success = true,
         copied = copiedCount,
         source = args.source_id,
         missing = missingIds,
+        ai_updated = aiUpdated,
+        ai_update_failed = aiFailed,
         message = string.format("Copied develop settings from %s to %d photos (%d ids not found)",
-            args.source_id, copiedCount, missingCount),
+            args.source_id, copiedCount, missingCount) .. aiUpdateMessageSuffix(aiSupported, aiFailed),
     }
 end
 

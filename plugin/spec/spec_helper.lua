@@ -90,7 +90,7 @@ function M.fakePhoto(meta)
     if meta.uuid == nil and not meta.__dangling then
         meta.uuid = "uuid-" .. tostring(meta.localIdentifier or meta.id or "photo-id")
     end
-    return {
+    local photo = {
         localIdentifier = meta.localIdentifier or meta.id or "photo-id",
         getRawMetadata = function(_, key) return readMetadata(meta, key) end,
         getFormattedMetadata = function(_, key) return readMetadata(meta, key) end,
@@ -112,6 +112,16 @@ function M.fakePhoto(meta)
             meta.__appliedSettings = settings
         end,
     }
+    -- Opt in with aiUpdate = "ok" | "fail"; absent models LrC before 13.3.
+    if meta.aiUpdate then
+        photo.updateAISettings = function()
+            meta.__aiUpdateCalls = (meta.__aiUpdateCalls or 0) + 1
+            meta.__aiUpdateAfterSettings = meta.__appliedSettings
+            meta.__aiUpdateAfterPreset = meta.__appliedPreset
+            if meta.aiUpdate == "fail" then error("AI update failed") end
+        end
+    end
+    return photo
 end
 
 -- Build a fake keyword. opts: parent (fake keyword), synonyms, includeOnExport,

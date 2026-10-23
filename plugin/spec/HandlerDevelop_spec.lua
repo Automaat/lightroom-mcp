@@ -10,6 +10,13 @@ local function fakePreset(name, opts)
     }
 end
 
+local AI_MASK_SETTINGS = {
+    Exposure2012 = 1.0,
+    MaskGroupBasedCorrections = {
+        { CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1 } } },
+    },
+}
+
 local function fakeFolder(name, presets)
     return {
         getName = function() return name end,
@@ -477,6 +484,87 @@ describe("HandlerDevelop.applyDevelopPreset", function()
         assert.are.equal(_G._PLUGIN, p1.getRawMetadata(p1, "__appliedPresetPlugin"))
     end)
 
+    it("recomputes AI masks on each target after a preset with an AI mask", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local catalog, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" })
+
+        assert.are.equal(2, r.ai_updated)
+        assert.are.same({}, r.ai_update_failed)
+        assert.are.equal(1, p1.getRawMetadata(p1, "__aiUpdateCalls"))
+        assert.are.equal(1, p2.getRawMetadata(p2, "__aiUpdateCalls"))
+        assert.are.equal(2, catalog.getWriteAccessCount())
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("runs the AI update after the preset is applied", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local _, Handler = setup({ photos = { p1 }, folders = { fakeFolder("User", { preset }) } })
+
+        Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" })
+
+        assert.are.equal(preset, p1.getRawMetadata(p1, "__aiUpdateAfterPreset"))
+    end)
+
+    it("lists photos whose AI mask recompute failed and keeps the rest", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "fail" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", aiUpdate = "ok" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local _, Handler = setup({ photos = { p1, p2 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1", "2" }, preset_name = "Subject" })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.applied)
+        assert.are.equal(1, r.ai_updated)
+        assert.are.same({ "1" }, r.ai_update_failed)
+        assert.is_truthy(r.message:find("AI mask update failed for 1 photos", 1, true))
+    end)
+
+    it("does not touch AI settings for a preset without AI masks", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", aiUpdate = "ok" })
+        local gradient = { MaskGroupBasedCorrections = { { CorrectionMasks = { { What = "Mask/Gradient" } } } } }
+        local preset = fakePreset("Plain", { settings = gradient })
+        local catalog, Handler = setup({ photos = { p1 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Plain" })
+
+        assert.are.equal(0, r.ai_updated)
+        assert.are.same({}, r.ai_update_failed)
+        assert.is_nil(p1.getRawMetadata(p1, "__aiUpdateCalls"))
+        assert.are.equal(1, catalog.getWriteAccessCount())
+    end)
+
+    it("behaves as before when Lightroom has no updateAISettings", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local catalog, Handler = setup({ photos = { p1 }, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1" }, preset_name = "Subject" })
+
+        assert.is_true(r.success)
+        assert.are.equal(1, r.applied)
+        assert.are.equal(0, r.ai_updated)
+        assert.are.same({}, r.ai_update_failed)
+        assert.is_truthy(r.message:find("13.3", 1, true))
+        assert.are.equal(1, catalog.getWriteAccessCount())
+    end)
+
+    it("skips the AI update when no photo resolved", function()
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local catalog, Handler = setup({ photos = {}, folders = { fakeFolder("User", { preset }) } })
+
+        local r = Handler.applyDevelopPreset({ photo_ids = { "ghost" }, preset_name = "Subject" })
+
+        assert.are.equal(0, r.applied)
+        assert.are.equal(0, r.ai_updated)
+        assert.are.equal(1, catalog.getWriteAccessCount())
+    end)
+
     it("errors on unknown preset", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local folders = { fakeFolder("User", { fakePreset("Vibrant") }) }
@@ -635,6 +723,76 @@ describe("HandlerDevelop.copyDevelopSettings", function()
             SaturationAdjustmentOrange = 18,
             LuminanceAdjustmentOrange = 7,
         }, target.getRawMetadata(target, "__appliedSettings"))
+    end)
+
+    it("recomputes AI masks on each target when the copy carries them", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "ok" })
+        local catalog, Handler = setup({ photos = { source, t1, t2 } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+
+        assert.are.equal(2, r.copied)
+        assert.are.equal(2, r.ai_updated)
+        assert.are.same({}, r.ai_update_failed)
+        assert.are.equal(AI_MASK_SETTINGS, t1.getRawMetadata(t1, "__aiUpdateAfterSettings"))
+        assert.are.equal(1, t2.getRawMetadata(t2, "__aiUpdateCalls"))
+        assert.are.equal(2, catalog.getWriteAccessCount())
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("lists targets whose AI mask recompute failed", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local t2 = helper.fakePhoto({ id = "12", path = "/t2.jpg", aiUpdate = "fail" })
+        local _, Handler = setup({ photos = { source, t1, t2 } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+
+        assert.is_true(r.success)
+        assert.are.equal(2, r.copied)
+        assert.are.equal(1, r.ai_updated)
+        assert.are.same({ "12" }, r.ai_update_failed)
+    end)
+
+    it("does not touch AI settings when the copy has no AI masks", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = { Exposure2012 = 1.0 } })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local catalog, Handler = setup({ photos = { source, t1 } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.are.equal(0, r.ai_updated)
+        assert.is_nil(t1.getRawMetadata(t1, "__aiUpdateCalls"))
+        assert.are.equal(1, catalog.getWriteAccessCount())
+    end)
+
+    it("does not touch AI settings when the whitelist drops the masks", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg", aiUpdate = "ok" })
+        local _, Handler = setup({ photos = { source, t1 } })
+
+        local r = Handler.copyDevelopSettings({
+            source_id = "10", target_ids = { "11" }, settings = { "Exposure2012" },
+        })
+
+        assert.are.equal(0, r.ai_updated)
+        assert.is_nil(t1.getRawMetadata(t1, "__aiUpdateCalls"))
+    end)
+
+    it("behaves as before when Lightroom has no updateAISettings", function()
+        local source = helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = AI_MASK_SETTINGS })
+        local t1 = helper.fakePhoto({ id = "11", path = "/t1.jpg" })
+        local catalog, Handler = setup({ photos = { source, t1 } })
+
+        local r = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" } })
+
+        assert.is_true(r.success)
+        assert.are.equal(1, r.copied)
+        assert.are.equal(0, r.ai_updated)
+        assert.is_truthy(r.message:find("13.3", 1, true))
+        assert.are.equal(1, catalog.getWriteAccessCount())
     end)
 
     it("errors when source missing", function()
