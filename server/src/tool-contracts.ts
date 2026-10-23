@@ -16,6 +16,31 @@ const MAX_MASK_DELETE_IDS = 100;
 
 const MASK_TYPES = ["subject", "sky", "background"] as const;
 
+const PEOPLE_MASK_PARTS = [
+  "face_skin",
+  "iris_and_pupil",
+  "body_skin",
+  "hair",
+  "lips",
+  "facial_hair",
+  "eye_sclera",
+  "eyebrows",
+  "clothes",
+  "teeth",
+  "entire_person",
+] as const;
+
+const LANDSCAPE_MASK_CATEGORIES = [
+  "architecture",
+  "mountains",
+  "artificial_ground",
+  "natural_ground",
+  "vegetation",
+  "sky",
+  "water",
+  "snow",
+] as const;
+
 const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100) => ({
   type: "number",
   minimum,
@@ -1122,6 +1147,56 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_id", "type"],
+    },
+  },
+  {
+    name: "create_people_mask",
+    luaHandler: "HandlerAiMasks.createPeopleMask",
+    description:
+      "Create People masks on a photo, one mask per requested part, and return their ids (Lightroom Classic 15.6 with process version 15.4, which also needs the AI mask update of Lightroom Classic 13.3+). parts lists what to select: face_skin, body_skin, hair, facial_hair, eyebrows, eye_sclera, iris_and_pupil, lips, teeth, clothes, and entire_person (only with person). Without person every part covers all people in the photo. With person (1 for Lightroom's \"Person 1\", 2 for \"Person 2\", numbered as the Masking panel lists them) the masks cover that person only; this one-person form is built from a hand-made Lightroom mask and has had less testing than the all-people form. mask_id is the first mask; masks lists every mask with its part. If the photo has no person, no such person, or no region of a requested part, the call fails and none of the new masks is left on the photo. An unknown or duplicate part is rejected before anything is read or written. This writes Lightroom's undocumented develop-setting format through the same guarded write as create_gradient_mask (version check, format check of every existing mask, read-back, restore on mismatch), then asks Lightroom to compute the selection and waits for it, up to 120 seconds. It does not use the Develop module, but if the photo's masks are open in Develop Lightroom can show an \"AI process is running\" alert that stays up until someone clicks OK in Lightroom. The new masks carry no adjustments; set them with set_mask_adjustments. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        parts: {
+          type: "array",
+          items: { type: "string", enum: [...PEOPLE_MASK_PARTS] },
+          minItems: 1,
+          maxItems: PEOPLE_MASK_PARTS.length,
+          uniqueItems: true,
+          description: "Parts of a person to select; each part becomes its own mask",
+        },
+        person: {
+          type: "integer",
+          minimum: 1,
+          description:
+            "Select only this person (1 is Lightroom's \"Person 1\"); omit to select all people",
+        },
+      },
+      required: ["photo_id", "parts"],
+    },
+  },
+  {
+    name: "create_landscape_mask",
+    luaHandler: "HandlerAiMasks.createLandscapeMask",
+    description:
+      "Create Landscape masks on a photo, one mask per requested category, and return their ids (Lightroom Classic 15.6 with process version 15.4, which also needs the AI mask update of Lightroom Classic 13.3+). categories lists what to select: architecture, mountains, artificial_ground, natural_ground, vegetation, sky, water, snow. mask_id is the first mask; masks lists every mask with its category. If the photo has no region of a requested category, the call fails and none of the new masks is left on the photo. An unknown or duplicate category is rejected before anything is read or written. This writes Lightroom's undocumented develop-setting format through the same guarded write as create_gradient_mask (version check, format check of every existing mask, read-back, restore on mismatch), then asks Lightroom to compute the selection and waits for it, up to 120 seconds; a Landscape selection can take about 15 seconds. It does not use the Develop module, but if the photo's masks are open in Develop Lightroom can show an \"AI process is running\" alert that stays up until someone clicks OK in Lightroom. The new masks carry no adjustments; set them with set_mask_adjustments. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        categories: {
+          type: "array",
+          items: { type: "string", enum: [...LANDSCAPE_MASK_CATEGORIES] },
+          minItems: 1,
+          maxItems: LANDSCAPE_MASK_CATEGORIES.length,
+          uniqueItems: true,
+          description: "Landscape categories to select; each category becomes its own mask",
+        },
+      },
+      required: ["photo_id", "categories"],
     },
   },
 ];

@@ -95,6 +95,43 @@ describe('validateToolArgs', () => {
     });
   });
 
+  describe('create_people_mask and create_landscape_mask', () => {
+    it('accepts known parts for all people or one person', () => {
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair', 'face_skin'] })).toBeNull();
+      expect(
+        validateToolArgs('create_people_mask', { photo_id: 1, parts: ['entire_person'], person: 2 }),
+      ).toBeNull();
+    });
+
+    it('rejects unknown, duplicate or missing people parts and a bad person', () => {
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['ears'] })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair', 'hair'] })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: [] })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1 })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { parts: ['hair'] })).toContain('photo_id');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair'], person: 0 })).toContain('person');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair'], person: 1.5 })).toContain(
+        'person',
+      );
+    });
+
+    it('accepts known landscape categories and rejects the rest', () => {
+      expect(
+        validateToolArgs('create_landscape_mask', { photo_id: '/a.dng', categories: ['water', 'sky'] }),
+      ).toBeNull();
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1, categories: ['lava'] })).toContain(
+        'categories',
+      );
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1, categories: ['sky', 'sky'] })).toContain(
+        'categories',
+      );
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1 })).toContain('categories');
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1, categories: ['sky'], extra: 1 })).toContain(
+        'unknown property "extra"',
+      );
+    });
+  });
+
   it('requires exactly one deletion target for delete_masks', () => {
     expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
     expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();

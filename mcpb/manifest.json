@@ -173,6 +173,14 @@
     {
       "name": "create_mask",
       "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
+    },
+    {
+      "name": "create_people_mask",
+      "description": "Create People masks for chosen parts such as skin, hair, eyes, lips or clothes, for all people or one person."
+    },
+    {
+      "name": "create_landscape_mask",
+      "description": "Create Landscape masks for chosen categories such as sky, water, vegetation or mountains."
     }
   ],
   "user_config": {
