@@ -230,7 +230,7 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
             })
         end)
 
-        assert.truthy(err:find("local_Exposure 9 is outside its range -5 to 5", 1, true))
+        assert.truthy(err:find("local_Exposure 9 is outside its range -4 to 4", 1, true))
         assert.is_nil(err:find("local_Contrast", 1, true))
         assert.are.equal(0, #calls.setValue)
     end)
@@ -257,10 +257,10 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         local r = Handler.setMaskAdjustments({
             photo_id = "1",
             mask_id = "mask-a",
-            adjustments = { local_Exposure = -5, local_Contrast = 100 },
+            adjustments = { local_Exposure = -4, local_Contrast = 100 },
         })
 
-        assert.are.same({ local_Exposure = -5, local_Contrast = 100 }, r.adjustments)
+        assert.are.same({ local_Exposure = -4, local_Contrast = 100 }, r.adjustments)
     end)
 
     it("prefers the range Lightroom reports for the slider", function()

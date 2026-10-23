@@ -15,8 +15,8 @@ end
 LocalSliders.list = {
     {
         name = "local_Exposure",
-        fallbackMin = -5,
-        fallbackMax = 5,
+        fallbackMin = -4,
+        fallbackMax = 4,
         tolerance = TWO_DECIMAL_ROUNDING_TOLERANCE,
     },
     wholeNumberSlider("local_Contrast"),
