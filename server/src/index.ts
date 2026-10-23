@@ -51,6 +51,7 @@ const ACTION_TIMEOUTS_MS: Record<string, number> = {
   export_photo_metadata: LONG_RUNNING_TIMEOUT_MS,
   import_photos: LONG_RUNNING_TIMEOUT_MS,
   apply_denoise: LONG_RUNNING_TIMEOUT_MS,
+  create_mask: LONG_RUNNING_TIMEOUT_MS,
   ping: PING_TIMEOUT_MS,
 };
 const SHUTDOWN_GRACE_MS = Math.max(REQUEST_TIMEOUT_MS, ...Object.values(ACTION_TIMEOUTS_MS)) + 5_000;

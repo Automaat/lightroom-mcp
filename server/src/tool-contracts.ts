@@ -13,6 +13,32 @@ const MAX_BULK_PHOTO_IDS = 1000;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 
+const MASK_TYPES = ["subject", "sky", "background"] as const;
+
+const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100) => ({
+  type: "number",
+  minimum,
+  maximum,
+  description: `${description} (${minimum} to ${maximum})`,
+});
+
+const MASK_ADJUSTMENT_PROPERTIES = {
+  exposure: maskAdjustmentSlider("Exposure in stops", -4, 4),
+  contrast: maskAdjustmentSlider("Contrast"),
+  highlights: maskAdjustmentSlider("Highlights"),
+  shadows: maskAdjustmentSlider("Shadows"),
+  whites: maskAdjustmentSlider("Whites"),
+  blacks: maskAdjustmentSlider("Blacks"),
+  texture: maskAdjustmentSlider("Texture"),
+  clarity: maskAdjustmentSlider("Clarity"),
+  dehaze: maskAdjustmentSlider("Dehaze"),
+  temperature: maskAdjustmentSlider("Temperature"),
+  tint: maskAdjustmentSlider("Tint"),
+  saturation: maskAdjustmentSlider("Saturation"),
+  sharpness: maskAdjustmentSlider("Sharpness"),
+  noise: maskAdjustmentSlider("Noise reduction"),
+};
+
 export const POINT_CURVE_SETTING_KEYS = [
   "ToneCurvePV2012",
   "ToneCurvePV2012Red",
@@ -905,6 +931,55 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         mask_id: maskIdSchema("Mask id from list_masks"),
       },
       required: ["photo_id", "mask_id"],
+    },
+  },
+  {
+    name: "invert_mask",
+    luaHandler: "HandlerMaskInvert.invertMask",
+    description:
+      "Invert a mask on a photo (Lightroom Classic 11.4+), chosen by its mask id from list_masks, never by the current selection. mode \"in_place\" inverts the mask itself. mode \"copy\" leaves the original untouched and creates an inverted copy, returning the copy's id as mask_id and the original's as source_mask_id. Lightroom's own duplicate resets the copy's local sliders to 0, so the tool copies the original's local sliders onto the copy in the same call (Lightroom folds this into the Duplicate and Invert history step; adjustments_copied counts the sliders written) and removes the copy and fails if a value does not stick. mode \"in_place\" on a mask with several components inverts only one of them; the result lists every tool with its inverted flag. Use the returned mask_id for later calls: Lightroom can regenerate mask ids when a mask is written through develop settings. An unknown mask id returns an error and changes nothing. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, inverts, then puts back the module, view source and selection. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: {
+          type: "string",
+          minLength: 1,
+          description: "ID of the mask to invert, from list_masks",
+        },
+        mode: {
+          type: "string",
+          enum: ["in_place", "copy"],
+          description: "in_place inverts the mask; copy keeps it and creates an inverted copy",
+        },
+      },
+      required: ["photo_id", "mask_id", "mode"],
+    },
+  },
+  {
+    name: "create_mask",
+    luaHandler: "HandlerMaskCreate.createMask",
+    description:
+      "Create a Subject, Sky or Background mask on a photo (Lightroom Classic 11+) and return the new mask id. Lightroom detects the area itself. Optional adjustments set the mask's local sliders in the same call; every slider you leave out is set to 0, so the mask never inherits the values last used in the Masking panel. If Lightroom finds nothing to select (for example no sky), the call fails after about 30 seconds and the photo gets no new mask, but Lightroom shows an alert such as \"No sky detected\" that stays up until someone clicks OK in Lightroom, and until then every Develop call sees no masks. Masks already on the photo are left unchanged. Lightroom records the new mask as one \"Add Subject\", \"Add Sky\" or \"Add Background\" history step; adjustments other than 0 add one more history step that groups all the sliders. A Background mask is listed with tool type aiSelection and subtype object. Exposure is limited to the -4 to 4 range Lightroom allows for local masks. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, creates the mask, then puts back the module, view source and selection. Detection can take several seconds. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        type: {
+          type: "string",
+          enum: [...MASK_TYPES],
+          description: "What Lightroom should select: subject, sky or background",
+        },
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Local adjustment sliders for the new mask. Omitted sliders start at 0.",
+        },
+      },
+      required: ["photo_id", "type"],
     },
   },
 ];

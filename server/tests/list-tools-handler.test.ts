@@ -44,11 +44,13 @@ const EXPECTED_TOOL_NAMES = [
   'list_masks',
   'set_mask_adjustments',
   'get_mask_adjustments',
+  'invert_mask',
+  'create_mask',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 33 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(33);
+  it('contains exactly 35 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(35);
   });
 
   it('tool names are unique', () => {
@@ -126,6 +128,8 @@ describe('tool required fields', () => {
     ['list_masks', ['photo_id']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
     ['get_mask_adjustments', ['photo_id', 'mask_id']],
+    ['invert_mask', ['photo_id', 'mask_id', 'mode']],
+    ['create_mask', ['photo_id', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
   });
