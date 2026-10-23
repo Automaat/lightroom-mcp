@@ -53,6 +53,8 @@ const ACTION_TIMEOUTS_MS: Record<string, number> = {
   apply_denoise: LONG_RUNNING_TIMEOUT_MS,
   ping: PING_TIMEOUT_MS,
 };
+const SHUTDOWN_GRACE_MS = Math.max(REQUEST_TIMEOUT_MS, ...Object.values(ACTION_TIMEOUTS_MS)) + 5_000;
+const SHUTDOWN_EXIT_MARGIN_MS = 1_000;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -112,9 +114,13 @@ async function main() {
   // the instance lock, so every future bridge instance fails with "Another
   // Lightroom MCP bridge is already running". Stdin EOF is the one reliable
   // cross-platform signal that the client is gone.
+  let shuttingDown = false;
   const exitOnClientGone = (reason: string) => () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.error(`Shutting down: ${reason}`);
-    process.exit(0);
+    setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS + SHUTDOWN_EXIT_MARGIN_MS).unref();
+    void bridge.shutdown(SHUTDOWN_GRACE_MS).finally(() => process.exit(0));
   };
   process.stdin.once("end", exitOnClientGone("stdin ended (client exited)"));
   process.stdin.once("close", exitOnClientGone("stdin closed (client exited)"));

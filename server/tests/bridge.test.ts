@@ -175,6 +175,26 @@ describe('broker', () => {
     release?.();
   });
 
+  it('reports when follower calls in flight have finished', async () => {
+    let release: (() => void) | undefined;
+    const { p, server } = await serve(
+      () => new Promise<ToolResponse>((resolve) => (release = () => resolve(ok('late')))),
+    );
+    const client = await connect(p, 't');
+
+    expect(await server.whenIdle(10)).toBe(true);
+    const pending = client.callTool('export_photos', {});
+    await waitFor(() => release !== undefined);
+    expect(server.inFlightCalls()).toBe(1);
+    expect(await server.whenIdle(20)).toBe(false);
+
+    const idle = server.whenIdle(2000);
+    release?.();
+    expect(await idle).toBe(true);
+    expect(text(await pending)).toBe('late');
+    expect(server.inFlightCalls()).toBe(0);
+  });
+
   unixOnly('replaces a stale socket file left by a dead owner', async () => {
     const p = ipcPath(tmpDir());
     fs.writeFileSync(p, '', { mode: 0o600, flag: 'wx' });
@@ -276,14 +296,20 @@ describe('Bridge', () => {
     while (bridges.length > 0) bridges.pop()!.stop();
   });
 
-  function makeBridge(dir: string, label: string, started: string[], stopped: string[] = []) {
+  function makeBridge(
+    dir: string,
+    label: string,
+    started: string[],
+    stopped: string[] = [],
+    call?: (name: string) => Promise<ToolResponse>,
+  ) {
     const bridge = new Bridge({
       ipcPath: ipcPath(dir),
       acquireLock: () => acquireInstanceLock(58763, 58764, dir),
       startLeader: (): Leader => {
         started.push(label);
         return {
-          callTool: async (name) => ok(`${label}:${name}`),
+          callTool: call ?? (async (name) => ok(`${label}:${name}`)),
           stop: () => stopped.push(label),
         };
       },
@@ -327,6 +353,69 @@ describe('Bridge', () => {
     expect(stopped).toEqual(['a']);
     expect(started).toEqual(['a', 'b']);
     expect(text(await b.callTool('ping', {}))).toBe('b:ping');
+  });
+
+  it('finishes calls from other bridges before shutting down', async () => {
+    const dir = tmpDir();
+    const started: string[] = [];
+    const stopped: string[] = [];
+    let release: (() => void) | undefined;
+    const a = makeBridge(dir, 'a', started, stopped, (name) =>
+      new Promise<ToolResponse>((resolve) => (release = () => resolve(ok(`a:${name}`)))),
+    );
+    const b = makeBridge(dir, 'b', started, stopped);
+    await a.start();
+    await b.start();
+
+    const pending = b.callTool('apply_denoise', {});
+    await waitFor(() => release !== undefined);
+    const done = a.shutdown(2000);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(a.role()).toBe('leader');
+    expect(stopped).toEqual([]);
+    release?.();
+    await done;
+    expect(text(await pending)).toBe('a:apply_denoise');
+    expect(stopped).toEqual(['a']);
+    await waitFor(() => b.role() === 'leader');
+  });
+
+  it('gives up on calls from other bridges after the grace period', async () => {
+    const dir = tmpDir();
+    const started: string[] = [];
+    const stopped: string[] = [];
+    let called = false;
+    const a = makeBridge(dir, 'a', started, stopped, () => {
+      called = true;
+      return new Promise<ToolResponse>(() => {});
+    });
+    const b = makeBridge(dir, 'b', started, stopped);
+    await a.start();
+    await b.start();
+
+    const pending = b.callTool('export_photos', {});
+    await waitFor(() => called);
+    await a.shutdown(50);
+
+    expect(text(await pending)).toBe(OWNER_LOST_MESSAGE);
+    expect(stopped).toEqual(['a']);
+  });
+
+  it('shuts down at once when no call from another bridge is running', async () => {
+    const dir = tmpDir();
+    const stopped: string[] = [];
+    const a = makeBridge(dir, 'a', [], stopped);
+    const b = makeBridge(dir, 'b', [], stopped);
+    await a.start();
+    await b.start();
+    expect(text(await b.callTool('ping', {}))).toBe('a:ping');
+
+    const startedAt = Date.now();
+    await a.shutdown(10_000);
+
+    expect(Date.now() - startedAt).toBeLessThan(1000);
+    expect(stopped).toEqual(['a']);
   });
 
   it('holds a call until the election settles', async () => {

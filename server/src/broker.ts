@@ -116,6 +116,8 @@ export class BrokerServer {
   private server: net.Server | null = null;
   private readonly clients = new Set<net.Socket>();
   private readonly log: (msg: string) => void;
+  private inFlight = 0;
+  private idleWaiters: Array<() => void> = [];
 
   constructor(private readonly opts: BrokerServerOptions) {
     this.log = opts.log ?? ((msg: string) => console.error(msg));
@@ -180,12 +182,60 @@ export class BrokerServer {
       this.log(`[broker] malformed request from follower: ${line.slice(0, 200)}`);
       return;
     }
-    const result = authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), req.auth)
-      ? await this.opts.callTool(req.name, req.args)
-      : errorResponse("Rejected by the Lightroom MCP bridge: token mismatch.");
-    if (sock.destroyed) return;
-    const reply: BrokerReply = { id: req.id, result };
-    sock.write(JSON.stringify(reply) + "\n");
+    if (!authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), req.auth)) {
+      this.reply(sock, req.id, errorResponse("Rejected by the Lightroom MCP bridge: token mismatch."));
+      return;
+    }
+    this.inFlight++;
+    let result: ToolResponse;
+    try {
+      result = await this.opts.callTool(req.name, req.args);
+    } catch (err) {
+      this.callDone();
+      throw err;
+    }
+    this.reply(sock, req.id, result, () => this.callDone());
+  }
+
+  private reply(sock: net.Socket, id: number, result: ToolResponse, sent: () => void = () => {}): void {
+    if (sock.destroyed) {
+      sent();
+      return;
+    }
+    const reply: BrokerReply = { id, result };
+    sock.write(JSON.stringify(reply) + "\n", () => sent());
+  }
+
+  private callDone(): void {
+    this.inFlight--;
+    if (this.inFlight > 0) return;
+    const waiters = this.idleWaiters;
+    this.idleWaiters = [];
+    for (const w of waiters) w();
+  }
+
+  /** Follower calls being served right now. */
+  inFlightCalls(): number {
+    return this.inFlight;
+  }
+
+  /**
+   * Resolves true once no follower call is in flight, or false after
+   * timeoutMs with calls still running.
+   */
+  whenIdle(timeoutMs: number): Promise<boolean> {
+    if (this.inFlight === 0) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const waiter = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        this.idleWaiters = this.idleWaiters.filter((w) => w !== waiter);
+        resolve(false);
+      }, timeoutMs);
+      this.idleWaiters.push(waiter);
+    });
   }
 
   close(): void {
