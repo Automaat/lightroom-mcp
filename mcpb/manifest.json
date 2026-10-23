@@ -141,6 +141,14 @@
     {
       "name": "list_masks",
       "description": "List the masks on a photo with their ids, names and component tools."
+    },
+    {
+      "name": "set_mask_adjustments",
+      "description": "Change local adjustment sliders on an existing mask of a photo."
+    },
+    {
+      "name": "get_mask_adjustments",
+      "description": "Read the current local adjustment values of a mask on a photo."
     }
   ],
   "user_config": {

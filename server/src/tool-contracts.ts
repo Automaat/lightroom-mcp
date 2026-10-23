@@ -102,6 +102,35 @@ export const DEVELOP_SETTING_KEYS = [
   "CropAngle",
 ] as const;
 
+export const LOCAL_ADJUSTMENT_KEYS = [
+  "local_Exposure",
+  "local_Contrast",
+  "local_Highlights",
+  "local_Shadows",
+  "local_Whites",
+  "local_Blacks",
+  "local_Texture",
+  "local_Clarity",
+  "local_Dehaze",
+  "local_Temperature",
+  "local_Tint",
+  "local_Saturation",
+  "local_Sharpness",
+  "local_LuminanceNoise",
+  "local_Moire",
+  "local_Defringe",
+] as const;
+
+const localAdjustmentProperties = Object.fromEntries(
+  LOCAL_ADJUSTMENT_KEYS.map((key) => [key, { type: "number" }]),
+);
+
+const maskIdSchema = (description: string) => ({
+  type: "string",
+  minLength: 1,
+  description,
+});
+
 const stringArray = (description: string, maxItems?: number) => ({
   type: "array",
   items: { type: "string" },
@@ -838,6 +867,44 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
       },
       required: ["photo_id"],
+    },
+  },
+  {
+    name: "set_mask_adjustments",
+    luaHandler: "HandlerMaskAdjustments.setMaskAdjustments",
+    description:
+      "Change local adjustment sliders on an existing mask (Lightroom Classic 11+). Pass the photo, a mask id from list_masks and any subset of local sliders; only those sliders change and every other slider and mask is left alone. Slider names are Lightroom SDK names: local_Exposure (-5 to 5), and local_Contrast, local_Highlights, local_Shadows, local_Whites, local_Blacks, local_Texture, local_Clarity, local_Dehaze, local_Temperature, local_Tint, local_Saturation, local_Sharpness, local_LuminanceNoise, local_Moire, local_Defringe (-100 to 100 each). Lightroom's own range for a slider wins over these figures. A value outside its range is rejected with an error naming the slider and its range before anything is written, and so is an unknown mask id. Lightroom's mask API only answers for the photo active in Develop, so this switches to Develop, opens the photo, selects the mask, writes and reads back each slider, then puts back the previously selected mask, module, view source and selection. Sliders already at the value are skipped. Returns the values read back from Lightroom, the sliders that changed (from, to) and those that were already at the value. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("Mask id from list_masks"),
+        adjustments: {
+          type: "object",
+          properties: localAdjustmentProperties,
+          additionalProperties: false,
+          minProperties: 1,
+          description:
+            "Local slider names and the numbers to set (e.g., {\"local_Exposure\": 0.5, \"local_Shadows\": -20})",
+        },
+      },
+      required: ["photo_id", "mask_id", "adjustments"],
+    },
+  },
+  {
+    name: "get_mask_adjustments",
+    luaHandler: "HandlerMaskAdjustments.getMaskAdjustments",
+    description:
+      "Read the current local adjustment values of an existing mask (Lightroom Classic 11+): every slider that set_mask_adjustments can write, keyed by its SDK name. A slider Lightroom does not expose for this photo is listed under unavailable. Like set_mask_adjustments, this switches to Develop, opens the photo and selects the mask, then puts back the previously selected mask, module, view source and selection. An unknown mask id returns an error. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        mask_id: maskIdSchema("Mask id from list_masks"),
+      },
+      required: ["photo_id", "mask_id"],
     },
   },
 ];
