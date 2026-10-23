@@ -173,6 +173,10 @@
     {
       "name": "create_mask",
       "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
+    },
+    {
+      "name": "create_mask_batch",
+      "description": "Add the same Subject, Sky or Background mask to many photos, each recomputed for its own photo."
     }
   ],
   "user_config": {

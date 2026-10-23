@@ -13,6 +13,7 @@ const MAX_BULK_PHOTO_IDS = 1000;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
+const MAX_MASK_BATCH_PHOTO_IDS = 200;
 
 const MASK_TYPES = ["subject", "sky", "background"] as const;
 
@@ -1122,6 +1123,34 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_id", "type"],
+    },
+  },
+  {
+    name: "create_mask_batch",
+    luaHandler: "HandlerMaskBatch.createMaskBatch",
+    description:
+      "Add the same Subject, Sky or Background mask, with the same local adjustments, to many photos in one call (Lightroom Classic 15.6 only, the version the guarded mask write is tested on). Lightroom computes the mask for each photo itself; nothing is copied from another photo's mask shape. How it works: the first photo is opened in Develop and gets the mask exactly as create_mask would make it (up to about 30 seconds); every other photo is then given that mask with its computed data removed and Lightroom recomputes it for that photo, without opening it in Develop. The module, view source and selection are put back afterwards. Masks already on a photo are kept. Returns per photo in results: status created, failed or not_attempted, created true or false, the new mask_id and a reason on failure, plus created/failed/not_attempted counts, missing for ids that match no photo, and complete. A photo where Lightroom finds nothing to select is reported failed and its added mask is removed, and the rest of the batch continues. The exception is the first photo: if Lightroom finds nothing there, it shows an alert such as \"No sky detected\" that stays up until someone clicks OK in Lightroom and blocks every Develop call, so the call stops, reports the remaining photos as not_attempted and you must have the alert dismissed (and best drop that photo from the list) before calling again. A call stops after about 230 s, sets complete to false and lists the unreached ids in remaining_ids; call again with those. Up to 200 photos per call. Photos with masks Lightroom's mask format check rejects are reported failed untouched. Exposure is limited to -4 to 4. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: {
+          ...photoIdArray("Photo IDs or file paths"),
+          maxItems: MAX_MASK_BATCH_PHOTO_IDS,
+        },
+        type: {
+          type: "string",
+          enum: [...MASK_TYPES],
+          description: "What Lightroom should select on each photo: subject, sky or background",
+        },
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Local adjustment sliders for each new mask. Omitted sliders start at 0.",
+        },
+      },
+      required: ["photo_ids", "type"],
     },
   },
 ];
