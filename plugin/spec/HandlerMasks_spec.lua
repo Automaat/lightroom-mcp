@@ -7,7 +7,11 @@ local function errorOf(fn)
 end
 
 local function tool(id, type, subtype, inverted)
-    return { id = id, type = type, subtype = subtype, inverted = inverted }
+    return { ID = id, Name = type .. " " .. id, Type = type, Subtype = subtype, Hidden = false, Inverted = inverted }
+end
+
+local function mask(id, name, hidden, tools)
+    return { ID = id, Name = name, Hidden = hidden, Tools = tools }
 end
 
 local function setup(opts)
@@ -105,13 +109,13 @@ describe("HandlerMasks.listMasks", function()
                 {
                     id = "11",
                     masks = {
-                        { id = "m-1", name = "Subject 1", hidden = false, tools = {
+                        mask("m-1", "Subject 1", false, {
                             tool("t-1", "aiSelection", "subject", false),
                             tool("t-2", "gradient", nil, true),
-                        } },
-                        { id = "m-2", name = "Mask 2", hidden = true, tools = {
+                        }),
+                        mask("m-2", "Mask 2", true, {
                             tool("t-3", "rangeMask", "luminance", false),
-                        } },
+                        }),
                     },
                 },
             },
@@ -154,7 +158,7 @@ describe("HandlerMasks.listMasks", function()
     end)
 
     it("accepts a numeric photo id and a file path", function()
-        local Handler = setup({ photos = { { id = "7", masks = { { id = "m", name = "M", tools = {} } } } } })
+        local Handler = setup({ photos = { { id = "7", masks = { mask("m", "M", false, {}) } } } })
 
         assert.are.equal("7", Handler.listMasks({ photo_id = 7 }).photo_id)
         assert.are.equal(1, Handler.listMasks({ photo_id = "/7.jpg" }).count)
@@ -192,7 +196,7 @@ describe("HandlerMasks.listMasks", function()
         local Handler, calls = setup({
             photos = {
                 { id = "1" },
-                { id = "2", masks = { { id = "m", name = "M", tools = {} } } },
+                { id = "2", masks = { mask("m", "M", false, {}) } },
             },
         })
 
@@ -225,7 +229,7 @@ describe("HandlerMasks.listMasks", function()
 
     it("waits for a photo that is still loading in Develop", function()
         local Handler, calls = setup({
-            photos = { { id = "1", readyAfter = 3, masks = { { id = "m", name = "M", tools = {} } } } },
+            photos = { { id = "1", readyAfter = 3, masks = { mask("m", "M", false, {}) } } },
         })
 
         local r = Handler.listMasks({ photo_id = "1" })
@@ -264,38 +268,50 @@ describe("HandlerMasks.listMasks", function()
     end)
 
     it("errors with the field names when a mask has no id", function()
-        local Handler = setup({ photos = { { id = "1", masks = { { label = "x", tools = {} } } } } })
+        local Handler = setup({ photos = { { id = "1", masks = { { label = "x", Tools = {} } } } } })
 
         local err = errorOf(function() Handler.listMasks({ photo_id = "1" }) end)
 
         assert.truthy(err:find("mask without an id for photo 1", 1, true))
-        assert.truthy(err:find("label, tools", 1, true))
+        assert.truthy(err:find("Tools, label", 1, true))
     end)
 
     it("errors with the field names when a mask tool has no id", function()
         local Handler = setup({
-            photos = { { id = "1", masks = { { id = "m", tools = { { type = "brush" } } } } } },
+            photos = { { id = "1", masks = { { ID = "m", Tools = { { Type = "brush" } } } } } },
         })
 
         local err = errorOf(function() Handler.listMasks({ photo_id = "1" }) end)
 
         assert.truthy(err:find("mask tool without an id for photo 1", 1, true))
-        assert.truthy(err:find("(fields: type)", 1, true))
+        assert.truthy(err:find("(fields: Type)", 1, true))
     end)
 
-    it("reads Lightroom's develop-settings field names and numeric ids", function()
+    it("reads the shape Lightroom Classic 15.6 returned for real masks", function()
         local Handler = setup({
             photos = {
                 {
                     id = "1",
                     masks = {
                         {
-                            CorrectionID = "c-1",
-                            CorrectionName = "Sky",
-                            CorrectionActive = false,
-                            CorrectionMasks = {
-                                { MaskID = 42, What = "Mask/Gradient", MaskSubType = 1, MaskInverted = true },
+                            Tools = {
+                                { Type = "gradient", Name = "Linear Gradient 2", Inverted = false,
+                                    ID = "7B716E7B-452A-4EC3-8199-531B2F1CFF41", Hidden = false },
+                                { Type = "radialGradient", Name = "Radial Gradient 1", Inverted = true,
+                                    ID = "83166C5E-AE77-435E-B108-F1B1A4DA4870", Hidden = false },
                             },
+                            Hidden = true,
+                            Name = "Radial test",
+                            ID = "3A7C8A70-9924-4302-BFC5-18245650F139",
+                        },
+                        {
+                            Tools = {
+                                { Type = "aiSelection", Name = "Sky 1", Subtype = "sky", Inverted = false,
+                                    ID = "6EA08274-0303-4FAD-80D7-263C230EF658", Hidden = false },
+                            },
+                            Hidden = false,
+                            Name = "Mask 1",
+                            ID = "A6585ED4-99D0-4B82-A48B-2472A8E9E178",
                         },
                     },
                 },
@@ -306,23 +322,36 @@ describe("HandlerMasks.listMasks", function()
 
         assert.are.same({
             {
-                id = "c-1",
-                name = "Sky",
+                id = "3A7C8A70-9924-4302-BFC5-18245650F139",
+                name = "Radial test",
                 hidden = true,
-                tools = { { id = "42", type = "Gradient", subtype = 1, inverted = true } },
+                tools = {
+                    { id = "7B716E7B-452A-4EC3-8199-531B2F1CFF41", type = "gradient", inverted = false },
+                    { id = "83166C5E-AE77-435E-B108-F1B1A4DA4870", type = "radialGradient", inverted = true },
+                },
+            },
+            {
+                id = "A6585ED4-99D0-4B82-A48B-2472A8E9E178",
+                name = "Mask 1",
+                hidden = false,
+                tools = {
+                    {
+                        id = "6EA08274-0303-4FAD-80D7-263C230EF658",
+                        type = "aiSelection",
+                        subtype = "sky",
+                        inverted = false,
+                    },
+                },
             },
         }, r.masks)
     end)
 
-    it("reads tools stored as the array part of the mask", function()
-        local Handler = setup({
-            photos = { { id = "1", masks = { { id = "m", name = "M", { id = "t", type = "brush" } } } } },
-        })
+    it("lists a mask whose tools field is missing as having no tools", function()
+        local Handler = setup({ photos = { { id = "1", masks = { { ID = "m", Name = "M", Hidden = false } } } } })
 
         local r = Handler.listMasks({ photo_id = "1" })
 
-        assert.are.equal("t", r.masks[1].tools[1].id)
-        assert.are.equal("brush", r.masks[1].tools[1].type)
+        assert.are.same({}, r.masks[1].tools)
     end)
 
     it("never opens a catalog gate", function()
