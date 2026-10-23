@@ -186,6 +186,7 @@ If you'd rather drop the plugin in by hand:
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name. |
 | `copy_develop_settings` | Copy develop settings between photos. |
 | `set_develop_settings` | Write SDK setting key/values directly. |
+| `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
 

@@ -61,6 +61,14 @@ local function setup(opts)
             extension = extension,
             child = function(parent, child) return parent .. "/" .. child end,
         },
+        LrApplicationView = opts.applicationView or {
+            getCurrentModuleName = function() return "library" end,
+            switchToModule = function() end,
+        },
+        LrDate = opts.date or { currentTime = function() return 0 end },
+        LrDevelopController = opts.developController or {},
+        LrSelection = opts.selection or { selectNone = function() end },
+        LrTasks = opts.tasks or { sleep = function() end, pcall = pcall },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerDevelop = nil
@@ -803,5 +811,341 @@ describe("HandlerDevelop.setDevelopSettings", function()
             assert.are.equal(0, catalog.getWriteAccessCount())
             assert.is_nil(p.getRawMetadata(p, "__appliedSettings"))
         end
+    end)
+end)
+
+-- Develop module fake for applyDenoise: one active photo, an Enhance panel per photo.
+-- Photo spec: id, denoise (current amount, or nil for none), enabled (false = Denoise
+-- unavailable), panel (override the panel state, e.g. a stale one).
+local function denoiseSetup(opts)
+    local photos, panels, outside, settingsOf = {}, {}, {}, {}
+    local function saveDenoise(photo, amount)
+        if opts.notSaved then return end
+        settingsOf[photo].FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d" .. amount } } }
+    end
+    for _, spec in ipairs(opts.photos) do
+        local settings = {}
+        local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".rw2", developSettings = settings })
+        settingsOf[p] = settings
+        if spec.denoise then
+            settings.FilterList = { Filters = { { Name = "Enhance", CompressedSettings = "d" .. spec.denoise } } }
+        end
+        photos[#photos + 1] = p
+        panels[p] = spec.panel or {
+            denoiseEnabled = spec.enabled ~= false,
+            denoiseState = spec.denoise ~= nil,
+            denoiseAmount = spec.denoise or 50,
+        }
+        outside[p] = spec.outsideSource
+    end
+    local active = not opts.nothingSelected and photos[1] or nil
+    local module = "library"
+    local sources = { "folder" }
+    local dropNextSelection = false
+    local autoSelectPending = false
+    local clock = { now = 0 }
+    local calls = {
+        selections = {}, enhance = {}, amounts = {}, switched = 0, modules = {}, sources = {}, selectNone = 0,
+    }
+    local Handler
+    local controller = {
+        getEnhancePanelState = function()
+            if module ~= "develop" or opts.panelUnavailable then return nil end
+            if not active then return { denoiseEnabled = false } end
+            -- Lightroom returns a fresh copy of the panel state on every call.
+            local copy = {}
+            for k, v in pairs(panels[active]) do copy[k] = v end
+            return copy
+        end,
+        setEnhance = function(name, on, amount)
+            if opts.enhanceError then error(opts.enhanceError) end
+            calls.enhance[#calls.enhance + 1] = { id = active.localIdentifier, name = name, on = on, amount = amount }
+            if opts.onEnhance then opts.onEnhance(Handler, clock) end
+            if opts.enhanceIgnored then return end
+            panels[active].denoiseState, panels[active].denoiseAmount = on, amount
+            saveDenoise(active, amount)
+        end,
+        changeDenoiseAmount = function(amount)
+            calls.amounts[#calls.amounts + 1] = { id = active.localIdentifier, amount = amount }
+            panels[active].denoiseAmount = amount
+            saveDenoise(active, amount)
+        end,
+    }
+    if opts.beforeLrC15 then controller.getEnhancePanelState = nil end
+    local view = {
+        getCurrentModuleName = function() return module end,
+        switchToModule = function(name)
+            module = name
+            calls.switched = calls.switched + 1
+            calls.modules[#calls.modules + 1] = name
+        end,
+    }
+    local tasks = {
+        pcall = pcall,
+        sleep = function(seconds)
+            clock.now = clock.now + seconds
+            if autoSelectPending then
+                autoSelectPending = false
+                active = photos[1]
+            end
+            if opts.onSleep then
+                local photo = opts.onSleep(seconds, photos)
+                if photo then active = photo end
+            end
+        end,
+    }
+    local selection = {
+        selectNone = function()
+            active = nil
+            calls.selectNone = calls.selectNone + 1
+        end,
+    }
+    local catalog
+    catalog, Handler = setup({
+        photos = photos,
+        developController = controller,
+        applicationView = view,
+        tasks = tasks,
+        date = { currentTime = function() return clock.now end },
+        selection = selection,
+    })
+    local recordSelection = catalog.setSelectedPhotos
+    catalog.setSelectedPhotos = function(self, photo, selected)
+        recordSelection(self, photo, selected)
+        if dropNextSelection then
+            dropNextSelection = false
+            return
+        end
+        if outside[photo] and sources[1] ~= catalog.kAllPhotos then return end
+        active = photo
+        calls.selections[#calls.selections + 1] = photo.localIdentifier
+    end
+    catalog.getTargetPhoto = function() return active end
+    catalog.kAllPhotos = "all photographs"
+    catalog.getActiveSources = function() return sources end
+    catalog.setActiveSources = function(_, newSources)
+        sources = newSources
+        calls.sources[#calls.sources + 1] = newSources[1]
+        dropNextSelection = opts.dropSelectionAfterSourceSwitch or false
+        autoSelectPending = opts.autoSelectAfterSourceSwitch or false
+    end
+    return Handler, calls
+end
+
+local function errorOf(fn)
+    local ok, err = pcall(fn)
+    assert.is_false(ok)
+    return tostring(err)
+end
+
+describe("HandlerDevelop.applyDenoise", function()
+    it("switches to Develop and applies Denoise one active photo at a time", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 45 })
+
+        assert.is_true(r.success)
+        assert.is_true(r.complete)
+        assert.are.equal(2, r.applied)
+        assert.are.same({ "develop", "library" }, calls.modules)
+        assert.are.same({
+            { id = "1", name = "denoise", on = true, amount = 45 },
+            { id = "2", name = "denoise", on = true, amount = 45 },
+        }, calls.enhance)
+        assert.is_nil(r.remaining_ids)
+    end)
+
+    it("rejects a second call while one is running and accepts calls afterwards", function()
+        local nested
+        local Handler, calls = denoiseSetup({
+            photos = { { id = "1" }, { id = "2" } },
+            onEnhance = function(handler)
+                if nested == nil then
+                    nested = errorOf(function() handler.applyDenoise({ photo_ids = { "2" }, amount = 70 }) end)
+                end
+            end,
+        })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 })
+
+        assert.are.equal(1, r.applied)
+        assert.truthy(nested:find("already running", 1, true))
+        assert.are.same({ { id = "1", name = "denoise", on = true, amount = 30 } }, calls.enhance)
+        assert.are.equal(1, Handler.applyDenoise({ photo_ids = { "2" }, amount = 70 }).applied)
+    end)
+
+    it("does not apply Denoise when another photo became active while the panel settled", function()
+        local Handler, calls = denoiseSetup({
+            photos = { { id = "1" }, { id = "2" } },
+            onSleep = function(seconds, photos)
+                if seconds == 0.5 then return photos[2] end
+            end,
+        })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 })
+
+        assert.is_false(r.success)
+        assert.are.equal("failed", r.results[1].status)
+        assert.truthy(r.results[1].reason:find("another photo became active", 1, true))
+        assert.are.same({}, calls.enhance)
+    end)
+
+    it("reports an apply the panel never shows as failed", function()
+        local Handler = denoiseSetup({ photos = { { id = "1" } }, enhanceIgnored = true })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 })
+
+        assert.is_false(r.success)
+        assert.are.equal(1, r.failed)
+        assert.truthy(r.results[1].reason:find("did not show the new amount", 1, true))
+    end)
+
+    it("reports a change Lightroom shows but never saves as failed and puts the panel back", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2", denoise = 40 } }, notSaved = true })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 60 })
+
+        assert.is_false(r.success)
+        assert.are.equal(2, r.failed)
+        assert.truthy(r.results[1].reason:find("did not save the change", 1, true))
+        assert.truthy(r.results[2].reason:find("did not save the change", 1, true))
+        assert.are.same({ { id = "2", amount = 60 }, { id = "2", amount = 40 } }, calls.amounts)
+    end)
+
+    it("stops at the time budget and returns the ids it did not reach", function()
+        local Handler = denoiseSetup({
+            photos = { { id = "1" }, { id = "2" }, { id = "3" }, { id = "4" } },
+            onEnhance = function(_, clock) clock.now = clock.now + 100 end,
+        })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2", "3", "4", "404" }, amount = 30 })
+
+        assert.are.equal(3, r.applied)
+        assert.is_false(r.complete)
+        assert.is_false(r.success)
+        assert.are.same({ "4", "404" }, r.remaining_ids)
+        assert.truthy(r.message:find("remaining_ids", 1, true))
+    end)
+
+    it("selects a photo outside the current source through All Photographs, then restores the view", function()
+        local Handler, calls = denoiseSetup({
+            photos = { { id = "1" }, { id = "2", outsideSource = true }, { id = "3", outsideSource = true } },
+            dropSelectionAfterSourceSwitch = true,
+        })
+
+        local r = Handler.applyDenoise({ photo_ids = { "2", "3" }, amount = 30 })
+
+        assert.are.equal(2, r.applied)
+        assert.are.same({ "all photographs", "folder" }, calls.sources)
+        assert.are.same({ "2", "3", "1" }, calls.selections)
+        assert.are.same({ "develop", "library" }, calls.modules)
+    end)
+
+    it("clears the selection again when nothing was selected", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, nothingSelected = true })
+
+        assert.are.equal(1, Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }).applied)
+        assert.are.equal(1, calls.selectNone)
+    end)
+
+    it("clears the selection again after Lightroom auto-selects a photo in the restored source", function()
+        local Handler, calls = denoiseSetup({
+            photos = { { id = "1" }, { id = "2", outsideSource = true } },
+            nothingSelected = true,
+            autoSelectAfterSourceSwitch = true,
+        })
+
+        assert.are.equal(1, Handler.applyDenoise({ photo_ids = { "2" }, amount = 30 }).applied)
+        assert.are.same({ "all photographs", "folder" }, calls.sources)
+        assert.are.equal(2, calls.selectNone)
+    end)
+
+    it("restores the view and releases the run when Develop fails to open", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, panelUnavailable = true })
+
+        local err = errorOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+
+        assert.truthy(err:find("Develop module did not open", 1, true))
+        assert.are.same({ "develop", "library" }, calls.modules)
+        assert.is_nil(errorOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+            :find("already running", 1, true))
+    end)
+
+    it("asks for Lightroom Classic 15 before touching Develop on older versions", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, beforeLrC15 = true })
+
+        local err = errorOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 }) end)
+
+        assert.truthy(err:find("needs Lightroom Classic 15 or later", 1, true))
+        assert.are.equal(0, calls.switched)
+    end)
+
+    it("puts the user's selection back unless restore_selection is false", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+        Handler.applyDenoise({ photo_ids = { "2" }, amount = 30 })
+        assert.are.same({ "2", "1" }, calls.selections)
+
+        local Handler2, calls2 = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+        Handler2.applyDenoise({ photo_ids = { "2" }, amount = 30, restore_selection = false })
+        assert.are.same({ "2" }, calls2.selections)
+    end)
+
+    it("leaves photos at the amount alone and changes a different amount", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", denoise = 30 }, { id = "2", denoise = 50 } } })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 30 })
+
+        assert.are.equal(1, r.unchanged)
+        assert.are.equal(1, r.amount_changed)
+        assert.are.equal(50, r.results[2].previous_amount)
+        assert.are.same({ { id = "2", amount = 30 } }, calls.amounts)
+        assert.are.same({}, calls.enhance)
+    end)
+
+    it("trusts the photo's own settings over a panel still showing the previous photo", function()
+        local stale = { denoiseEnabled = true, denoiseState = true, denoiseAmount = 30 }
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", panel = stale } } })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1" }, amount = 30 })
+
+        assert.are.equal(1, r.applied)
+        assert.are.equal(1, #calls.enhance)
+    end)
+
+    it("skips missing photos and photos Denoise does not support", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1", enabled = false } } })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "404" }, amount = 40 })
+
+        assert.are.equal(2, r.skipped)
+        assert.are.equal("Denoise is not available for this photo", r.results[1].reason)
+        assert.are.equal("photo not found", r.results[2].reason)
+        assert.are.same({}, calls.enhance)
+    end)
+
+    it("reports a Develop error per photo and carries on", function()
+        local Handler = denoiseSetup({ photos = { { id = "1" }, { id = "2" } }, enhanceError = "panel busy" })
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2" }, amount = 45 })
+
+        assert.is_false(r.success)
+        assert.are.equal(2, r.failed)
+        assert.truthy(r.results[1].reason:find("panel busy", 1, true))
+    end)
+
+    it("validates amount, batch size and restore_selection before touching Develop", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        for _, bad in ipairs({ 0, 101, 30.5, "30" }) do
+            local err = errorOf(function() Handler.applyDenoise({ photo_ids = { "1" }, amount = bad }) end)
+            assert.truthy(err:find("amount must be an integer from 1 to 100", 1, true))
+        end
+        local many = {}
+        for i = 1, 101 do many[i] = tostring(i) end
+        assert.truthy(errorOf(function() Handler.applyDenoise({ photo_ids = many, amount = 30 }) end)
+            :find("at most 100", 1, true))
+        assert.truthy(errorOf(function()
+            Handler.applyDenoise({ photo_ids = { "1" }, amount = 30, restore_selection = "no" })
+        end):find("restore_selection must be a boolean", 1, true))
+        assert.are.equal(0, calls.switched)
     end)
 end)

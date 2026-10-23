@@ -133,6 +133,10 @@
     {
       "name": "set_develop_settings",
       "description": "Set Develop settings directly on a photo."
+    },
+    {
+      "name": "apply_denoise",
+      "description": "Turn on AI Denoise at a given amount on photos."
     }
   ],
   "user_config": {
