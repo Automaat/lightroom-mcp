@@ -24,6 +24,7 @@ Plugin opens **two LrSocket binds** as servers; MCP server connects to both.
 - `catalog:getPhotoByLocalId` returns a dangling photo object, not nil, for an unknown id; its metadata reads return nil. `PhotoLookup` keeps only photos whose batched `uuid` read is non-nil.
 
 - `LrDevelopController` (denoise, masks) only acts on the photo active in Develop. Handlers that need it go through `DevelopSession.lua`: `withPhoto` opens one photo in Develop, runs a callback, then restores module, view source and selection; `run` is the lower-level form for multi-photo flows. One Develop-driving call runs at a time. Mask handlers live in `HandlerMasks.lua`; `requireMaskApi` gates them on LrC 11 (SDK 11.0).
+- Mask geometry (gradient position, later brush and range masks) has no SDK call, so it is written through the undocumented `MaskGroupBasedCorrections` develop setting, only via `GuardedMaskWrite.lua`: a version gate (LrC 15.6, ProcessVersion 15.4), a pinned per-`What` key schema checked on the new and every existing entry (`Mask/Image` is opaque), a whole-array write, a read-back compare within 1e-5 that ignores derived fields, and a rollback to the previous array on any mismatch. Never write that setting directly. Widening the tested versions or schema needs a live check on that version. Gradient handlers: `HandlerGradientMasks.lua`, pure geometry in `GradientGeometry.lua`.
 
 Pattern verified against MIDI2LR (`rsjaffe/MIDI2LR`, see `src/plugin/Client.lua`) — same dual-port LrSocket model, ports 58763/58764 also chosen there.
 
