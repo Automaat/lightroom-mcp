@@ -101,6 +101,24 @@ export class Bridge {
     return NO_OWNER_MESSAGE;
   }
 
+  /**
+   * Stops once the calls other bridges forwarded here have finished, so a
+   * leader whose own client exits does not throw away their results. Gives
+   * up after graceMs; calls still running then get the owner-lost error.
+   */
+  async shutdown(graceMs: number): Promise<void> {
+    if (this.state.kind === "leader") {
+      const pending = this.state.server.inFlightCalls();
+      if (pending > 0) {
+        this.log(`[bridge] finishing ${pending} call(s) from other bridges before exiting`);
+        if (!(await this.state.server.whenIdle(graceMs))) {
+          this.log("[bridge] calls from other bridges still running, exiting anyway");
+        }
+      }
+    }
+    this.stop();
+  }
+
   stop(): void {
     this.stopped = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
