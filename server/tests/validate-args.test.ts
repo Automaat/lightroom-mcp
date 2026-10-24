@@ -292,6 +292,62 @@ describe('validateToolArgs', () => {
     })).toContain('unknown property "vibrance"');
   });
 
+  it('validates set_mask_curves channels and point arrays', () => {
+    const base = { photo_id: 914, mask_id: 'm-1' };
+    expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0, 64, 48, 255, 255] } })).toBeNull();
+    expect(validateToolArgs('set_mask_curves', {
+      ...base,
+      curves: { red: [0, 0, 255, 255], blue: [0, 10, 255, 255] },
+    })).toBeNull();
+    expect(validateToolArgs('set_mask_curves', base)).toContain('curves');
+    expect(validateToolArgs('set_mask_curves', { ...base, curves: {} })).toContain('curves');
+    expect(validateToolArgs('set_mask_curves', { ...base, curves: { alpha: [0, 0, 255, 255] } }))
+      .toContain('unknown property "alpha"');
+    expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0] } })).toContain('curves.main');
+    expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0, 256, 255] } })).toContain('curves.main');
+    expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0, 12.5, 255] } })).toContain('curves.main');
+    expect(validateToolArgs('set_mask_curves', { photo_id: 914, curves: { main: [0, 0, 255, 255] } })).toContain('mask_id');
+    expect(validateToolArgs('get_mask_curves', base)).toBeNull();
+    expect(validateToolArgs('get_mask_curves', { photo_id: 914 })).toContain('mask_id');
+  });
+
+  it('validates edit_mask_point_colors actions, indexes and swatch fields', () => {
+    const base = { photo_id: 914, mask_id: 'm-1' };
+    const swatch = { SrcHue: 1.5, SrcSat: 0.4, SrcLum: 0.6, HueShift: -0.2 };
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'add', swatch })).toBeNull();
+    expect(validateToolArgs('edit_mask_point_colors', {
+      ...base,
+      action: 'update',
+      index: 2,
+      swatch: { SatScale: 0.3, HueRange: { LowerNone: 0, LowerFull: 0.2, UpperFull: 0.6, UpperNone: 1 } },
+    })).toBeNull();
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'delete', index: 1 })).toBeNull();
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'clear' })).toBeNull();
+    expect(validateToolArgs('edit_mask_point_colors', base)).toContain('action');
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'rename' })).toContain('action');
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'delete', index: 0 })).toContain('index');
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'delete', index: 9 })).toContain('index');
+    expect(validateToolArgs('edit_mask_point_colors', { ...base, action: 'delete', index: 1.5 })).toContain('index');
+    expect(validateToolArgs('edit_mask_point_colors', {
+      ...base,
+      action: 'add',
+      swatch: { ...swatch, SrcHue: 7 },
+    })).toContain('swatch.SrcHue');
+    expect(validateToolArgs('edit_mask_point_colors', {
+      ...base,
+      action: 'add',
+      swatch: { ...swatch, Brightness: 1 },
+    })).toContain('unknown property "Brightness"');
+    expect(validateToolArgs('edit_mask_point_colors', {
+      ...base,
+      action: 'update',
+      index: 1,
+      swatch: { HueRange: { LowerNone: 0 } },
+    })).toContain('swatch.HueRange');
+    expect(validateToolArgs('get_mask_point_colors', base)).toBeNull();
+    expect(validateToolArgs('get_mask_point_colors', { mask_id: 'm-1' })).toContain('photo_id');
+  });
+
   it('validates combine_mask operation and type', () => {
     const valid = { photo_id: 914, mask_id: 'abc', operation: 'subtract', type: 'sky' };
     expect(validateToolArgs('combine_mask', valid)).toBeNull();

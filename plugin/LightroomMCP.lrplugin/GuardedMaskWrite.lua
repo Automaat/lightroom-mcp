@@ -35,6 +35,10 @@ local ENTRY_OPTIONAL_FIELDS = {
     CorrectionName = "string",
     CorrectionActive = "boolean",
     CorrectionAmount = "number",
+    MainCurve = "table",
+    RedCurve = "table",
+    GreenCurve = "table",
+    BlueCurve = "table",
 }
 
 local COMPONENT_OPTIONAL_FIELDS = {
