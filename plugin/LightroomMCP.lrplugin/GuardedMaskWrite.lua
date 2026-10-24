@@ -80,6 +80,7 @@ local RANGE_OPTIONAL_FIELDS = { Version = "number", SampleType = "number", Inver
 local RANGE_TYPE_FIELDS = {
     [1] = { ColorAmount = "number", PointModels = "table" },
     [2] = { LumRange = "string" },
+    [-1] = { DepthRange = "string" },
 }
 local RANGE_TYPE_COLOR = 1
 
@@ -155,7 +156,7 @@ local function validateRange(range, where, problems)
     local typeFields = RANGE_TYPE_FIELDS[range.Type]
     if typeFields == nil then
         addProblem(problems, where .. ": unsupported range Type " .. tostring(range.Type)
-            .. " (only luminance 2 and color 1 are supported)")
+            .. " (only luminance 2, color 1 and depth -1 are supported)")
         return
     end
     local required = { Type = "number" }

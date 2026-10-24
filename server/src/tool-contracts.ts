@@ -1155,13 +1155,13 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "create_range_mask",
     luaHandler: "HandlerRangeMasks.createRangeMask",
     description:
-      "Create a luminance or color range mask on a photo (Lightroom Classic 15.6 with process version 15.4 only). A luminance range selects the tones between min and max (0 black to 1 white) at full strength, fading out over falloff on each side; the ramps are clipped at 0 and 1. A color range selects colors near one sample: the sample's red, green and blue (0..1, sRGB, like the 0..255 value divided by 255) and its x and y position. Exactly one sample point is supported; a second one is rejected because Lightroom crashes on it. x and y are normalized coordinates of the full uncropped image (0..1, origin at the top-left corner of the uncropped photo as Lightroom shows it, y growing downward; a crop does not move the origin; the tool converts the position for a rotated or mirrored photo and refuses an orientation it cannot map). Selection follows the sampled color; the position only places the mask's pin. amount (greater than 0, at most 1, default 0.5) is how far from the sampled color still counts: small is narrow, 1 is broad. Depth range masks are not supported. Without mask_id this creates a new mask (optionally named), usually to be refined later; with mask_id (from list_masks or an earlier call) the range is added as a component of that mask with mode add (default) or subtract. Intersect is not supported. invert selects everything outside the range. The mask starts with no adjustments, so it changes nothing visible until adjustments are set on it. This writes Lightroom's undocumented develop-setting format: before writing it checks the Lightroom version, the photo's process version and the format of every mask already on the photo, then writes, reads the masks back, and restores the previous masks if Lightroom kept anything different. On an untested version or format the call fails and the photo is unchanged. It briefly opens the photo in Develop to confirm Lightroom lists the new tool as a rangeMask with subtype luminance or color, then puts back the module, view source and selection. Returns mask_id and tool_id, the type and the stored range. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+      "Create a luminance, color or depth range mask on a photo (Lightroom Classic 15.6 with process version 15.4 only). A luminance range selects the tones between min and max (0 black to 1 white) at full strength, fading out over falloff on each side; the ramps are clipped at 0 and 1. A depth range does the same on the photo's device depth map, where 0 is the nearest and 1 the farthest point of the scene; it needs a photo that carries depth, such as an iPhone Portrait HEIC, and on any other photo the call fails and the photo is unchanged. A depth range of exactly 0 to 1 is refused because it covers the whole scene. A luminance or depth band must be at least 0.01 wide (max minus min), because Lightroom replaces a narrower one with its default; falloff may be 0. A color range selects colors near one sample: the sample's red, green and blue (0..1, sRGB, like the 0..255 value divided by 255) and its x and y position. Exactly one sample point is supported; a second one is rejected because Lightroom crashes on it. x and y are normalized coordinates of the full uncropped image (0..1, origin at the top-left corner of the uncropped photo as Lightroom shows it, y growing downward; a crop does not move the origin; the tool converts the position for a rotated or mirrored photo and refuses an orientation it cannot map). Selection follows the sampled color; the position only places the mask's pin. amount (greater than 0, at most 1, default 0.5) is how far from the sampled color still counts: small is narrow, 1 is broad. Without mask_id this creates a new mask (optionally named), usually to be refined later; with mask_id (from list_masks or an earlier call) the range is added as a component of that mask with mode add (default) or subtract. Intersect is not supported. invert selects everything outside the range. The mask starts with no adjustments, so it changes nothing visible until adjustments are set on it. This writes Lightroom's undocumented develop-setting format: before writing it checks the Lightroom version, the photo's process version and the format of every mask already on the photo, then writes, reads the masks back, and restores the previous masks if Lightroom kept anything different. On an untested version or format the call fails and the photo is unchanged. It briefly opens the photo in Develop to confirm Lightroom lists the new tool as a rangeMask with subtype luminance, color or depth, then puts back the module, view source and selection. Returns mask_id and tool_id, the type and the stored range. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
-        type: { type: "string", enum: ["luminance", "color"], description: "Kind of range mask" },
+        type: { type: "string", enum: ["luminance", "color", "depth"], description: "Kind of range mask" },
         luminance: {
           type: "object",
           additionalProperties: false,
@@ -1176,7 +1176,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
             },
           },
           required: ["min", "max"],
-          description: "Luminance only: the tonal range to select",
+          description: "Luminance only: the tonal range to select; max must be at least 0.01 above min",
+        },
+        depth: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            min: { type: "number", minimum: 0, maximum: 1, description: "Nearest depth selected at full strength (0 is the nearest point of the scene)" },
+            max: { type: "number", minimum: 0, maximum: 1, description: "Farthest depth selected at full strength (1 is the farthest point of the scene)" },
+            falloff: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              description: "Width of the fade on each side of min and max (default 0.1); 0 gives hard edges",
+            },
+          },
+          required: ["min", "max"],
+          description: "Depth only: the depth range to select; max must be at least 0.01 above min",
         },
         color: {
           type: "object",
