@@ -241,19 +241,88 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal(0, #calls.modules)
     end)
 
-    it("rejects erase, feather and density with the reason, writing nothing", function()
+    it("rejects size with the reason and an erase stroke with a density, writing nothing", function()
         local Handler, stores = setup()
 
-        local erase = errorOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke({ erase = true }) } }))
+        local size = errorOf(function()
+            Handler.createBrushMask(createRequest({ strokes = { stroke({ size = 30 }) } }))
         end)
-        local feather = errorOf(function()
-            Handler.createBrushMask(createRequest({ strokes = { stroke({ feather = 10 }) } }))
+        local density = errorOf(function()
+            Handler.createBrushMask(createRequest({ strokes = { stroke({ erase = true, density = 0.5 }) } }))
         end)
 
-        assert.is_truthy(erase:find("erase strokes are not supported", 1, true))
-        assert.is_truthy(feather:find("feather is not supported", 1, true))
+        assert.is_truthy(size:find("size is not supported", 1, true))
+        assert.is_truthy(density:find("density does not apply to an erase stroke", 1, true))
         assert.are.equal(0, #stores["1"].writes)
+    end)
+
+    it("writes feather, density and erase strokes and verifies them when Lightroom reads them back", function()
+        local Handler, stores = setup({
+            photos = { {
+                id = "1",
+                transformWrite = function(stored)
+                    for _, lightroomPaint in ipairs(stored[1].CorrectionMasks[1].Masks) do
+                        lightroomPaint.CenterWeight = lightroomPaint.CenterWeight + 0.0000004
+                        lightroomPaint.Radius = lightroomPaint.Radius - 0.0000004
+                    end
+                    return stored
+                end,
+            } },
+        })
+
+        local result = Handler.createBrushMask(createRequest({
+            strokes = {
+                stroke({ radius = 0.411904, feather = 50, density = 0.3, points = { point(0.5, 0.5) } }),
+                stroke({ erase = true, feather = 0, points = { point(0.5, 0.5) } }),
+            },
+        }))
+
+        local masks = stores["1"].writes[1][1].CorrectionMasks[1].Masks
+        assert.are.equal(0.3, masks[1].MaskValue)
+        assert.is_true(math.abs(masks[1].CenterWeight - 0.16214) < 1e-5)
+        assert.are.equal("h 0.1621", masks[1].Dabs[1])
+        assert.are.equal(0, masks[2].MaskValue)
+        assert.are.equal(1, masks[2].CenterWeight)
+        assert.is_true(result.success)
+        assert.are.equal(1, #stores["1"].writes)
+    end)
+
+    it("rolls back when Lightroom keeps a different density", function()
+        local Handler, stores = setup({
+            photos = { {
+                id = "1",
+                transformWrite = function(stored, writeNumber)
+                    if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].MaskValue = 1 end
+                    return stored
+                end,
+            } },
+        })
+
+        local message = errorOf(function()
+            Handler.createBrushMask(createRequest({ strokes = { stroke({ density = 0.3 }) } }))
+        end)
+
+        assert.is_truthy(message:find("MaskValue: wrote 0.3, read back 1", 1, true))
+        assert.are.equal(0, #stores["1"].entries)
+    end)
+
+    it("rolls back when Lightroom turns an erase stroke into an add stroke", function()
+        local Handler, stores = setup({
+            photos = { {
+                id = "1",
+                transformWrite = function(stored, writeNumber)
+                    if writeNumber == 1 then stored[1].CorrectionMasks[1].Masks[1].MaskValue = 1 end
+                    return stored
+                end,
+            } },
+        })
+
+        local message = errorOf(function()
+            Handler.createBrushMask(createRequest({ strokes = { stroke({ erase = true }) } }))
+        end)
+
+        assert.is_truthy(message:find("MaskValue: wrote 0, read back 1", 1, true))
+        assert.are.equal(0, #stores["1"].entries)
     end)
 
     it("rejects a name together with mask_id", function()
@@ -448,15 +517,16 @@ describe("HandlerBrushMasks.addBrushStrokes", function()
         assert.are.equal(0, #calls.modules)
     end)
 
-    it("rejects erase strokes", function()
+    it("appends an erase stroke with feather after the strokes it erases", function()
         local Handler, stores = setup({ photos = { { id = "1", entries = existingBrush() } } })
 
-        local message = errorOf(function()
-            Handler.addBrushStrokes(addRequest({ strokes = { stroke({ erase = true }) } }))
-        end)
+        Handler.addBrushStrokes(addRequest({ strokes = { stroke({ erase = true, feather = 0, radius = 0.1 }) } }))
 
-        assert.is_truthy(message:find("erase strokes are not supported", 1, true))
-        assert.are.equal(0, #stores["1"].writes)
+        local masks = stores["1"].writes[1][1].CorrectionMasks[1].Masks
+        assert.are.equal(3, #masks)
+        assert.are.equal(1, masks[2].MaskValue)
+        assert.are.equal(0, masks[3].MaskValue)
+        assert.are.equal(1, masks[3].CenterWeight)
     end)
 
     it("rolls back when Lightroom reads fewer strokes back", function()
