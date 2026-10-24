@@ -319,6 +319,10 @@ local function pathOf(parent, name)
     return parent .. "." .. tostring(name)
 end
 
+local function isLocalAdjustmentOmittedAtDefault(name, expected, actual)
+    return actual == nil and isLocalAdjustment(name) and type(expected) == "number" and closeEnough(expected, 0)
+end
+
 local function compareValue(name, expected, actual, parent, problems, inPaint)
     if DERIVED_FIELDS[name] and not (inPaint and name == "MaskValue") then return end
     local where = pathOf(parent, name)
@@ -346,7 +350,8 @@ local function compareValue(name, expected, actual, parent, problems, inPaint)
     end
     local same
     if type(expected) == "number" then
-        same = type(actual) == "number" and closeEnough(expected, actual)
+        same = (type(actual) == "number" and closeEnough(expected, actual))
+            or isLocalAdjustmentOmittedAtDefault(name, expected, actual)
     elseif type(expected) == "string" then
         same = actual == expected or (type(actual) == "string" and sameNumberList(expected, actual))
     elseif expected == false then
