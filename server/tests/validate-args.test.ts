@@ -165,12 +165,23 @@ describe('validateToolArgs', () => {
       expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, flow: 2 }] })).toContain('flow');
     });
 
-    it('has no erase, feather or density option', () => {
-      for (const extra of [{ erase: true }, { feather: 50 }, { density: 50 }, { size: 0.1 }]) {
-        expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, ...extra }] })).toContain(
-          `unknown property "${Object.keys(extra)[0]}"`,
-        );
-      }
+    it('accepts feather, density and erase and bounds them', () => {
+      const withExtra = (extra: object) => ({ ...create, strokes: [{ ...stroke, ...extra }] });
+      expect(validateToolArgs('create_brush_mask', withExtra({ feather: 0, density: 0.3 }))).toBeNull();
+      expect(validateToolArgs('create_brush_mask', withExtra({ feather: 100, density: 1 }))).toBeNull();
+      expect(validateToolArgs('create_brush_mask', withExtra({ erase: true, feather: 20 }))).toBeNull();
+      expect(validateToolArgs('add_brush_strokes', { ...create, tool_id: 'T1', strokes: [{ ...stroke, erase: true }] })).toBeNull();
+      expect(validateToolArgs('create_brush_mask', withExtra({ feather: -1 }))).toContain('feather');
+      expect(validateToolArgs('create_brush_mask', withExtra({ feather: 101 }))).toContain('feather');
+      expect(validateToolArgs('create_brush_mask', withExtra({ density: 0 }))).toContain('density');
+      expect(validateToolArgs('create_brush_mask', withExtra({ density: 2 }))).toContain('density');
+      expect(validateToolArgs('create_brush_mask', withExtra({ erase: 'yes' }))).toContain('erase');
+    });
+
+    it('has no size option and no whole-brush mode', () => {
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, size: 0.1 }] })).toContain(
+        'unknown property "size"',
+      );
       expect(validateToolArgs('create_brush_mask', { ...create, mode: 'subtract' })).toContain('unknown property "mode"');
     });
   });

@@ -168,11 +168,11 @@
     },
     {
       "name": "create_brush_mask",
-      "description": "Paint a brush mask on a photo from strokes of normalized image coordinates (add strokes only)."
+      "description": "Paint a brush mask on a photo from strokes of normalized image coordinates (radius, flow, feather, density, erase)."
     },
     {
       "name": "add_brush_strokes",
-      "description": "Paint more strokes into an existing brush mask by tool id (add strokes only)."
+      "description": "Paint more strokes into an existing brush mask by tool id (radius, flow, feather, density, erase)."
     },
     {
       "name": "create_range_mask",

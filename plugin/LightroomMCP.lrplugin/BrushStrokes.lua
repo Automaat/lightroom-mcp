@@ -1,3 +1,5 @@
+local BrushFeather = require 'BrushFeather'
+
 local BrushStrokes = {}
 
 local AGGREGATE_WHAT = "Mask/Aggregate"
@@ -7,21 +9,20 @@ local DEFAULT_RADIUS = 0.14
 local DEFAULT_FLOW = 1
 local MAX_RADIUS = 1
 local MIN_FLOW = 0.01
+local MIN_DENSITY = 0.01
 local MAX_STROKES = 50
 local MAX_POINTS_PER_STROKE = 1000
 local MAX_DABS_PER_STROKE = 2000
 local DAB_SPACING_IN_RADII = 0.5
-local CENTER_WEIGHT_NOT_EXPOSED = 0
 local FLOW_TOKEN_DECIMALS = 10000
+local STORED_DECIMALS = 1000000
+local ERASE_VALUE = 0
 local DISTANCE_EPSILON = 1e-9
 
-local STROKE_FIELDS = { points = true, radius = true, flow = true }
+local STROKE_FIELDS = { points = true, radius = true, flow = true, feather = true, density = true, erase = true }
 local REASON_OF_UNSUPPORTED_FIELD = {
-    feather = "feather is not supported: no stored field for it has been verified in Lightroom's develop-setting format",
-    density = "density is not supported: no stored field for it has been verified in Lightroom's develop-setting format",
-    size = "size is not supported: use radius, a fraction of the longer edge of the image",
-    erase = "erase strokes are not supported: Lightroom turns a written stroke's blend mode into add,"
-        .. " so an erase stroke cannot be written",
+    size = "size is not supported: Lightroom's Size slider is a screen size, so the stored radius changes with the"
+        .. " zoom of the Develop view; use radius, a fraction of the longer edge of the image",
 }
 
 local function fail(message)
@@ -68,6 +69,33 @@ local function parseFlow(value, field)
     return roundFlow(value)
 end
 
+local function roundStored(value)
+    return math.floor(value * STORED_DECIMALS + 0.5) / STORED_DECIMALS
+end
+
+local function parseFeather(value, field)
+    if value == nil then return BrushFeather.SOFT end
+    if not isFiniteNumber(value) or value < 0 or value > BrushFeather.MAX_PERCENT then
+        fail(string.format("%s must be between 0 (hard) and %d (soft)", field, BrushFeather.MAX_PERCENT))
+    end
+    return BrushFeather.fromPercent(value)
+end
+
+local function parseErase(value, field)
+    if value == nil then return false end
+    if type(value) ~= "boolean" then fail(field .. " must be true or false") end
+    return value
+end
+
+local function parseDensity(value, erase, field)
+    if value == nil then return 1 end
+    if erase then fail(field .. " does not apply to an erase stroke: erasing removes the paint it covers") end
+    if not isFiniteNumber(value) or value < MIN_DENSITY or value > 1 then
+        fail(string.format("%s must be between %s and 1", field, tostring(MIN_DENSITY)))
+    end
+    return roundStored(value)
+end
+
 local function rejectUnknownFields(stroke, field)
     for key in pairs(stroke) do
         if not STROKE_FIELDS[key] then
@@ -110,10 +138,21 @@ local function parseStroke(stroke, index)
     for pointIndex, rawPoint in ipairs(rawPoints) do
         points[pointIndex] = parsePoint(rawPoint, field .. ".points[" .. pointIndex .. "]")
     end
-    local radius = parseRadius(stroke.radius, field .. ".radius")
+    local brushSize = parseRadius(stroke.radius, field .. ".radius")
     local flow = parseFlow(stroke.flow, field .. ".flow")
+    local feather = parseFeather(stroke.feather, field .. ".feather")
+    local erase = parseErase(stroke.erase, field .. ".erase")
+    local density = parseDensity(stroke.density, erase, field .. ".density")
+    local radius = roundStored(brushSize * BrushFeather.radiusScale(feather))
     requireDabBudget(field, dabCountOf(points, radius), radius)
-    return { points = points, radius = radius, flow = flow }
+    return {
+        points = points,
+        radius = radius,
+        flow = flow,
+        centerWeight = roundStored(BrushFeather.centerWeight(feather)),
+        density = density,
+        erase = erase,
+    }
 end
 
 function BrushStrokes.parseStrokes(strokes)
@@ -140,7 +179,10 @@ function BrushStrokes.toStoredFrame(strokes, frame)
             points[pointIndex] = { x = x, y = y }
         end
         requireDabBudget("strokes[" .. index .. "]", dabCountOf(points, stroke.radius), stroke.radius)
-        mapped[index] = { points = points, radius = stroke.radius, flow = stroke.flow }
+        local copy = {}
+        for key, item in pairs(stroke) do copy[key] = item end
+        copy.points = points
+        mapped[index] = copy
     end
     return mapped
 end
@@ -165,9 +207,12 @@ local function dabsAlong(stroke)
             dabs[#dabs + 1] = dabText(from.x + (to.x - from.x) * fraction, from.y + (to.y - from.y) * fraction)
         end
     end
-    if stroke.flow < 1 then
-        table.insert(dabs, 1, string.format("f %.4f", stroke.flow))
+    local tokens = {}
+    if stroke.flow < 1 then tokens[#tokens + 1] = string.format("f %.4f", stroke.flow) end
+    if stroke.centerWeight > 0 and stroke.centerWeight < 1 then
+        tokens[#tokens + 1] = string.format("h %.4f", stroke.centerWeight)
     end
+    for index = #tokens, 1, -1 do table.insert(dabs, 1, tokens[index]) end
     return dabs
 end
 
@@ -177,10 +222,10 @@ function BrushStrokes.newPaint(stroke)
         MaskActive = true,
         MaskInverted = false,
         MaskBlendMode = 0,
-        MaskValue = 1,
+        MaskValue = stroke.erase and ERASE_VALUE or stroke.density,
         Flow = stroke.flow,
         Radius = stroke.radius,
-        CenterWeight = CENTER_WEIGHT_NOT_EXPOSED,
+        CenterWeight = stroke.centerWeight,
         Dabs = dabsAlong(stroke),
     }
 end

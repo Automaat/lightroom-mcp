@@ -15,6 +15,7 @@ local MAX_CLONE_DEPTH = 40
 local MAX_REPORTED_PROBLEMS = 6
 
 local OPAQUE_WHAT = "Mask/Image"
+local PAINT_WHAT = "Mask/Paint"
 local LOCAL_ADJUSTMENT_PREFIX = "Local"
 
 local DERIVED_FIELDS = {
@@ -258,7 +259,7 @@ local function sameNumberList(expected, actual)
     return true
 end
 
-local FLOW_TOKEN = "f"
+local STATE_TOKENS = { f = true, h = true }
 local POSITION_TOKEN = "d"
 
 local function dabParts(dab)
@@ -266,20 +267,20 @@ local function dabParts(dab)
     return tag, numbersIn(rest or "")
 end
 
-local function splitFlowTokens(dabs)
-    local positions, flows = {}, {}
+local function splitStateTokens(dabs)
+    local positions, tokens = {}, { f = {}, h = {} }
     for _, dab in ipairs(dabs) do
         local tag, numbers = dabParts(dab)
-        if tag == FLOW_TOKEN then
-            flows[#flows + 1] = numbers[1]
+        if STATE_TOKENS[tag] then
+            tokens[tag][#tokens[tag] + 1] = numbers[1]
         else
             positions[#positions + 1] = dab
         end
     end
-    return positions, flows
+    return positions, tokens
 end
 
-local function sameFlowTokens(expected, actual)
+local function sameStateTokens(expected, actual)
     if #expected == 0 or #actual == 0 then return true end
     if #expected ~= #actual then return false end
     for index, value in ipairs(expected) do
@@ -289,14 +290,16 @@ local function sameFlowTokens(expected, actual)
 end
 
 local function compareDabs(expected, actual, where, problems)
-    local expectedPositions, expectedFlows = splitFlowTokens(expected)
-    local actualPositions, actualFlows = splitFlowTokens(actual)
+    local expectedPositions, expectedTokens = splitStateTokens(expected)
+    local actualPositions, actualTokens = splitStateTokens(actual)
     if #expectedPositions ~= #actualPositions then
         addProblem(problems, where .. ": dab count changed from " .. #expectedPositions .. " to " .. #actualPositions)
         return
     end
-    if not sameFlowTokens(expectedFlows, actualFlows) then
-        addProblem(problems, where .. ": flow token changed")
+    for tag in pairs(STATE_TOKENS) do
+        if not sameStateTokens(expectedTokens[tag], actualTokens[tag]) then
+            addProblem(problems, where .. ": " .. tag .. " token changed")
+        end
     end
     for index, dab in ipairs(expectedPositions) do
         local expectedTag, expectedNumbers = dabParts(dab)
@@ -316,8 +319,8 @@ local function pathOf(parent, name)
     return parent .. "." .. tostring(name)
 end
 
-local function compareValue(name, expected, actual, parent, problems)
-    if DERIVED_FIELDS[name] then return end
+local function compareValue(name, expected, actual, parent, problems, inPaint)
+    if DERIVED_FIELDS[name] and not (inPaint and name == "MaskValue") then return end
     local where = pathOf(parent, name)
     if type(expected) == "table" then
         if type(actual) ~= "table" then
@@ -337,7 +340,7 @@ local function compareValue(name, expected, actual, parent, problems)
             return
         end
         for key, value in pairs(expected) do
-            compareValue(key, value, actual[key], where, problems)
+            compareValue(key, value, actual[key], where, problems, expected.What == PAINT_WHAT)
         end
         return
     end

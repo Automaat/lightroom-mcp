@@ -634,6 +634,42 @@ describe("GuardedMaskWrite.compareEntries", function()
             oneEntry(brush({ "f 0.3000", "d 0.1 0.3" }))))
     end)
 
+    it("treats a center weight token like a flow token and compares it when both sides have it", function()
+        local brush = function(dabs)
+            return {
+                What = "Mask/Aggregate",
+                Masks = { { What = "Mask/Paint", Dabs = dabs, Radius = 0.1, Flow = 1, CenterWeight = 0.4194 } },
+            }
+        end
+
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "h 0.4194", "d 0.1 0.2" })),
+            oneEntry(brush({ "d 0.100000 0.200000" }))))
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "d 0.1 0.2" })),
+            oneEntry(brush({ "h 0.4194", "d 0.100000 0.200000" }))))
+        assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "h 0.4194", "d 0.1 0.2" })),
+            oneEntry(brush({ "h 0.1621", "d 0.100000 0.200000" }))))
+    end)
+
+    it("compares the value of a paint but ignores the derived value of other components", function()
+        local brush = function(value)
+            return {
+                What = "Mask/Aggregate",
+                Masks = { { What = "Mask/Paint", MaskValue = value, Dabs = { "d 0.1 0.2" }, Radius = 0.1, Flow = 1,
+                    CenterWeight = 0 } },
+            }
+        end
+
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush(0.3)), oneEntry(brush(0.300001))))
+        local mismatches = Guard.compareEntries(oneEntry(brush(0.3)), oneEntry(brush(1)))
+        assert.are.equal(1, #mismatches)
+        assert.is_truthy(mismatches[1]:find("MaskValue: wrote 0.3, read back 1", 1, true))
+        assert.are_not.same({}, Guard.compareEntries(oneEntry(brush(0)), oneEntry(brush(1))))
+
+        local gradient = linearComponent({ MaskValue = 1 })
+        local readBack = linearComponent({ MaskValue = 0.5 })
+        assert.are.same({}, Guard.compareEntries(oneEntry(gradient), oneEntry(readBack)))
+    end)
+
     it("reports a lost table", function()
         local actual = oneEntry(linearComponent())
         actual[1].CorrectionMasks = nil
