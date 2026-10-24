@@ -159,6 +159,10 @@
       "description": "Paint more strokes into an existing brush mask by tool id (add strokes only)."
     },
     {
+      "name": "create_range_mask",
+      "description": "Create a luminance or color range mask on a photo, as a new mask or a component of one."
+    },
+    {
       "name": "delete_masks",
       "description": "Delete masks, or component tools of masks, from a photo by id, or all masks on it."
     },
