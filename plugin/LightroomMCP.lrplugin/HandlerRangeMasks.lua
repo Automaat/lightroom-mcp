@@ -4,6 +4,7 @@ local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
+local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
 local RangeMaskGeometry = require 'RangeMaskGeometry'
@@ -70,7 +71,7 @@ local function addRangeComponent(entries, request)
     return { entry = index, component = #entry.CorrectionMasks }
 end
 
-local function resultFor(photoId, entries, location)
+local function resultFor(photoId, entries, location, displayed)
     local entry = entries[location.entry]
     local component = entry.CorrectionMasks[location.component]
     local kind, range = RangeMaskGeometry.rangeOf(component)
@@ -84,16 +85,21 @@ local function resultFor(photoId, entries, location)
         invert = component.MaskInverted == true,
     }
     if kind ~= nil then result[kind] = range end
+    if kind == "color" and displayed.kind == "color" then
+        range.sample.x = displayed.range.sample.x
+        range.sample.y = displayed.range.sample.y
+    end
     return result
 end
 
 function RangeMaskHandler.createRangeMask(args)
     local photoId = requirePhotoId(args.photo_id)
-    local request = RangeMaskGeometry.parseCreate(args)
+    local displayedRequest = RangeMaskGeometry.parseCreate(args)
     DevelopSession.requireMaskApi("create_range_mask")
 
     local catalog = LrApplication.activeCatalog()
     local photo = resolvePhoto(catalog, photoId)
+    local request = RangeMaskGeometry.toStoredFrame(displayedRequest, ImageFrame.forPhoto(catalog, photo))
     local existing = GuardedMaskWrite.preflight(catalog, photo)
     addRangeComponent(existing, request)
 
@@ -113,7 +119,7 @@ function RangeMaskHandler.createRangeMask(args)
         })
     end)
 
-    local result = resultFor(photoId, written.entries, location)
+    local result = resultFor(photoId, written.entries, location, displayedRequest)
     result.new_mask = request.maskId == nil
     Log.info(string.format("Placed %s range mask %s in mask %s on photo %s",
         request.kind, result.tool_id, result.mask_id, photoId))

@@ -170,6 +170,17 @@ local function rangeSettingsFor(kind, range)
     return settings
 end
 
+function RangeMaskGeometry.toStoredFrame(request, frame)
+    if request.kind ~= COLOR or frame.isNormal then return request end
+    local stored = {}
+    for key, value in pairs(request) do stored[key] = value end
+    local sample = {}
+    for key, value in pairs(request.range.sample) do sample[key] = value end
+    sample.x, sample.y = frame.toStored(sample.x, sample.y)
+    stored.range = { sample = sample, amount = request.range.amount }
+    return stored
+end
+
 function RangeMaskGeometry.newComponent(request)
     return {
         What = "Mask/RangeMask",

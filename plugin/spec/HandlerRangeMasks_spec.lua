@@ -27,7 +27,9 @@ local function setup(opts)
     opts = opts or {}
     local photos, stores, storeOf = {}, {}, {}
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
-        local photo = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
+        local photo = helper.fakePhoto({
+            id = spec.id, path = "/" .. spec.id .. ".jpg", orientation = spec.orientation or "AB",
+        })
         stores[spec.id] = Store.attach(photo, spec)
         storeOf[photo] = stores[spec.id]
         photos[#photos + 1] = photo
@@ -84,7 +86,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs({
-        "HandlerRangeMasks", "GuardedMaskWrite", "RangeMaskGeometry", "DevelopSession", "Log",
+        "HandlerRangeMasks", "GuardedMaskWrite", "ImageFrame", "RangeMaskGeometry", "DevelopSession", "Log",
     }) do
         package.loaded[name] = nil
     end
@@ -181,6 +183,25 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal("color", result.type)
         assert.are.same({ x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }, result.color.sample)
         assert.are.equal(0.4, result.color.amount)
+    end)
+
+    it("stores the sample position in the unrotated frame of a rotated photo and reports the one asked for", function()
+        local Handler, stores = setup({ photos = { { id = "1", orientation = "BC" } } })
+
+        local result = Handler.createRangeMask(colorRequest())
+
+        local range = stores["1"].writes[1][1].CorrectionMasks[1].CorrectionRangeMask
+        assert.are.equal("0.462745 0.400000 0.100000 0.800000 0.800000 0", range.PointModels[1])
+        assert.are.same({ x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }, result.color.sample)
+    end)
+
+    it("refuses a photo whose orientation it cannot map, writing nothing", function()
+        local Handler, stores = setup({ photos = { { id = "1", orientation = "ZZ" } } })
+
+        local message = errorOf(function() Handler.createRangeMask(colorRequest()) end)
+
+        assert.is_truthy(message:find("cannot map", 1, true))
+        assert.are.equal(0, stores["1"].attempts)
     end)
 
     it("never writes a second PointModels entry even when asked for one", function()
