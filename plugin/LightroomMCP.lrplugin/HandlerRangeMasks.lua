@@ -13,6 +13,9 @@ local RangeMaskHandler = {}
 
 local MASK_LIST_TIMEOUT_SECONDS = 5
 
+local NO_DEPTH_MAP_PROBLEM = "Lightroom found no depth map on this photo, so a depth range would select nothing;"
+    .. " depth range needs device depth such as an iPhone Portrait HEIC"
+
 local function requirePhotoId(value)
     if type(value) == "number" then return tostring(value) end
     if type(value) ~= "string" or value == "" then
@@ -54,6 +57,11 @@ local function problemUnlessListed(maskId, toolId, subtype)
     if listed then return nil end
     return string.format("Lightroom's mask list has no %s %s tool %s in mask %s after the write",
         RangeMaskGeometry.TOOL_TYPE, subtype, tostring(toolId), tostring(maskId))
+end
+
+local function problemUnlessDepthMapFound(kind, component)
+    if kind ~= "depth" or component.CorrectionRangeMask.LuminanceDepthSampleInfo ~= nil then return nil end
+    return NO_DEPTH_MAP_PROBLEM
 end
 
 local function addRangeComponent(entries, request)
@@ -114,7 +122,8 @@ function RangeMaskHandler.createRangeMask(args)
             crossCheck = function(actual)
                 local entry = actual[location.entry]
                 local component = entry.CorrectionMasks[location.component]
-                return problemUnlessListed(entry.CorrectionID, component.MaskID, request.kind)
+                return problemUnlessDepthMapFound(request.kind, component)
+                    or problemUnlessListed(entry.CorrectionID, component.MaskID, request.kind)
             end,
         })
     end)

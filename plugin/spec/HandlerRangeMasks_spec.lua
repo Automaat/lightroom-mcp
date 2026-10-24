@@ -10,7 +10,7 @@ local function errorOf(fn)
     return tostring(err)
 end
 
-local SUBTYPE_OF_RANGE_TYPE = { [1] = "color", [2] = "luminance" }
+local SUBTYPE_OF_RANGE_TYPE = { [1] = "color", [2] = "luminance", [-1] = "depth" }
 
 local function maskListWithSubtypes(entries)
     local masks = Store.maskListOf(entries)
@@ -107,6 +107,12 @@ local function colorRequest(overrides)
         type = "color",
         color = { sample = { x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }, amount = 0.4 },
     }
+    for key, value in pairs(overrides or {}) do args[key] = value end
+    return args
+end
+
+local function depthRequest(overrides)
+    local args = { photo_id = "1", type = "depth", depth = { min = 0, max = 0.1, falloff = 0.25 } }
     for key, value in pairs(overrides or {}) do args[key] = value end
     return args
 end
@@ -243,9 +249,9 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal("C2", result.mask_id)
     end)
 
-    it("refuses an existing depth range mask, writing nothing", function()
+    it("refuses an existing range mask of a type it does not know, writing nothing", function()
         local entries = {
-            correction("Depth", {
+            correction("Unknown", {
                 {
                     What = "Mask/RangeMask",
                     MaskID = "C1T1",
@@ -261,12 +267,91 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(0, #stores["1"].writes)
     end)
 
-    it("rejects depth as a type before reading, writing or opening Develop", function()
+    it("keeps a depth range mask Lightroom authored verbatim next to the new mask", function()
+        local entries = {
+            correction("Mask 1", {
+                {
+                    What = "Mask/RangeMask",
+                    MaskID = "C1T1",
+                    MaskActive = true,
+                    MaskInverted = false,
+                    MaskBlendMode = 0,
+                    CorrectionRangeMask = {
+                        Type = -1, Version = 3, SampleType = 0, Invert = false,
+                        DepthRange = "0.000000 0.000000 0.100000 0.350000",
+                        LuminanceDepthSampleInfo = "0 0.526012 0.506934",
+                    },
+                },
+            }, { CorrectionID = "C1" }),
+        }
+        local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
+
+        local result = Handler.createRangeMask(luminanceRequest())
+
+        local written = stores["1"].writes[1]
+        assert.are.equal(2, #written)
+        assert.are.equal(-1, written[1].CorrectionMasks[1].CorrectionRangeMask.Type)
+        assert.are.equal("0.000000 0.000000 0.100000 0.350000", written[1].CorrectionMasks[1].CorrectionRangeMask.DepthRange)
+        assert.are.equal("C2", result.mask_id)
+    end)
+
+    it("writes a depth range as a new mask and returns the stored range", function()
+        local Handler, stores = setup({ photos = { { id = "1", transformWrite = lightroomFillsDepthInfo } } })
+
+        local result = Handler.createRangeMask(depthRequest({ name = "Subject" }))
+
+        local written = stores["1"].writes[1]
+        assert.are.equal(1, #written)
+        assert.are.equal("Subject", written[1].CorrectionName)
+        local range = written[1].CorrectionMasks[1].CorrectionRangeMask
+        assert.are.equal(-1, range.Type)
+        assert.are.equal("0.000000 0.000000 0.100000 0.350000", range.DepthRange)
+        assert.is_true(result.success)
+        assert.are.equal("depth", result.type)
+        assert.are.same({ min = 0, max = 0.1, lower_falloff = 0, upper_falloff = 0.25 }, result.depth)
+        assert.is_nil(result.luminance)
+        assert.is_nil(result.color)
+    end)
+
+    it("refuses a depth range on a photo without a depth map and restores the previous masks", function()
+        local Handler, stores = setup({ photos = { { id = "1", entries = existingGradient() } } })
+
+        local message = errorOf(function() Handler.createRangeMask(depthRequest()) end)
+
+        assert.is_truthy(message:find("no depth map on this photo", 1, true))
+        assert.is_truthy(message:find("previous masks were restored", 1, true))
+        assert.are.equal(2, #stores["1"].writes)
+        assert.are.equal(1, #stores["1"].entries)
+        assert.are.equal("C1", stores["1"].entries[1].CorrectionID)
+    end)
+
+    it("does not require a depth sample for a luminance range", function()
+        local Handler = setup()
+
+        local result = Handler.createRangeMask(luminanceRequest())
+
+        assert.is_true(result.success)
+    end)
+
+    it("rejects a narrow full-strength band before reading, writing or opening Develop", function()
         local Handler, stores, calls = setup()
 
-        local message = errorOf(function() Handler.createRangeMask(luminanceRequest({ type = "depth" })) end)
+        local message = errorOf(function()
+            Handler.createRangeMask(depthRequest({ depth = { min = 0.5, max = 0.505 } }))
+        end)
 
-        assert.is_truthy(message:find('type must be "luminance" or "color"', 1, true))
+        assert.is_truthy(message:find("depth.max must be at least 0.01 above depth.min", 1, true))
+        assert.are.equal(0, #stores["1"].writes)
+        assert.are.equal(0, stores["1"].reads)
+        assert.are.equal(0, #calls.modules)
+    end)
+
+    it("rejects an unknown type before reading, writing or opening Develop", function()
+        local Handler, stores, calls = setup()
+
+        local message = errorOf(function() Handler.createRangeMask(luminanceRequest({ type = "hue" })) end)
+
+        assert.is_truthy(message:find('type must be "luminance", "color" or "depth"', 1, true))
         assert.are.equal(0, #stores["1"].writes)
         assert.are.equal(0, stores["1"].reads)
         assert.are.equal(0, #calls.modules)

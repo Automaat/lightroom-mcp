@@ -20,6 +20,12 @@ local function luminanceArgs(overrides)
     return args
 end
 
+local function depthArgs(overrides)
+    local args = { type = "depth", depth = { min = 0, max = 0.1, falloff = 0.25 } }
+    for key, value in pairs(overrides or {}) do args[key] = value end
+    return args
+end
+
 local function colorArgs(overrides)
     local args = { type = "color", color = { sample = sample(), amount = 0.4 } }
     for key, value in pairs(overrides or {}) do args[key] = value end
@@ -73,8 +79,15 @@ describe("RangeMaskGeometry", function()
             assert.are.equal("Foliage", named.name)
         end)
 
-        it("rejects an unknown type including depth", function()
-            assert.is_truthy(parseError({ type = "depth" }):find('type must be "luminance" or "color"', 1, true))
+        it("parses a depth range", function()
+            local request = RangeMaskGeometry.parseCreate(depthArgs())
+
+            assert.are.equal("depth", request.kind)
+            assert.are.same({ min = 0, max = 0.1, falloff = 0.25 }, request.range)
+        end)
+
+        it("rejects an unknown type", function()
+            assert.is_truthy(parseError({ type = "hue" }):find('type must be "luminance", "color" or "depth"', 1, true))
             assert.is_truthy(parseError({}):find("type must be", 1, true))
         end)
 
@@ -84,6 +97,21 @@ describe("RangeMaskGeometry", function()
                 :find("color only applies to color range masks", 1, true))
             assert.is_truthy(parseError(colorArgs({ luminance = { min = 0, max = 1 } }))
                 :find("luminance only applies to luminance range masks", 1, true))
+            assert.is_truthy(parseError({ type = "depth" }):find("depth is required for a depth range mask", 1, true))
+            assert.is_truthy(parseError(depthArgs({ luminance = { min = 0, max = 1 } }))
+                :find("luminance only applies to luminance range masks", 1, true))
+            assert.is_truthy(parseError(luminanceArgs({ depth = { min = 0, max = 1 } }))
+                :find("depth only applies to depth range masks", 1, true))
+        end)
+
+        it("rejects depth values outside 0..1 or out of order", function()
+            local function parse(depth) return parseError(depthArgs({ depth = depth })) end
+
+            assert.is_truthy(parse({ min = -0.1, max = 0.5 }):find("depth.min must be between 0 and 1", 1, true))
+            assert.is_truthy(parse({ min = 0.6, max = 0.3 }):find("depth.min must not be greater", 1, true))
+            assert.is_truthy(parse({ min = 0.1, max = 0.5, falloff = 2 }):find("depth.falloff", 1, true))
+            assert.is_truthy(parse({ min = 0.1 }):find("depth needs min and max", 1, true))
+            assert.is_truthy(parse({ min = 0.1, max = 0.2, sample = 1 }):find("unknown property sample", 1, true))
         end)
 
         it("rejects luminance values outside 0..1 or out of order", function()
@@ -99,13 +127,37 @@ describe("RangeMaskGeometry", function()
             assert.is_truthy(parse({ min = 0.1, max = 0.2, extra = 1 }):find("unknown property extra", 1, true))
         end)
 
-        it("rejects a zero-width range without falloff but accepts a triangle", function()
-            assert.is_truthy(parseError(luminanceArgs({ luminance = { min = 0.5, max = 0.5, falloff = 0 } }))
-                :find("selects nothing", 1, true))
+        it("rejects a full-strength band narrower than Lightroom keeps, for luminance and depth", function()
+            local function narrow(kind, min, max, falloff)
+                return parseError({ type = kind, [kind] = { min = min, max = max, falloff = falloff } })
+            end
 
-            local triangle = RangeMaskGeometry.parseCreate(luminanceArgs({ luminance = { min = 0.5, max = 0.5 } }))
+            for _, kind in ipairs({ "luminance", "depth" }) do
+                assert.is_truthy(narrow(kind, 0.5, 0.5, 0):find(kind .. ".max must be at least 0.01 above", 1, true))
+                assert.is_truthy(narrow(kind, 0.5, 0.5, 0.1):find("replaces a narrower range", 1, true))
+                assert.is_truthy(narrow(kind, 0.5, 0.505, 0.1):find("at least 0.01", 1, true))
+                assert.is_truthy(narrow(kind, 1, 1, 0.1):find("at least 0.01", 1, true))
+            end
+        end)
 
-            assert.are.equal(0.5, triangle.range.min)
+        it("rejects a depth range that covers the whole scene but accepts it for luminance", function()
+            local message = parseError(depthArgs({ depth = { min = 0, max = 1, falloff = 0.3 } }))
+
+            assert.is_truthy(message:find("covers the whole scene", 1, true))
+            assert.are.equal("luminance", RangeMaskGeometry.parseCreate(
+                luminanceArgs({ luminance = { min = 0, max = 1 } })).kind)
+            assert.are.equal("depth", RangeMaskGeometry.parseCreate(
+                depthArgs({ depth = { min = 0, max = 0.99 } })).kind)
+        end)
+
+        it("accepts a full-strength band of exactly 0.01 despite float noise", function()
+            for _, bounds in ipairs({ { 0.5, 0.51 }, { 0.14, 0.15 }, { 0, 0.01 }, { 0.99, 1 } }) do
+                local request = RangeMaskGeometry.parseCreate(depthArgs({
+                    depth = { min = bounds[1], max = bounds[2], falloff = 0 },
+                }))
+
+                assert.are.equal(bounds[2], request.range.max)
+            end
         end)
 
         it("rejects bad color samples and amounts", function()
@@ -164,21 +216,37 @@ describe("RangeMaskGeometry", function()
             assert.are.equal("0.000000 0.050000 0.950000 1.000000", component.CorrectionRangeMask.LumRange)
         end)
 
-        it("always writes a LumRange ordered a <= b <= c <= d within 0..1", function()
+        it("writes a depth trapezoid as a DepthRange with the stored type Lightroom uses for depth", function()
+            local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(depthArgs()))
+
+            assert.are.equal("Mask/RangeMask", component.What)
+            assert.are.equal("Depth Range", component.MaskName)
+            assert.are.equal(-1, component.CorrectionRangeMask.Type)
+            assert.are.equal(3, component.CorrectionRangeMask.Version)
+            assert.are.equal(0, component.CorrectionRangeMask.SampleType)
+            assert.are.equal("0.000000 0.000000 0.100000 0.350000", component.CorrectionRangeMask.DepthRange)
+            assert.is_nil(component.CorrectionRangeMask.LumRange)
+            assert.is_nil(component.CorrectionRangeMask.LuminanceDepthSampleInfo)
+        end)
+
+        it("always writes a LumRange and a DepthRange ordered a <= b <= c <= d within 0..1", function()
             local cases = {
-                { 0, 1, 0 }, { 0, 1, 1 }, { 0.5, 0.5, 0.3 }, { 0.3, 0.7, 0 }, { 0.999999, 1, 0.5 },
-                { 0.1, 0.30000000000000004, 0.19999999999999998 }, { 0, 0, 0.1 }, { 1, 1, 0.1 },
+                { 0, 0.99, 0 }, { 0.01, 1, 1 }, { 0.5, 0.6, 0.3 }, { 0.3, 0.7, 0 }, { 0.99, 1, 0.5 },
+                { 0.1, 0.30000000000000004, 0.19999999999999998 }, { 0, 0.01, 0.1 }, { 0.99, 1, 0.1 },
             }
             for _, case in ipairs(cases) do
-                local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
-                    luminanceArgs({ luminance = { min = case[1], max = case[2], falloff = case[3] } })))
-                local values = {}
-                for token in component.CorrectionRangeMask.LumRange:gmatch("%S+") do
-                    values[#values + 1] = tonumber(token)
+                for _, kind in ipairs({ "luminance", "depth" }) do
+                    local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
+                        { type = kind, [kind] = { min = case[1], max = case[2], falloff = case[3] } }))
+                    local range = component.CorrectionRangeMask
+                    local values = {}
+                    for token in (range.LumRange or range.DepthRange):gmatch("%S+") do
+                        values[#values + 1] = tonumber(token)
+                    end
+                    assert.are.equal(4, #values)
+                    assert.is_true(values[1] >= 0 and values[1] <= values[2] and values[2] <= values[3]
+                        and values[3] <= values[4] and values[4] <= 1)
                 end
-                assert.are.equal(4, #values)
-                assert.is_true(values[1] >= 0 and values[1] <= values[2] and values[2] <= values[3]
-                    and values[3] <= values[4] and values[4] <= 1)
             end
         end)
 
@@ -224,6 +292,16 @@ describe("RangeMaskGeometry", function()
 
             assert.are.equal("color", kind)
             assert.are.same({ sample = { x = 0.4, y = 0.5, red = 0.1, green = 0.2, blue = 0.3 }, amount = 0.4 }, range)
+        end)
+
+        it("reads a depth trapezoid back from the stored depth type", function()
+            local kind, range = RangeMaskGeometry.rangeOf({
+                What = "Mask/RangeMask",
+                CorrectionRangeMask = { Type = -1, DepthRange = "0.000000 0.000000 0.100000 0.350000" },
+            })
+
+            assert.are.equal("depth", kind)
+            assert.are.same({ min = 0, max = 0.1, lower_falloff = 0, upper_falloff = 0.25 }, range)
         end)
 
         it("returns nil for other masks, other range types and malformed values", function()

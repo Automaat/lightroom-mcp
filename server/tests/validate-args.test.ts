@@ -179,20 +179,35 @@ describe('validateToolArgs', () => {
     const luminance = { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6, falloff: 0.1 } };
     const sample = { x: 0.2, y: 0.8, red: 0.46, green: 0.46, blue: 0.46 };
     const color = { photo_id: '/a.dng', type: 'color', color: { sample, amount: 0.4 } };
+    const depth = { photo_id: 7, type: 'depth', depth: { min: 0, max: 0.1, falloff: 0.25 } };
 
-    it('accepts luminance and color ranges', () => {
+    it('accepts luminance, color and depth ranges', () => {
       expect(validateToolArgs('create_range_mask', luminance)).toBeNull();
       expect(validateToolArgs('create_range_mask', color)).toBeNull();
+      expect(validateToolArgs('create_range_mask', depth)).toBeNull();
       expect(
         validateToolArgs('create_range_mask', { ...luminance, mask_id: 'C1', mode: 'subtract', invert: true }),
       ).toBeNull();
       expect(validateToolArgs('create_range_mask', { ...color, name: 'Foliage' })).toBeNull();
     });
 
-    it('requires a photo and a type, and offers no depth type', () => {
+    it('requires a photo and a type, and rejects an unknown type', () => {
       expect(validateToolArgs('create_range_mask', { type: 'luminance' })).toContain('photo_id');
       expect(validateToolArgs('create_range_mask', { photo_id: 1 })).toContain('type');
-      expect(validateToolArgs('create_range_mask', { ...luminance, type: 'depth' })).toContain('type');
+      expect(validateToolArgs('create_range_mask', { ...luminance, type: 'hue' })).toContain('type');
+    });
+
+    it('bounds the depth numbers and rejects unknown depth properties', () => {
+      expect(validateToolArgs('create_range_mask', { ...depth, depth: { min: -0.1, max: 0.5 } })).toContain(
+        'depth.min',
+      );
+      expect(validateToolArgs('create_range_mask', { ...depth, depth: { min: 0.1 } })).toContain('max');
+      expect(validateToolArgs('create_range_mask', { ...depth, depth: { min: 0.1, max: 0.5, falloff: 2 } })).toContain(
+        'depth.falloff',
+      );
+      expect(validateToolArgs('create_range_mask', { ...depth, depth: { min: 0.1, max: 0.5, x: 0.5 } })).toContain(
+        'unknown property "x"',
+      );
     });
 
     it('accepts one sample point only', () => {
@@ -226,7 +241,7 @@ describe('validateToolArgs', () => {
     });
 
     it('rejects unknown properties', () => {
-      expect(validateToolArgs('create_range_mask', { ...luminance, depth: {} })).toContain('unknown property "depth"');
+      expect(validateToolArgs('create_range_mask', { ...luminance, hue: {} })).toContain('unknown property "hue"');
       expect(
         validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0, max: 1, extra: 1 } }),
       ).toContain('unknown property "extra"');

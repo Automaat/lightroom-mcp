@@ -2,11 +2,14 @@ local RangeMaskGeometry = {}
 
 local LUMINANCE = "luminance"
 local COLOR = "color"
+local DEPTH = "depth"
 
-local RANGE_TYPE_OF_KIND = { [COLOR] = 1, [LUMINANCE] = 2 }
-local KIND_OF_RANGE_TYPE = { [1] = COLOR, [2] = LUMINANCE }
-local KIND_FIELD = { [LUMINANCE] = "luminance", [COLOR] = "color" }
-local OTHER_KIND = { [LUMINANCE] = COLOR, [COLOR] = LUMINANCE }
+local RANGE_TYPE_OF_KIND = { [COLOR] = 1, [LUMINANCE] = 2, [DEPTH] = -1 }
+local KIND_OF_RANGE_TYPE = { [1] = COLOR, [2] = LUMINANCE, [-1] = DEPTH }
+local KIND_FIELD = { [LUMINANCE] = "luminance", [COLOR] = "color", [DEPTH] = "depth" }
+local KINDS = { LUMINANCE, COLOR, DEPTH }
+local TRAPEZOID_FIELD_OF_KIND = { [LUMINANCE] = "LumRange", [DEPTH] = "DepthRange" }
+local NAME_OF_KIND = { [LUMINANCE] = "Luminance Range", [COLOR] = "Color Range", [DEPTH] = "Depth Range" }
 
 local BLEND_MODE_OF_MODE = { add = 0, subtract = 1 }
 local MASK_VALUE_OF_MODE = { add = 1, subtract = 0 }
@@ -15,10 +18,11 @@ local RANGE_VERSION = 3
 local RANGE_SAMPLE_TYPE = 0
 local POINT_MODEL_TRAILER = 0
 local DEFAULT_FALLOFF = 0.1
+local MIN_FULL_STRENGTH_WIDTH = 0.01
 local DEFAULT_COLOR_AMOUNT = 0.5
 local STORED_DECIMALS = 1e6
 
-local LUMINANCE_KEYS = { min = true, max = true, falloff = true }
+local TRAPEZOID_KEYS = { min = true, max = true, falloff = true }
 local COLOR_KEYS = { sample = true, amount = true }
 local SAMPLE_FIELDS = { "x", "y", "red", "green", "blue" }
 local SAMPLE_KEYS = {}
@@ -61,18 +65,22 @@ local function optionalText(value, field)
     return value
 end
 
-local function parseLuminance(value)
-    requireObject(value, "luminance", LUMINANCE_KEYS)
-    if value.min == nil or value.max == nil then fail("luminance needs min and max") end
-    local min = requireUnit(value.min, "luminance.min")
-    local max = requireUnit(value.max, "luminance.max")
-    if min > max then fail("luminance.min must not be greater than luminance.max") end
-    local falloff = DEFAULT_FALLOFF
-    if value.falloff ~= nil then falloff = requireUnit(value.falloff, "luminance.falloff") end
-    if min == max and falloff == 0 then
-        fail("luminance.min equals luminance.max and luminance.falloff is 0, which selects nothing")
+local function parseTrapezoid(name)
+    return function(value)
+        requireObject(value, name, TRAPEZOID_KEYS)
+        if value.min == nil or value.max == nil then fail(name .. " needs min and max") end
+        local min = requireUnit(value.min, name .. ".min")
+        local max = requireUnit(value.max, name .. ".max")
+        if min > max then fail(name .. ".min must not be greater than " .. name .. ".max") end
+        if round(max - min) < MIN_FULL_STRENGTH_WIDTH then
+            fail(string.format(
+                "%s.max must be at least %s above %s.min: Lightroom replaces a narrower range with its default",
+                name, MIN_FULL_STRENGTH_WIDTH, name))
+        end
+        local falloff = DEFAULT_FALLOFF
+        if value.falloff ~= nil then falloff = requireUnit(value.falloff, name .. ".falloff") end
+        return { min = min, max = max, falloff = falloff }
     end
-    return { min = min, max = max, falloff = falloff }
 end
 
 local function parseSample(value)
@@ -99,16 +107,33 @@ local function parseColor(value)
     return { sample = parseSample(value.sample), amount = amount }
 end
 
-local PARSER_OF_KIND = { [LUMINANCE] = parseLuminance, [COLOR] = parseColor }
+local parseDepthTrapezoid = parseTrapezoid("depth")
+
+local function parseDepth(value)
+    local range = parseDepthTrapezoid(value)
+    if range.min == 0 and range.max == 1 then
+        fail("depth.min 0 with depth.max 1 covers the whole scene, which Lightroom stores as its default depth"
+            .. " range and this tool cannot tell from a photo without a depth map; narrow the range")
+    end
+    return range
+end
+
+local PARSER_OF_KIND = {
+    [LUMINANCE] = parseTrapezoid("luminance"),
+    [COLOR] = parseColor,
+    [DEPTH] = parseDepth,
+}
 
 function RangeMaskGeometry.parseCreate(args)
     local kind = args.type
-    if kind ~= LUMINANCE and kind ~= COLOR then
-        fail('type must be "luminance" or "color"')
+    if RANGE_TYPE_OF_KIND[kind] == nil then
+        fail('type must be "luminance", "color" or "depth"')
     end
-    local otherField = KIND_FIELD[OTHER_KIND[kind]]
-    if args[otherField] ~= nil then
-        fail(otherField .. " only applies to " .. OTHER_KIND[kind] .. " range masks, not " .. kind .. " ones")
+    for _, otherKind in ipairs(KINDS) do
+        local otherField = KIND_FIELD[otherKind]
+        if otherKind ~= kind and args[otherField] ~= nil then
+            fail(otherField .. " only applies to " .. otherKind .. " range masks, not " .. kind .. " ones")
+        end
     end
     local ownField = KIND_FIELD[kind]
     if args[ownField] == nil then
@@ -142,7 +167,7 @@ local function requireOrderedTrapezoid(trapezoid)
     local previous = 0
     for _, value in ipairs(trapezoid) do
         if value < previous or value > 1 then
-            fail("the luminance range is not ordered from 0 to 1, which Lightroom would replace with its default")
+            fail("the range is not ordered from 0 to 1, which Lightroom would replace with its default")
         end
         previous = value
     end
@@ -154,10 +179,10 @@ local function rangeSettingsFor(kind, range)
         Version = RANGE_VERSION,
         SampleType = RANGE_SAMPLE_TYPE,
     }
-    if kind == LUMINANCE then
+    if TRAPEZOID_FIELD_OF_KIND[kind] ~= nil then
         local trapezoid = RangeMaskGeometry.trapezoidOf(range)
         requireOrderedTrapezoid(trapezoid)
-        settings.LumRange = string.format("%.6f %.6f %.6f %.6f",
+        settings[TRAPEZOID_FIELD_OF_KIND[kind]] = string.format("%.6f %.6f %.6f %.6f",
             trapezoid[1], trapezoid[2], trapezoid[3], trapezoid[4])
         return settings
     end
@@ -188,7 +213,7 @@ function RangeMaskGeometry.newComponent(request)
         MaskInverted = request.invert,
         MaskBlendMode = BLEND_MODE_OF_MODE[request.mode],
         MaskValue = MASK_VALUE_OF_MODE[request.mode],
-        MaskName = request.kind == LUMINANCE and "Luminance Range" or "Color Range",
+        MaskName = NAME_OF_KIND[request.kind],
         CorrectionRangeMask = rangeSettingsFor(request.kind, request.range),
     }
 end
@@ -207,8 +232,8 @@ function RangeMaskGeometry.rangeOf(component)
     if component.What ~= "Mask/RangeMask" or type(component.CorrectionRangeMask) ~= "table" then return nil end
     local range = component.CorrectionRangeMask
     local kind = KIND_OF_RANGE_TYPE[range.Type]
-    if kind == LUMINANCE then
-        local values = numbersIn(range.LumRange)
+    if TRAPEZOID_FIELD_OF_KIND[kind] ~= nil then
+        local values = numbersIn(range[TRAPEZOID_FIELD_OF_KIND[kind]])
         if values == nil or #values ~= 4 then return nil end
         return kind, {
             min = round(values[2]),
