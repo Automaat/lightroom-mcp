@@ -443,6 +443,76 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.equal(2, #state.writes)
     end)
 
+    local function copiedMaskEntries()
+        return {
+            correction("Copy", { linearComponent({ MaskID = "COPYT1", MaskInverted = true }) }, {
+                CorrectionID = "COPY",
+                LocalGlow = 0,
+                LocalHue = 0,
+                LocalSaturation = 0,
+            }),
+        }
+    end
+
+    local function dropZeroLocalAdjustments(stored)
+        for _, entry in ipairs(stored) do
+            for name, value in pairs(entry) do
+                if name:sub(1, 5) == "Local" and value == 0 then entry[name] = nil end
+            end
+        end
+        return stored
+    end
+
+    it("keeps a write whose untouched copy loses its zero local adjustments", function()
+        local Guard, catalog, photo, state = setup({
+            entries = copiedMaskEntries(),
+            transformWrite = dropZeroLocalAdjustments,
+        })
+
+        local result = applyAppend(Guard, catalog, photo, linearComponent())
+
+        assert.are.equal(1, #state.writes)
+        assert.are.equal(2, #result.entries)
+        assert.are.equal(0, result.previous[1].LocalGlow)
+        assert.is_nil(result.entries[1].LocalGlow)
+    end)
+
+    it("rolls back a real mismatch and confirms the restore despite omitted zero defaults", function()
+        local Guard, catalog, photo, state = setup({
+            entries = copiedMaskEntries(),
+            transformWrite = function(stored, writeNumber)
+                if writeNumber == 1 then stored[2].CorrectionMasks[1].FullY = 0.9 end
+                return dropZeroLocalAdjustments(stored)
+            end,
+        })
+
+        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+
+        assert.is_truthy(message:find("previous masks were restored", 1, true))
+        assert.is_nil(message:find("could not be confirmed restored", 1, true))
+        assert.is_truthy(message:find("FullY: wrote 0.2, read back 0.9", 1, true))
+        assert.are.equal(2, #state.writes)
+        assert.are.equal(0, state.writes[2][1].LocalGlow)
+    end)
+
+    it("rolls back when a non-zero local adjustment of an existing mask is dropped", function()
+        local entries = copiedMaskEntries()
+        entries[1].LocalGlow = 12
+        local Guard, catalog, photo, state = setup({
+            entries = entries,
+            transformWrite = function(stored, writeNumber)
+                if writeNumber == 1 then stored[1].LocalGlow = nil end
+                return stored
+            end,
+        })
+
+        local message = errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
+
+        assert.is_truthy(message:find("LocalGlow: wrote 12, read back nil", 1, true))
+        assert.are.equal(2, #state.writes)
+        assert.are.equal(12, state.writes[2][1].LocalGlow)
+    end)
+
     it("reports when the rollback itself is not confirmed", function()
         local Guard, catalog, photo = setup({
             entries = { correction("Old", { linearComponent({ MaskID = "OLDT1" }) }, { CorrectionID = "OLD" }) },
@@ -573,6 +643,71 @@ describe("GuardedMaskWrite.compareEntries", function()
 
         assert.are.equal(1, #slider)
         assert.are.equal(1, #name)
+    end)
+
+    local LOCAL_SLIDER_FIELDS = {
+        "LocalExposure2012", "LocalContrast2012", "LocalHighlights2012", "LocalShadows2012",
+        "LocalWhites2012", "LocalBlacks2012", "LocalTexture", "LocalClarity2012", "LocalDehaze",
+        "LocalTemperature", "LocalTint", "LocalSaturation", "LocalSharpness", "LocalLuminanceNoise",
+        "LocalMoire", "LocalDefringe",
+    }
+
+    local function fieldsAt(value, extra)
+        local fields = {}
+        for _, name in ipairs(LOCAL_SLIDER_FIELDS) do fields[name] = value end
+        for name, item in pairs(extra or {}) do fields[name] = item end
+        return fields
+    end
+
+    local function entryWithout(overrides, omitted)
+        local entry = correction("A", { linearComponent() }, overrides)
+        for _, name in ipairs(omitted) do entry[name] = nil end
+        return { entry }
+    end
+
+    it("treats a zero local adjustment that Lightroom omits as equal", function()
+        local expected = oneEntry(linearComponent(), { LocalGlow = 0 })
+        local actual = entryWithout({}, { "LocalGlow" })
+
+        assert.are.same({}, Guard.compareEntries(expected, actual))
+    end)
+
+    it("treats each of the 16 local sliders at zero as equal when omitted", function()
+        local expected = oneEntry(linearComponent(), fieldsAt(0, { LocalGlow = 0 }))
+
+        assert.are.same({}, Guard.compareEntries(expected, entryWithout({}, LOCAL_SLIDER_FIELDS)))
+        for _, name in ipairs(LOCAL_SLIDER_FIELDS) do
+            assert.are.same({}, Guard.compareEntries(expected, entryWithout(fieldsAt(0, { LocalGlow = 0 }), { name })))
+        end
+    end)
+
+    it("rejects each of the 16 local sliders at a non-zero value when omitted", function()
+        local expected = oneEntry(linearComponent(), fieldsAt(0.25))
+
+        for _, name in ipairs(LOCAL_SLIDER_FIELDS) do
+            local problems = Guard.compareEntries(expected, entryWithout(fieldsAt(0.25), { name }))
+
+            assert.are.equal(1, #problems)
+            assert.is_truthy(problems[1]:find(name .. ": wrote 0.25, read back nil", 1, true))
+        end
+    end)
+
+    it("rejects a non-zero local adjustment that reads back missing or different", function()
+        local expected = oneEntry(linearComponent(), { LocalGlow = 12 })
+
+        local omitted = Guard.compareEntries(expected, entryWithout({}, { "LocalGlow" }))
+        local changed = Guard.compareEntries(expected, oneEntry(linearComponent(), { LocalGlow = 0 }))
+
+        assert.are.equal(1, #omitted)
+        assert.is_truthy(omitted[1]:find("LocalGlow: wrote 12, read back nil", 1, true))
+        assert.are.equal(1, #changed)
+    end)
+
+    it("still rejects an omitted zero outside the local adjustments", function()
+        local expected = oneEntry(linearComponent(), { CorrectionAmount = 0 })
+        local actual = entryWithout({}, { "CorrectionAmount" })
+
+        assert.are.equal(1, #Guard.compareEntries(expected, actual))
     end)
 
     it("treats a false boolean that Lightroom omits as equal", function()
