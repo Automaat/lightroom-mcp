@@ -58,7 +58,7 @@ for _, key in ipairs({
     "fileName", "fileSize", "fileFormat", "path", "dimensions",
     "rating", "colorNameForLabel", "pickStatus", "keywords",
     "uuid", "isVirtualCopy", "croppedDimensions", "dateTimeOriginalISO8601",
-    "masterPhoto", "virtualCopies",
+    "masterPhoto", "virtualCopies", "orientation",
     -- EXIF
     "dateTimeOriginal", "dateTimeDigitized", "cameraMake", "cameraModel",
     "cameraSerialNumber", "lens", "isoSpeedRating", "focalLength",

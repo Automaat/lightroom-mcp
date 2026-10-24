@@ -95,6 +95,110 @@ describe('validateToolArgs', () => {
     });
   });
 
+  describe('brush mask tools', () => {
+    const stroke = { points: [{ x: 0.2, y: 0.3 }, { x: 0.4, y: 0.3 }], radius: 0.05, flow: 0.5 };
+    const create = { photo_id: 1, strokes: [stroke] };
+
+    it('accepts strokes with optional radius and flow', () => {
+      expect(validateToolArgs('create_brush_mask', create)).toBeNull();
+      expect(validateToolArgs('create_brush_mask', { ...create, name: 'Face' })).toBeNull();
+      expect(validateToolArgs('create_brush_mask', { ...create, mask_id: 'abc' })).toBeNull();
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0, y: 1 }] }] })).toBeNull();
+      expect(validateToolArgs('add_brush_strokes', { ...create, tool_id: 'T1' })).toBeNull();
+    });
+
+    it('rejects an empty stroke list, a stroke without points and a missing list', () => {
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [] })).toContain('strokes');
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{ points: [] }] })).toContain('points');
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{}] })).toContain('points');
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1 })).toContain('strokes');
+      expect(validateToolArgs('add_brush_strokes', { photo_id: 1, strokes: [stroke] })).toContain('tool_id');
+    });
+
+    it('rejects points outside the image', () => {
+      expect(
+        validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 1.2, y: 0.5 }] }] }),
+      ).toContain('points');
+      expect(
+        validateToolArgs('add_brush_strokes', { photo_id: 1, tool_id: 'T1', strokes: [{ points: [{ x: 0.5, y: -1 }] }] }),
+      ).toContain('points');
+    });
+
+    it('bounds radius and flow', () => {
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, radius: 0 }] })).toContain('radius');
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, radius: 2 }] })).toContain('radius');
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, flow: 0 }] })).toContain('flow');
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, flow: 2 }] })).toContain('flow');
+    });
+
+    it('has no erase, feather or density option', () => {
+      for (const extra of [{ erase: true }, { feather: 50 }, { density: 50 }, { size: 0.1 }]) {
+        expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, ...extra }] })).toContain(
+          `unknown property "${Object.keys(extra)[0]}"`,
+        );
+      }
+      expect(validateToolArgs('create_brush_mask', { ...create, mode: 'subtract' })).toContain('unknown property "mode"');
+    });
+  });
+
+  describe('create_range_mask', () => {
+    const luminance = { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6, falloff: 0.1 } };
+    const sample = { x: 0.2, y: 0.8, red: 0.46, green: 0.46, blue: 0.46 };
+    const color = { photo_id: '/a.dng', type: 'color', color: { sample, amount: 0.4 } };
+
+    it('accepts luminance and color ranges', () => {
+      expect(validateToolArgs('create_range_mask', luminance)).toBeNull();
+      expect(validateToolArgs('create_range_mask', color)).toBeNull();
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, mask_id: 'C1', mode: 'subtract', invert: true }),
+      ).toBeNull();
+      expect(validateToolArgs('create_range_mask', { ...color, name: 'Foliage' })).toBeNull();
+    });
+
+    it('requires a photo and a type, and offers no depth type', () => {
+      expect(validateToolArgs('create_range_mask', { type: 'luminance' })).toContain('photo_id');
+      expect(validateToolArgs('create_range_mask', { photo_id: 1 })).toContain('type');
+      expect(validateToolArgs('create_range_mask', { ...luminance, type: 'depth' })).toContain('type');
+    });
+
+    it('accepts one sample point only', () => {
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample: [sample, sample] } })).toContain(
+        'color.sample',
+      );
+      expect(validateToolArgs('create_range_mask', { ...color, color: { samples: [sample] } })).toContain(
+        'unknown property "samples"',
+      );
+      expect(validateToolArgs('create_range_mask', { ...color, color: { amount: 0.4 } })).toContain('sample');
+    });
+
+    it('bounds the numbers', () => {
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, luminance: { min: -0.1, max: 0.5 } }),
+      ).toContain('luminance.min');
+      expect(validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0.1 } })).toContain('max');
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0.1, max: 0.5, falloff: 2 } }),
+      ).toContain('luminance.falloff');
+      expect(
+        validateToolArgs('create_range_mask', { ...color, color: { sample: { ...sample, x: 1.5 } } }),
+      ).toContain('color.sample.x');
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample, amount: 0 } })).toContain(
+        'color.amount',
+      );
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample, amount: 1.1 } })).toContain(
+        'color.amount',
+      );
+      expect(validateToolArgs('create_range_mask', { ...luminance, mode: 'intersect' })).toContain('mode');
+    });
+
+    it('rejects unknown properties', () => {
+      expect(validateToolArgs('create_range_mask', { ...luminance, depth: {} })).toContain('unknown property "depth"');
+      expect(
+        validateToolArgs('create_range_mask', { ...luminance, luminance: { min: 0, max: 1, extra: 1 } }),
+      ).toContain('unknown property "extra"');
+    });
+  });
+
   it('requires exactly one deletion target for delete_masks', () => {
     expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
     expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();

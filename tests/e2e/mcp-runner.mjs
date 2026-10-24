@@ -366,9 +366,9 @@ async function main() {
   }
 
   if (mode === "read" || mode === "all") {
-    await run("tools/list returns 40 tools", async () => {
+    await run("tools/list returns 43 tools", async () => {
       const tools = await c.listTools();
-      checkEq("tool count", tools.tools.length, 40);
+      checkEq("tool count", tools.tools.length, 43);
     });
 
     await run("list_collections smoke", async () => {
@@ -602,7 +602,7 @@ async function main() {
       await run("copy_develop_settings (whitelist Contrast2012)", async () => {
         await c.callTool("set_develop_settings", {
           photo_id: String(src.id),
-          settings: { Contrast2012: 42 },
+          settings: { Contrast2012: 43 },
         });
         const cp = await c.callTool("copy_develop_settings", {
           source_id: String(src.id),
@@ -614,7 +614,7 @@ async function main() {
         const dstMeta = await c.callTool("get_photo_metadata", {
           photo_id: String(dst.id),
         });
-        checkEq("dst contrast", dstMeta.parsed.developSettings.contrast, 42);
+        checkEq("dst contrast", dstMeta.parsed.developSettings.contrast, 43);
         // restore source
         await c.callTool("set_develop_settings", {
           photo_id: String(src.id),
