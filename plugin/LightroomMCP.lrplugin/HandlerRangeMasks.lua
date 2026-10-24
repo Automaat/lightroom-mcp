@@ -79,6 +79,36 @@ local function addRangeComponent(entries, request)
     return { entry = index, component = #entry.CorrectionMasks }
 end
 
+local function sourceComponent(entries, copy, label)
+    local _, entry = GuardedMaskWrite.findCorrection(entries, copy.maskId)
+    if not entry then
+        error(string.format("copy_sample_from: mask %s not found on photo %s", copy.maskId, label), 0)
+    end
+    for _, component in ipairs(entry.CorrectionMasks or {}) do
+        if component.MaskID ~= nil and tostring(component.MaskID) == copy.toolId then return component end
+    end
+    error(string.format("copy_sample_from: tool %s is not in mask %s on photo %s", copy.toolId, copy.maskId, label), 0)
+end
+
+local function resolveCopiedSample(catalog, photo, photoId, request)
+    local copy = request.copy
+    local sourcePhotoId = copy.photoId or photoId
+    local sourcePhoto = photo
+    if copy.photoId ~= nil and copy.photoId ~= photoId then
+        sourcePhoto = resolvePhoto(catalog, copy.photoId)
+    end
+    local component = sourceComponent(GuardedMaskWrite.readEntries(catalog, sourcePhoto), copy, sourcePhotoId)
+    local range, problem = RangeMaskGeometry.copiableColorRange(component)
+    if not range then
+        error(string.format("copy_sample_from: tool %s %s", copy.toolId, problem), 0)
+    end
+    local sample = range.sample
+    local x, y = ImageFrame.forPhoto(catalog, sourcePhoto).toDisplayed(sample.x, sample.y)
+    request.range.sample = { x = x, y = y, l = sample.l, a = sample.a, b = sample.b }
+    if request.range.amount == nil then request.range.amount = range.amount end
+    return sourcePhotoId
+end
+
 local function resultFor(photoId, entries, location, displayed)
     local entry = entries[location.entry]
     local component = entry.CorrectionMasks[location.component]
@@ -107,6 +137,10 @@ function RangeMaskHandler.createRangeMask(args)
 
     local catalog = LrApplication.activeCatalog()
     local photo = resolvePhoto(catalog, photoId)
+    local copiedFrom
+    if displayedRequest.copy ~= nil then
+        copiedFrom = resolveCopiedSample(catalog, photo, photoId, displayedRequest)
+    end
     local request = RangeMaskGeometry.toStoredFrame(displayedRequest, ImageFrame.forPhoto(catalog, photo))
     local existing = GuardedMaskWrite.preflight(catalog, photo)
     addRangeComponent(existing, request)
@@ -130,6 +164,11 @@ function RangeMaskHandler.createRangeMask(args)
 
     local result = resultFor(photoId, written.entries, location, displayedRequest)
     result.new_mask = request.maskId == nil
+    if copiedFrom ~= nil then
+        result.copied_from = {
+            photo_id = copiedFrom, mask_id = displayedRequest.copy.maskId, tool_id = displayedRequest.copy.toolId,
+        }
+    end
     Log.info(string.format("Placed %s range mask %s in mask %s on photo %s",
         request.kind, result.tool_id, result.mask_id, photoId))
     return result

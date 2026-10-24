@@ -24,6 +24,7 @@ local STORED_DECIMALS = 1e6
 
 local TRAPEZOID_KEYS = { min = true, max = true, falloff = true }
 local COLOR_KEYS = { sample = true, amount = true }
+local COPY_KEYS = { mask_id = true, tool_id = true, photo_id = true }
 local SAMPLE_FIELDS = { "x", "y", "l", "a", "b" }
 local RETIRED_SAMPLE_FIELDS = { red = true, green = true, blue = true }
 local SAMPLE_KEYS = {}
@@ -102,18 +103,48 @@ local function parseSample(value)
     return sample
 end
 
-local function parseColor(value)
+local function parseAmount(value, fallback)
+    if value == nil then return fallback end
+    local amount = requireNumber(value, "color.amount")
+    if amount <= 0 or amount > 1 then fail("color.amount must be greater than 0 and at most 1") end
+    return amount
+end
+
+local function parseColor(value, copying)
     if type(value) == "table" and type(value.sample) == "table" and value.sample[1] ~= nil then
         fail("color.sample must be a single sample point; more than one sample point is not supported")
     end
     requireObject(value, "color", COLOR_KEYS)
-    if value.sample == nil then fail("color.sample is required") end
-    local amount = DEFAULT_COLOR_AMOUNT
-    if value.amount ~= nil then
-        amount = requireNumber(value.amount, "color.amount")
-        if amount <= 0 or amount > 1 then fail("color.amount must be greater than 0 and at most 1") end
+    if copying then
+        if value.sample ~= nil then
+            fail("color.sample and copy_sample_from both give the sample; use one of them")
+        end
+        return { amount = parseAmount(value.amount, nil) }
     end
-    return { sample = parseSample(value.sample), amount = amount }
+    if value.sample == nil then
+        fail("color.sample is required unless copy_sample_from names a color range to copy")
+    end
+    return { sample = parseSample(value.sample), amount = parseAmount(value.amount, DEFAULT_COLOR_AMOUNT) }
+end
+
+local function requireText(value, field)
+    if type(value) ~= "string" or value == "" then fail(field .. " must be a non-empty string") end
+    return value
+end
+
+local function parseCopy(value, kind)
+    if kind ~= COLOR then
+        fail("copy_sample_from only applies to color range masks, not " .. kind .. " ones")
+    end
+    requireObject(value, "copy_sample_from", COPY_KEYS)
+    local photoId = value.photo_id
+    if type(photoId) == "number" then photoId = tostring(photoId) end
+    if photoId ~= nil then requireText(photoId, "copy_sample_from.photo_id") end
+    return {
+        maskId = requireText(value.mask_id, "copy_sample_from.mask_id"),
+        toolId = requireText(value.tool_id, "copy_sample_from.tool_id"),
+        photoId = photoId,
+    }
 end
 
 local parseDepthTrapezoid = parseTrapezoid("depth")
@@ -145,10 +176,17 @@ function RangeMaskGeometry.parseCreate(args)
         end
     end
     local ownField = KIND_FIELD[kind]
-    if args[ownField] == nil then
+    local copy
+    if args.copy_sample_from ~= nil then copy = parseCopy(args.copy_sample_from, kind) end
+    if args[ownField] == nil and copy == nil then
         fail(ownField .. " is required for a " .. kind .. " range mask")
     end
-    local range = PARSER_OF_KIND[kind](args[ownField])
+    local range
+    if copy ~= nil then
+        range = parseColor(args[ownField] or {}, true)
+    else
+        range = PARSER_OF_KIND[kind](args[ownField])
+    end
 
     local maskId = optionalText(args.mask_id, "mask_id")
     local mode = args.mode == nil and "add" or args.mode
@@ -163,7 +201,7 @@ function RangeMaskGeometry.parseCreate(args)
     local invert = args.invert
     if invert == nil then invert = false end
     if type(invert) ~= "boolean" then fail("invert must be true or false") end
-    return { kind = kind, range = range, maskId = maskId, mode = mode, name = name, invert = invert }
+    return { kind = kind, range = range, maskId = maskId, mode = mode, name = name, invert = invert, copy = copy }
 end
 
 function RangeMaskGeometry.trapezoidOf(luminance)
@@ -263,6 +301,26 @@ function RangeMaskGeometry.rangeOf(component)
         }
     end
     return nil
+end
+
+function RangeMaskGeometry.copiableColorRange(component)
+    if type(component) ~= "table" or component.What ~= "Mask/RangeMask"
+        or type(component.CorrectionRangeMask) ~= "table" then
+        return nil, "is not a range mask"
+    end
+    local stored = component.CorrectionRangeMask
+    local kind = KIND_OF_RANGE_TYPE[stored.Type]
+    if kind ~= COLOR then
+        local description = kind ~= nil and (kind .. " range") or "range of an unsupported type"
+        return nil, "is a " .. description .. ", not a color range"
+    end
+    if type(stored.PointModels) ~= "table" or #stored.PointModels ~= 1 then
+        local count = type(stored.PointModels) == "table" and #stored.PointModels or 0
+        return nil, string.format("has %d color sample points; exactly one can be copied", count)
+    end
+    local _, range = RangeMaskGeometry.rangeOf(component)
+    if range == nil then return nil, "has a color sample that cannot be read" end
+    return range
 end
 
 RangeMaskGeometry.TOOL_TYPE = "rangeMask"
