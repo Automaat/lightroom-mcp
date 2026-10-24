@@ -89,6 +89,10 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 - If reload does not answer the tool call, check Plug-in Manager. A stale `Running: true` state can remain after `Server task context cleanup`; click **Stop Server**, then **Start Server**, and retry the tool call. If the plug-in is disabled or reports a toolkit script error, close Plug-in Manager and any Save dialog, quit Lightroom normally, and reopen it. Check the sockets and tool call again. Do not force quit Lightroom or remove another process's socket.
 - For collection changes, create a uniquely named temporary collection, add known photos, test member, nonmember, missing and duplicate IDs, then delete only that temporary collection. Confirm its photos remain in the catalog. Restore the original bundle and restart Lightroom when finished.
 - For keyword changes, record the photo's keywords and `list_keywords` paths before testing. Use a unique temporary keyword on a known photo; verify its path and photo association after each rename, including a case-only rename. Remove the tag from the photo, then delete the empty temporary keyword in Lightroom's Keyword List and confirm the original catalog state. Restore the original bundle when finished.
+- For mask changes (LrC 15.6), dismiss blocking modals via Accessibility before reading or creating anything: an "Enable address lookup?" modal after launching into a catalog makes menu-driven mask creation silently do nothing, and a "No subject/sky/people detected" modal blocks all Develop reads.
+- `get_photo_preview` is stale right after a photo enters Develop. For preview-diff checks, set the value, wait about 3.5 s, and fetch the preview twice before and twice after.
+- The develop-settings sqlite row lags until you switch photos. Flush by opening another photo, then read twice.
+- Depth range masks need a photo with real device depth (iPhone Portrait HEIC); synthetic disparity files are ignored.
 
 ## Conventions
 
