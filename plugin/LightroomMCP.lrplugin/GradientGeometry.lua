@@ -22,6 +22,9 @@ local DEFAULT_ROTATION_DEGREES = 0
 local DEFAULT_FEATHER = 50
 local MAX_FEATHER = 100
 local MAX_ROTATION_DEGREES = 360
+local MAX_STORED_TURN_DEGREES = 45
+local QUARTER_TURN_DEGREES = 90
+local HALF_TURN_DEGREES = 180
 local MAX_RADIAL_SIZE = 2
 local RADIAL_VERSION = 2
 local RADIAL_MIDPOINT = 50
@@ -286,6 +289,14 @@ function GradientGeometry.mergeChanges(shape, geometry, changes)
     return merged
 end
 
+local function storedTurnOf(rotation)
+    if math.abs(rotation) <= MAX_STORED_TURN_DEGREES then return rotation, false end
+    local turn = rotation % HALF_TURN_DEGREES
+    if turn > QUARTER_TURN_DEGREES then turn = turn - HALF_TURN_DEGREES end
+    if math.abs(turn) <= MAX_STORED_TURN_DEGREES then return turn, false end
+    return turn > 0 and turn - QUARTER_TURN_DEGREES or turn + QUARTER_TURN_DEGREES, true
+end
+
 function GradientGeometry.applyGeometry(shape, component, geometry, aspect)
     if shape == LINEAR then
         component.FullX = geometry.start.x
@@ -295,16 +306,18 @@ function GradientGeometry.applyGeometry(shape, component, geometry, aspect)
         return component
     end
     local ratio = requireAspect(aspect, geometry.rotation)
-    local radians = math.rad(geometry.rotation)
+    local storedTurn, axesSwapped = storedTurnOf(geometry.rotation)
+    local radians = math.rad(storedTurn)
     local cosine, sine = math.cos(radians), math.sin(radians)
     local semiWidth, semiHeight = geometry.width / 2 * ratio, geometry.height / 2
+    if axesSwapped then semiWidth, semiHeight = semiHeight, semiWidth end
     local boxHalfWidth = (semiWidth * cosine - semiHeight * sine) / ratio
     local boxHalfHeight = semiWidth * sine + semiHeight * cosine
     component.Left = geometry.center.x - boxHalfWidth
     component.Right = geometry.center.x + boxHalfWidth
     component.Top = geometry.center.y - boxHalfHeight
     component.Bottom = geometry.center.y + boxHalfHeight
-    component.Angle = geometry.rotation
+    component.Angle = storedTurn
     component.Feather = geometry.feather
     component.MaskInverted = geometry.area == AREA_OUTSIDE
     component.Flipped = nil

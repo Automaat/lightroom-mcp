@@ -98,7 +98,8 @@ const gradientGeometryProperties = {
     type: "number",
     minimum: -360,
     maximum: 360,
-    description: "Radial only: clockwise rotation in degrees around the center, in the photo's pixel space (default 0)",
+    description:
+      "Radial only: clockwise rotation in degrees around the center, in the photo's pixel space (default 0). Lightroom keeps a turn past 45 degrees as the same ellipse with width and height swapped and the rotation turned back by 90 degrees, so results report that form",
   },
   feather: {
     type: "number",
