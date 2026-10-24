@@ -5,6 +5,7 @@ local LrTasks = import 'LrTasks'
 local BrushStrokes = require 'BrushStrokes'
 local DevelopSession = require 'DevelopSession'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
+local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
 
@@ -110,11 +111,15 @@ function BrushMaskHandler.createBrushMask(args)
     if name ~= nil and maskId ~= nil then
         error("name applies to a new mask; omit it when mask_id adds a brush to an existing mask", 0)
     end
-    local request = { strokes = strokes, maskId = maskId, name = name }
     DevelopSession.requireMaskApi("create_brush_mask")
 
     local catalog = LrApplication.activeCatalog()
     local photo = resolvePhoto(catalog, photoId)
+    local request = {
+        strokes = BrushStrokes.toStoredFrame(strokes, ImageFrame.forPhoto(catalog, photo)),
+        maskId = maskId,
+        name = name,
+    }
     addBrush(GuardedMaskWrite.preflight(catalog, photo), request)
 
     local location
@@ -149,11 +154,14 @@ function BrushMaskHandler.addBrushStrokes(args)
     local toolId = optionalText(args.tool_id, "tool_id")
     if toolId == nil then error("tool_id is required", 0) end
     local strokes = BrushStrokes.parseStrokes(args.strokes)
-    local request = { toolId = toolId, strokes = strokes }
     DevelopSession.requireMaskApi("add_brush_strokes")
 
     local catalog = LrApplication.activeCatalog()
     local photo = resolvePhoto(catalog, photoId)
+    local request = {
+        toolId = toolId,
+        strokes = BrushStrokes.toStoredFrame(strokes, ImageFrame.forPhoto(catalog, photo)),
+    }
     appendToBrush(GuardedMaskWrite.preflight(catalog, photo), request)
 
     local location

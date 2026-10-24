@@ -17,7 +17,9 @@ local function setup(opts)
     opts = opts or {}
     local photos, stores, storeOf = {}, {}, {}
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
-        local photo = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
+        local photo = helper.fakePhoto({
+            id = spec.id, path = "/" .. spec.id .. ".jpg", orientation = spec.orientation or "AB",
+        })
         stores[spec.id] = Store.attach(photo, spec)
         storeOf[photo] = stores[spec.id]
         photos[#photos + 1] = photo
@@ -68,7 +70,7 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs({
-        "HandlerBrushMasks", "BrushStrokes", "GuardedMaskWrite", "DevelopSession", "Log",
+        "HandlerBrushMasks", "BrushStrokes", "GuardedMaskWrite", "ImageFrame", "DevelopSession", "Log",
     }) do
         package.loaded[name] = nil
     end
@@ -119,6 +121,37 @@ describe("HandlerBrushMasks.createBrushMask", function()
         assert.are.equal(2, result.strokes_added)
         assert.are.equal(2, result.stroke_count)
         assert.is_true(result.new_mask)
+    end)
+
+    it("maps displayed points into the stored frame of a rotated photo", function()
+        local Handler, stores = setup({ photos = { { id = "1", orientation = "BC" } } })
+
+        Handler.createBrushMask(createRequest({
+            strokes = { stroke({ points = { point(0.25, 0.75) }, radius = 0.05 }) },
+        }))
+
+        local dabs = stores["1"].writes[1][1].CorrectionMasks[1].Masks[1].Dabs
+        assert.are.same({ "d 0.750000 0.750000" }, dabs)
+    end)
+
+    it("maps a displayed path into the stored frame when it is appended to a brush", function()
+        local Handler, stores = setup({ photos = { { id = "1", orientation = "CD", entries = existingBrush() } } })
+
+        Handler.addBrushStrokes({
+            photo_id = "1", tool_id = "C1T1", strokes = { stroke({ points = { point(0.25, 0.75) } }) },
+        })
+
+        local masks = stores["1"].writes[1][1].CorrectionMasks[1].Masks
+        assert.are.same({ "d 0.750000 0.250000" }, masks[#masks].Dabs)
+    end)
+
+    it("refuses a photo whose orientation it cannot map, writing nothing", function()
+        local Handler, stores = setup({ photos = { { id = "1", orientation = "ZZ" } } })
+
+        local message = errorOf(function() Handler.createBrushMask(createRequest()) end)
+
+        assert.matches("cannot map", message, 1, true)
+        assert.are.equal(0, stores["1"].attempts)
     end)
 
     it("writes a low-flow stroke with the flow token and verifies it when Lightroom reads it back", function()

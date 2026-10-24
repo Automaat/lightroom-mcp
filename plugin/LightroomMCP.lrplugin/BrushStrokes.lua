@@ -19,7 +19,7 @@ local STROKE_FIELDS = { points = true, radius = true, flow = true }
 local REASON_OF_UNSUPPORTED_FIELD = {
     feather = "feather is not supported: no stored field for it has been verified in Lightroom's develop-setting format",
     density = "density is not supported: no stored field for it has been verified in Lightroom's develop-setting format",
-    size = "size is not supported: use radius, the brush radius as Lightroom stores it",
+    size = "size is not supported: use radius, a fraction of the longer edge of the image",
     erase = "erase strokes are not supported: Lightroom turns a written stroke's blend mode into add,"
         .. " so an erase stroke cannot be written",
 }
@@ -87,6 +87,14 @@ local function dabCountOf(points, radius)
     return count
 end
 
+local function requireDabBudget(field, dabCount, radius)
+    if dabCount > MAX_DABS_PER_STROKE then
+        fail(string.format(
+            "%s would need %d dabs along its path at radius %s; at most %d are allowed (use a larger radius"
+                .. " or a shorter path)", field, dabCount, tostring(radius), MAX_DABS_PER_STROKE))
+    end
+end
+
 local function parseStroke(stroke, index)
     local field = "strokes[" .. index .. "]"
     if type(stroke) ~= "table" then fail(field .. " must be an object with points") end
@@ -104,12 +112,7 @@ local function parseStroke(stroke, index)
     end
     local radius = parseRadius(stroke.radius, field .. ".radius")
     local flow = parseFlow(stroke.flow, field .. ".flow")
-    local dabCount = dabCountOf(points, radius)
-    if dabCount > MAX_DABS_PER_STROKE then
-        fail(string.format(
-            "%s would need %d dabs along its path at radius %s; at most %d are allowed (use a larger radius"
-                .. " or a shorter path)", field, dabCount, tostring(radius), MAX_DABS_PER_STROKE))
-    end
+    requireDabBudget(field, dabCountOf(points, radius), radius)
     return { points = points, radius = radius, flow = flow }
 end
 
@@ -125,6 +128,21 @@ function BrushStrokes.parseStrokes(strokes)
         parsed[index] = parseStroke(stroke, index)
     end
     return parsed
+end
+
+function BrushStrokes.toStoredFrame(strokes, frame)
+    if frame.isNormal then return strokes end
+    local mapped = {}
+    for index, stroke in ipairs(strokes) do
+        local points = {}
+        for pointIndex, point in ipairs(stroke.points) do
+            local x, y = frame.toStored(point.x, point.y)
+            points[pointIndex] = { x = x, y = y }
+        end
+        requireDabBudget("strokes[" .. index .. "]", dabCountOf(points, stroke.radius), stroke.radius)
+        mapped[index] = { points = points, radius = stroke.radius, flow = stroke.flow }
+    end
+    return mapped
 end
 
 local function clampUnit(value)

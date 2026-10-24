@@ -168,3 +168,41 @@ describe("BrushStrokes.newAggregate", function()
         assert.are.equal(3, #aggregate.Masks)
     end)
 end)
+
+describe("BrushStrokes.toStoredFrame", function()
+    before_each(load)
+
+    local function frameOf(orientation)
+        helper.installImport({})
+        package.loaded.ImageFrame = nil
+        return require('ImageFrame').fromOrientation(orientation)
+    end
+
+    it("returns the strokes untouched for a normal photo", function()
+        local parsed = BrushStrokes.parseStrokes({ stroke() })
+
+        assert.are.equal(parsed, BrushStrokes.toStoredFrame(parsed, frameOf("AB")))
+    end)
+
+    it("maps every point and keeps radius and flow for a rotated photo", function()
+        local parsed = BrushStrokes.parseStrokes({
+            stroke({ points = { point(0, 0), point(1, 0) }, radius = 0.2, flow = 0.5 }),
+        })
+
+        local mapped = BrushStrokes.toStoredFrame(parsed, frameOf("BC"))
+
+        assert.are.same({ point(0, 1), point(0, 0) }, mapped[1].points)
+        assert.are.equal(0.2, mapped[1].radius)
+        assert.are.equal(0.5, mapped[1].flow)
+    end)
+
+    it("encodes dabs along the stored path", function()
+        local parsed = BrushStrokes.parseStrokes({
+            stroke({ points = { point(0, 0.5), point(0.1, 0.5) }, radius = 0.1 }),
+        })
+
+        local aggregate = BrushStrokes.newAggregate(BrushStrokes.toStoredFrame(parsed, frameOf("BC")))
+
+        assert.are.same({ "d 0.500000 1.000000", "d 0.500000 0.950000", "d 0.500000 0.900000" }, aggregate.Masks[1].Dabs)
+    end)
+end)
