@@ -95,6 +95,40 @@ describe('validateToolArgs', () => {
     });
   });
 
+  describe('create_people_mask and create_landscape_mask', () => {
+    it('accepts known parts for all people', () => {
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair', 'face_skin'] })).toBeNull();
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['entire_person'] })).toBeNull();
+    });
+
+    it('rejects unknown, duplicate or missing people parts and a person option', () => {
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['ears'] })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair', 'hair'] })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: [] })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1 })).toContain('parts');
+      expect(validateToolArgs('create_people_mask', { parts: ['hair'] })).toContain('photo_id');
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair'], person: 2 })).toContain(
+        'unknown property "person"',
+      );
+    });
+
+    it('accepts known landscape categories and rejects the rest', () => {
+      expect(
+        validateToolArgs('create_landscape_mask', { photo_id: '/a.dng', categories: ['water', 'sky'] }),
+      ).toBeNull();
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1, categories: ['lava'] })).toContain(
+        'categories',
+      );
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1, categories: ['sky', 'sky'] })).toContain(
+        'categories',
+      );
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1 })).toContain('categories');
+      expect(validateToolArgs('create_landscape_mask', { photo_id: 1, categories: ['sky'], extra: 1 })).toContain(
+        'unknown property "extra"',
+      );
+    });
+  });
+
   describe('brush mask tools', () => {
     const stroke = { points: [{ x: 0.2, y: 0.3 }, { x: 0.4, y: 0.3 }], radius: 0.05, flow: 0.5 };
     const create = { photo_id: 1, strokes: [stroke] };
