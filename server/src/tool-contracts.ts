@@ -86,6 +86,42 @@ const gradientGeometryProperties = {
   },
 } as const;
 
+const brushStrokeProperties = {
+  strokes: {
+    type: "array",
+    minItems: 1,
+    maxItems: 50,
+    description:
+      "Strokes to paint, in order. Each stroke is a path of points; Lightroom fills dabs along the path. Add strokes only: erase strokes cannot be written",
+    items: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        points: {
+          type: "array",
+          minItems: 1,
+          maxItems: 1000,
+          items: normalizedPoint("A point on the stroke path, in normalized image coordinates"),
+          description: "Path of the stroke, at least one point; a single point is one dab",
+        },
+        radius: {
+          type: "number",
+          exclusiveMinimum: 0,
+          maximum: 1,
+          description: "Brush radius as a fraction of the longer edge of the image (default 0.14, Lightroom's default brush; 0.04 is clearly narrower)",
+        },
+        flow: {
+          type: "number",
+          minimum: 0.01,
+          maximum: 1,
+          description: "Flow, 0.01 to 1 (default 1); each stroke can carry its own",
+        },
+      },
+      required: ["points"],
+    },
+  },
+} as const;
+
 export const POINT_CURVE_SETTING_KEYS = [
   "ToneCurvePV2012",
   "ToneCurvePV2012Red",
@@ -987,6 +1023,47 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         ...gradientGeometryProperties,
       },
       required: ["photo_id", "tool_id"],
+    },
+  },
+  {
+    name: "create_brush_mask",
+    luaHandler: "HandlerBrushMasks.createBrushMask",
+    description:
+      "Paint a brush mask on a photo from strokes (Lightroom Classic 15.6 with process version 15.4 only). Each stroke is a list of points in normalized coordinates of the full uncropped image as Lightroom shows it: x and y from 0 to 1, origin at the top-left corner of the uncropped photo, y growing downward; a crop does not move the origin, so on a cropped photo convert from the visible area first. A photo that Lightroom shows rotated or mirrored (its orientation is not normal) stores masks in the unrotated frame, so the tool converts your points to it; a photo whose orientation it cannot map is refused. Anything outside 0..1, an empty stroke list or a stroke without points is rejected and nothing is written. Lightroom stamps dabs, so the tool also places dabs along the path between consecutive points, at most half a radius apart. Per stroke: radius is a fraction of the longer edge of the image (default 0.14; the soft edge fades out at roughly 60% of it, so 0.05 on a 1000 px wide photo paints a stroke about 60 px wide) and flow runs 0.01 to 1 (default 1). ADD STROKES ONLY: erase strokes cannot be written, because Lightroom turns the blend mode of a written stroke into add, so there is no erase option and erase, feather and density are rejected. Feather and density are not offered because no stored field for them has been verified. Without mask_id this creates a new mask (optionally named) holding one brush; with mask_id (from list_masks or an earlier call) the brush is added as a component of that mask. To paint more strokes into a brush that already exists, use add_brush_strokes. The mask starts with no adjustments, so it changes nothing visible until adjustments are set on it. This writes Lightroom's undocumented develop-setting format: before writing it checks the Lightroom version, the photo's process version and the format of every mask already on the photo, then writes, reads the masks back (every dab position and the flow), and restores the previous masks if Lightroom kept anything different. On an untested version or format the call fails and the photo is unchanged. It briefly opens the photo in Develop to confirm Lightroom lists a brush tool for the new mask, then puts back the module, view source and selection. Returns mask_id, tool_id (use it with add_brush_strokes), strokes_added and stroke_count. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        ...brushStrokeProperties,
+        mask_id: {
+          type: "string",
+          minLength: 1,
+          description: "Add the brush to this existing mask instead of creating a new one",
+        },
+        name: {
+          type: "string",
+          minLength: 1,
+          description: "Name of a new mask; not allowed together with mask_id",
+        },
+      },
+      required: ["photo_id", "strokes"],
+    },
+  },
+  {
+    name: "add_brush_strokes",
+    luaHandler: "HandlerBrushMasks.addBrushStrokes",
+    description:
+      "Paint more strokes into an existing brush, found by tool_id (from list_masks or create_brush_mask). The strokes are appended after the strokes already there, which stay as they are. Strokes use the same normalized 0..1 coordinates of the full uncropped image as Lightroom shows it (converted for a rotated or mirrored photo), radius, flow and path filling as create_brush_mask, and the same rules: an empty stroke list or points outside the image are rejected before anything is written. ADD STROKES ONLY: this cannot erase part of a brush, because Lightroom turns the blend mode of a written stroke into add; to remove a painted area, delete the brush with delete_masks (tool_ids) and paint it again. Same safeguards as create_brush_mask: Lightroom Classic 15.6 with process version 15.4 only, the masks are read back and the previous masks are restored if Lightroom kept anything different, and the photo briefly opens in Develop. The tool id, the mask id and the mask's adjustments are kept. Returns mask_id, tool_id, strokes_added and the stroke_count of the brush. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        tool_id: { type: "string", minLength: 1, description: "Tool id of the brush to add strokes to" },
+        ...brushStrokeProperties,
+      },
+      required: ["photo_id", "tool_id", "strokes"],
     },
   },
   {

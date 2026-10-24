@@ -95,6 +95,52 @@ describe('validateToolArgs', () => {
     });
   });
 
+  describe('brush mask tools', () => {
+    const stroke = { points: [{ x: 0.2, y: 0.3 }, { x: 0.4, y: 0.3 }], radius: 0.05, flow: 0.5 };
+    const create = { photo_id: 1, strokes: [stroke] };
+
+    it('accepts strokes with optional radius and flow', () => {
+      expect(validateToolArgs('create_brush_mask', create)).toBeNull();
+      expect(validateToolArgs('create_brush_mask', { ...create, name: 'Face' })).toBeNull();
+      expect(validateToolArgs('create_brush_mask', { ...create, mask_id: 'abc' })).toBeNull();
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0, y: 1 }] }] })).toBeNull();
+      expect(validateToolArgs('add_brush_strokes', { ...create, tool_id: 'T1' })).toBeNull();
+    });
+
+    it('rejects an empty stroke list, a stroke without points and a missing list', () => {
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [] })).toContain('strokes');
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{ points: [] }] })).toContain('points');
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{}] })).toContain('points');
+      expect(validateToolArgs('create_brush_mask', { photo_id: 1 })).toContain('strokes');
+      expect(validateToolArgs('add_brush_strokes', { photo_id: 1, strokes: [stroke] })).toContain('tool_id');
+    });
+
+    it('rejects points outside the image', () => {
+      expect(
+        validateToolArgs('create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 1.2, y: 0.5 }] }] }),
+      ).toContain('points');
+      expect(
+        validateToolArgs('add_brush_strokes', { photo_id: 1, tool_id: 'T1', strokes: [{ points: [{ x: 0.5, y: -1 }] }] }),
+      ).toContain('points');
+    });
+
+    it('bounds radius and flow', () => {
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, radius: 0 }] })).toContain('radius');
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, radius: 2 }] })).toContain('radius');
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, flow: 0 }] })).toContain('flow');
+      expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, flow: 2 }] })).toContain('flow');
+    });
+
+    it('has no erase, feather or density option', () => {
+      for (const extra of [{ erase: true }, { feather: 50 }, { density: 50 }, { size: 0.1 }]) {
+        expect(validateToolArgs('create_brush_mask', { ...create, strokes: [{ ...stroke, ...extra }] })).toContain(
+          `unknown property "${Object.keys(extra)[0]}"`,
+        );
+      }
+      expect(validateToolArgs('create_brush_mask', { ...create, mode: 'subtract' })).toContain('unknown property "mode"');
+    });
+  });
+
   describe('create_range_mask', () => {
     const luminance = { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6, falloff: 0.1 } };
     const sample = { x: 0.2, y: 0.8, red: 0.46, green: 0.46, blue: 0.46 };

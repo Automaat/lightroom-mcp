@@ -366,9 +366,9 @@ async function main() {
   }
 
   if (mode === "read" || mode === "all") {
-    await run("tools/list returns 40 tools", async () => {
+    await run("tools/list returns 42 tools", async () => {
       const tools = await c.listTools();
-      checkEq("tool count", tools.tools.length, 40);
+      checkEq("tool count", tools.tools.length, 42);
     });
 
     await run("list_collections smoke", async () => {
