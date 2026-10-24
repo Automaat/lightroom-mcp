@@ -22,10 +22,15 @@ local HandlerDevelop = require 'HandlerDevelop'
 local HandlerMasks = require 'HandlerMasks'
 local HandlerGradientMasks = require 'HandlerGradientMasks'
 local HandlerAiMasks = require 'HandlerAiMasks'
+local HandlerBrushMasks = require 'HandlerBrushMasks'
+local HandlerRangeMasks = require 'HandlerRangeMasks'
 local HandlerMaskDelete = require 'HandlerMaskDelete'
 local HandlerMaskAdjustments = require 'HandlerMaskAdjustments'
 local HandlerMaskInvert = require 'HandlerMaskInvert'
+local HandlerMaskCurves = require 'HandlerMaskCurves'
+local HandlerMaskPointColors = require 'HandlerMaskPointColors'
 local HandlerMaskCreate = require 'HandlerMaskCreate'
+local HandlerMaskCombine = require 'HandlerMaskCombine'
 local Log = require 'Log'
 
 local DEFAULT_REQUEST_PORT = 58763
@@ -228,12 +233,20 @@ local DISPATCH = {
     update_gradient_mask = HandlerGradientMasks.updateGradientMask,
     create_people_mask = HandlerAiMasks.createPeopleMask,
     create_landscape_mask = HandlerAiMasks.createLandscapeMask,
+    create_brush_mask = HandlerBrushMasks.createBrushMask,
+    add_brush_strokes = HandlerBrushMasks.addBrushStrokes,
+    create_range_mask = HandlerRangeMasks.createRangeMask,
     delete_masks = HandlerMaskDelete.deleteMasks,
     delete_empty_masks = HandlerMaskDelete.deleteEmptyMasks,
     set_mask_adjustments = HandlerMaskAdjustments.setMaskAdjustments,
     get_mask_adjustments = HandlerMaskAdjustments.getMaskAdjustments,
     invert_mask = HandlerMaskInvert.invertMask,
+    set_mask_curves = HandlerMaskCurves.setMaskCurves,
+    get_mask_curves = HandlerMaskCurves.getMaskCurves,
+    edit_mask_point_colors = HandlerMaskPointColors.editMaskPointColors,
+    get_mask_point_colors = HandlerMaskPointColors.getMaskPointColors,
     create_mask = HandlerMaskCreate.createMask,
+    combine_mask = HandlerMaskCombine.combineMask,
 }
 
 -- Generous wait so the very first response after handshake doesn't get

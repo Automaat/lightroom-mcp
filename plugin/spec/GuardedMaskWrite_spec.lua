@@ -124,6 +124,27 @@ describe("GuardedMaskWrite.preflight", function()
         assert.are.equal(1, #Guard.preflight(catalog, photo))
     end)
 
+    it("accepts the local tone curve of every channel on an existing entry", function()
+        local curves = {
+            MainCurve = { "0,0", "64,30", "192,225", "255,255" },
+            RedCurve = { "0,0", "255,255" },
+            GreenCurve = { "0,0", "255,255" },
+            BlueCurve = { "0,0", "255,255" },
+        }
+        local Guard, catalog, photo = setup({ entries = { correction("A", { linearComponent() }, curves) } })
+
+        assert.are.equal(1, #Guard.preflight(catalog, photo))
+    end)
+
+    it("refuses a local tone curve that is not a table", function()
+        local entry = correction("A", { linearComponent() }, { MainCurve = "0,0 255,255" })
+        local Guard, catalog, photo = setup({ entries = { entry } })
+
+        local message = errorOf(function() Guard.preflight(catalog, photo) end)
+
+        assert.is_truthy(message:find("MainCurve must be a table", 1, true))
+    end)
+
     it("refuses an existing component with an unknown mask type", function()
         local Guard, catalog, photo = setup({
             entries = { correction("A", { { What = "Mask/Teleport", MaskActive = true } }) },
@@ -210,6 +231,21 @@ describe("GuardedMaskWrite.apply", function()
         assert.are.equal(1, #result.previous)
         assert.are.equal(0, state.writesOutsideGate)
         assert.are.equal(0, state.readsOutsideGate)
+    end)
+
+    it("writes past an existing mask that holds a local tone curve and keeps the curve", function()
+        local curved = correction("Old", { radialComponent({ MaskID = "OLDT1" }) }, {
+            CorrectionID = "OLD",
+            MainCurve = { "0,0", "64,30", "192,225", "255,255" },
+            RedCurve = { "0,0", "128,170", "255,255" },
+        })
+        local Guard, catalog, photo, state = setup({ entries = { curved } })
+
+        local result = applyAppend(Guard, catalog, photo, linearComponent())
+
+        assert.are.equal(2, #result.entries)
+        assert.are.same({ "0,0", "64,30", "192,225", "255,255" }, state.writes[1][1].MainCurve)
+        assert.are.same({ "0,0", "128,170", "255,255" }, result.entries[1].RedCurve)
     end)
 
     it("writes into a photo that has no masks yet", function()
@@ -576,6 +612,26 @@ describe("GuardedMaskWrite.compareEntries", function()
         assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "d 0.1 0.2" })), oneEntry(brush({ "d 0.1 0.3" }))))
         assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "d 0.1 0.2" })),
             oneEntry(brush({ "d 0.1 0.2", "d 0.3 0.3" }))))
+    end)
+
+    it("ignores a flow token one side lacks but compares it when both have it", function()
+        local brush = function(dabs)
+            return {
+                What = "Mask/Aggregate",
+                Masks = { { What = "Mask/Paint", Dabs = dabs, Radius = 0.1, Flow = 0.3, CenterWeight = 0 } },
+            }
+        end
+
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "d 0.100000 0.200000" }))))
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.3000", "d 0.100000 0.200000" }))))
+        assert.are.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.299998", "d 0.100000 0.200000" }))))
+        assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.5000", "d 0.100000 0.200000" }))))
+        assert.are_not.same({}, Guard.compareEntries(oneEntry(brush({ "f 0.3000", "d 0.1 0.2" })),
+            oneEntry(brush({ "f 0.3000", "d 0.1 0.3" }))))
     end)
 
     it("reports a lost table", function()
