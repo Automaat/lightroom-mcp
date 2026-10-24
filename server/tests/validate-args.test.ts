@@ -228,7 +228,30 @@ describe('validateToolArgs', () => {
       expect(validateToolArgs('create_range_mask', { ...color, color: { samples: [sample] } })).toContain(
         'unknown property "samples"',
       );
-      expect(validateToolArgs('create_range_mask', { ...color, color: { amount: 0.4 } })).toContain('sample');
+    });
+
+    it('accepts copy_sample_from with only its ids required', () => {
+      const copy = { photo_id: 1, type: 'color', copy_sample_from: { mask_id: 'C1', tool_id: 'C1T1' } };
+      expect(validateToolArgs('create_range_mask', copy)).toBeNull();
+      expect(validateToolArgs('create_range_mask', { ...copy, color: { amount: 0.3 }, invert: true })).toBeNull();
+      expect(
+        validateToolArgs('create_range_mask', {
+          ...copy,
+          mask_id: 'C2',
+          mode: 'subtract',
+          copy_sample_from: { photo_id: '/b.dng', mask_id: 'C1', tool_id: 'C1T1' },
+        }),
+      ).toBeNull();
+      expect(validateToolArgs('create_range_mask', { ...copy, copy_sample_from: { mask_id: 'C1' } })).toContain(
+        'tool_id',
+      );
+      expect(validateToolArgs('create_range_mask', { ...copy, copy_sample_from: { tool_id: 'T' } })).toContain(
+        'mask_id',
+      );
+      expect(
+        validateToolArgs('create_range_mask', { ...copy, copy_sample_from: { mask_id: 'C1', tool_id: 'T', x: 1 } }),
+      ).toContain('unknown property "x"');
+      expect(validateToolArgs('create_range_mask', { ...copy, color: { amount: 0 } })).toContain('color.amount');
     });
 
     it('takes Lightroom l, a and b, not sRGB', () => {

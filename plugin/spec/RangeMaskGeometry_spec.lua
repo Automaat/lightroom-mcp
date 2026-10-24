@@ -314,6 +314,111 @@ describe("RangeMaskGeometry", function()
         end)
     end)
 
+    describe("copy_sample_from", function()
+        local function copyArgs(overrides)
+            local args = { type = "color", copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }
+            for key, item in pairs(overrides or {}) do args[key] = item end
+            return args
+        end
+
+        it("takes the source ids and leaves the sample and the amount to the source", function()
+            local request = RangeMaskGeometry.parseCreate(copyArgs())
+
+            assert.are.same({ maskId = "C1", toolId = "C1T1" }, request.copy)
+            assert.is_nil(request.range.sample)
+            assert.is_nil(request.range.amount)
+        end)
+
+        it("accepts a source photo and tweaks the amount, invert and mode", function()
+            local request = RangeMaskGeometry.parseCreate(copyArgs({
+                color = { amount = 0.2 }, invert = true, mask_id = "C2", mode = "subtract",
+                copy_sample_from = { mask_id = "C1", tool_id = "C1T1", photo_id = 77 },
+            }))
+
+            assert.are.equal("77", request.copy.photoId)
+            assert.are.equal(0.2, request.range.amount)
+            assert.is_true(request.invert)
+            assert.are.equal("subtract", request.mode)
+        end)
+
+        it("refuses to combine with a sample or with another range type", function()
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ color = { sample = sample() } }))
+            end):find("both give the sample", 1, true))
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ type = "luminance" }))
+            end):find("only applies to color range masks, not luminance ones", 1, true))
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ type = "depth" }))
+            end):find("only applies to color range masks", 1, true))
+        end)
+
+        it("requires both ids and rejects unknown properties", function()
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ copy_sample_from = { tool_id = "C1T1" } }))
+            end):find("copy_sample_from.mask_id must be a non-empty string", 1, true))
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ copy_sample_from = { mask_id = "C1" } }))
+            end):find("copy_sample_from.tool_id must be a non-empty string", 1, true))
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ copy_sample_from = { mask_id = "C1", tool_id = "T", x = 1 } }))
+            end):find("copy_sample_from has an unknown property x", 1, true))
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate(copyArgs({ copy_sample_from = "C1T1" }))
+            end):find("copy_sample_from must be an object", 1, true))
+        end)
+
+        it("still needs a sample when nothing is copied", function()
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate({ type = "color", color = { amount = 0.3 } })
+            end):find("color.sample is required unless copy_sample_from", 1, true))
+            assert.is_truthy(errorOf(function()
+                RangeMaskGeometry.parseCreate({ type = "color" })
+            end):find("color is required for a color range mask", 1, true))
+        end)
+
+        it("reads every Lightroom-authored color range as copiable", function()
+            for _, authored in ipairs(LIGHTROOM_AUTHORED_SAMPLES) do
+                local range = RangeMaskGeometry.copiableColorRange({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = 1, ColorAmount = 0.494949, PointModels = { authored.stored } },
+                })
+
+                assert.are.same(sampleOf(authored.stored), range.sample)
+                assert.are.equal(0.494949, range.amount)
+            end
+        end)
+
+        it("names why another component cannot be copied", function()
+            local function reason(component)
+                local range, problem = RangeMaskGeometry.copiableColorRange(component)
+                assert.is_nil(range)
+                return problem
+            end
+
+            assert.are.equal("is not a range mask", reason({ What = "Mask/Gradient" }))
+            assert.are.equal("is a luminance range, not a color range", reason({
+                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 2, LumRange = "0 0.1 0.2 0.3" },
+            }))
+            assert.are.equal("is a depth range, not a color range", reason({
+                What = "Mask/RangeMask", CorrectionRangeMask = { Type = -1, DepthRange = "0 0.1 0.2 0.3" },
+            }))
+            assert.are.equal("is a range of an unsupported type, not a color range", reason({
+                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 3 },
+            }))
+            assert.are.equal("has 2 color sample points; exactly one can be copied", reason({
+                What = "Mask/RangeMask",
+                CorrectionRangeMask = { Type = 1, PointModels = { "0.1 0.2 0.3 0.4 0.5 0", "0.2 0.2 0.3 0.4 0.5 0" } },
+            }))
+            assert.are.equal("has 0 color sample points; exactly one can be copied", reason({
+                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, PointModels = {} },
+            }))
+            assert.are.equal("has a color sample that cannot be read", reason({
+                What = "Mask/RangeMask", CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { "a b" } },
+            }))
+        end)
+    end)
+
     describe("rangeOf", function()
         it("reads a luminance trapezoid back as min, max and the two falloffs", function()
             local kind, range = RangeMaskGeometry.rangeOf({

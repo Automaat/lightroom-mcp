@@ -377,6 +377,182 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.is_false(result.new_mask)
     end)
 
+    describe("copy_sample_from", function()
+        local RED = "0.522527 0.888059 0.758296 0.050000 0.188000 0"
+
+        local function lightroomColorRange(overrides)
+            local range = {
+                What = "Mask/RangeMask", MaskID = "C1T1", MaskActive = true, MaskInverted = false, MaskBlendMode = 0,
+                CorrectionRangeMask = { Type = 1, Version = 3, SampleType = 0, ColorAmount = 0.494949, PointModels = { RED } },
+            }
+            for key, value in pairs(overrides or {}) do range[key] = value end
+            return range
+        end
+
+        local function sourceEntries(components)
+            return { correction("Reds", components or { lightroomColorRange() }, { CorrectionID = "C1" }) }
+        end
+
+        local function copyRequest(overrides)
+            local args = { photo_id = "1", type = "color", copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }
+            for key, value in pairs(overrides or {}) do args[key] = value end
+            return args
+        end
+
+        local function written(stores, photoId)
+            return stores[photoId or "1"].writes[#stores[photoId or "1"].writes]
+        end
+
+        it("copies the stored triple, pin and amount of a Lightroom-authored color range into a new mask", function()
+            local Handler, stores = setup({ photos = { { id = "1", entries = sourceEntries() } } })
+
+            local result = Handler.createRangeMask(copyRequest({ name = "Copy" }))
+
+            local entries = written(stores)
+            assert.are.equal(2, #entries)
+            local range = entries[2].CorrectionMasks[1].CorrectionRangeMask
+            assert.are.equal(1, #range.PointModels)
+            assert.are.equal(RED, range.PointModels[1])
+            assert.are.equal(0.494949, range.ColorAmount)
+            assert.are.equal("Copy", entries[2].CorrectionName)
+            assert.are.equal("C2", result.mask_id)
+            assert.is_true(result.new_mask)
+            assert.are.same({ x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, result.color.sample)
+            assert.are.same({ photo_id = "1", mask_id = "C1", tool_id = "C1T1" }, result.copied_from)
+        end)
+
+        it("keeps the source range as it was", function()
+            local Handler, stores = setup({ photos = { { id = "1", entries = sourceEntries() } } })
+
+            Handler.createRangeMask(copyRequest())
+
+            assert.are.same(lightroomColorRange().CorrectionRangeMask, written(stores)[1].CorrectionMasks[1].CorrectionRangeMask)
+        end)
+
+        it("lets the caller tweak amount, invert and mode while copying into an existing mask", function()
+            local entries = sourceEntries()
+            entries[2] = correction("Sky", { linearComponent({ MaskID = "C2T1" }) }, { CorrectionID = "C2" })
+            local Handler, stores = setup({ photos = { { id = "1", entries = entries } } })
+
+            local result = Handler.createRangeMask(copyRequest({
+                color = { amount = 0.2 }, invert = true, mask_id = "C2", mode = "subtract",
+            }))
+
+            local component = written(stores)[2].CorrectionMasks[2]
+            assert.are.equal(RED, component.CorrectionRangeMask.PointModels[1])
+            assert.are.equal(0.2, component.CorrectionRangeMask.ColorAmount)
+            assert.are.equal(1, component.MaskBlendMode)
+            assert.is_true(component.MaskInverted)
+            assert.are.equal("C2T2", result.tool_id)
+            assert.are.equal("subtract", result.mode)
+            assert.are.equal(0.2, result.color.amount)
+        end)
+
+        it("copies from another photo and keeps the pin at the same displayed position", function()
+            local Handler, stores = setup({ photos = {
+                { id = "1", orientation = "BC" },
+                { id = "2", entries = sourceEntries() },
+            } })
+
+            local result = Handler.createRangeMask(copyRequest({
+                copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+            }))
+
+            local range = written(stores, "1")[1].CorrectionMasks[1].CorrectionRangeMask
+            assert.are.equal(1, #range.PointModels)
+            assert.are.equal("0.522527 0.888059 0.758296 0.188000 0.950000 0", range.PointModels[1])
+            assert.are.same({ x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 }, result.color.sample)
+            assert.are.equal("2", result.copied_from.photo_id)
+            assert.are.equal(0, #stores["2"].writes)
+        end)
+
+        it("maps the source pin out of the frame of a rotated source photo", function()
+            local Handler, stores = setup({ photos = {
+                { id = "1" },
+                { id = "2", orientation = "BC", entries = sourceEntries() },
+            } })
+
+            local result = Handler.createRangeMask(copyRequest({
+                copy_sample_from = { photo_id = "2", mask_id = "C1", tool_id = "C1T1" },
+            }))
+
+            local range = written(stores, "1")[1].CorrectionMasks[1].CorrectionRangeMask
+            assert.are.equal("0.522527 0.888059 0.758296 0.812000 0.050000 0", range.PointModels[1])
+            assert.are.equal(0.812, result.color.sample.x)
+            assert.are.equal(0.05, result.color.sample.y)
+        end)
+
+        it("refuses a source that is not a color range, writing nothing and not opening Develop", function()
+            local luminance = lightroomColorRange({
+                CorrectionRangeMask = { Type = 2, Version = 3, SampleType = 0, LumRange = "0.1 0.2 0.3 0.4" },
+            })
+            local twoPoints = lightroomColorRange({
+                CorrectionRangeMask = { Type = 1, ColorAmount = 0.5, PointModels = { RED, RED } },
+            })
+            local cases = {
+                { components = { luminance }, expected = "is a luminance range, not a color range" },
+                { components = { linearComponent({ MaskID = "C1T1" }) }, expected = "is not a range mask" },
+                { components = { twoPoints }, expected = "has 2 color sample points; exactly one can be copied" },
+            }
+            for _, case in ipairs(cases) do
+                local Handler, stores, calls = setup({ photos = { { id = "1", entries = sourceEntries(case.components) } } })
+
+                local message = errorOf(function() Handler.createRangeMask(copyRequest()) end)
+
+                assert.is_truthy(message:find("copy_sample_from: tool C1T1 " .. case.expected, 1, true), message)
+                assert.are.equal(0, #stores["1"].writes)
+                assert.are.equal(0, #calls.modules)
+            end
+        end)
+
+        it("refuses an unknown mask, a tool of another mask, an unknown photo, writing nothing", function()
+            local entries = sourceEntries()
+            entries[2] = correction("Sky", { linearComponent({ MaskID = "C2T1" }) }, { CorrectionID = "C2" })
+            local Handler, stores, calls = setup({ photos = { { id = "1", entries = entries } } })
+
+            local unknownMask = errorOf(function()
+                Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C9", tool_id = "C1T1" } }))
+            end)
+            local otherMask = errorOf(function()
+                Handler.createRangeMask(copyRequest({ copy_sample_from = { mask_id = "C2", tool_id = "C1T1" } }))
+            end)
+            local unknownPhoto = errorOf(function()
+                Handler.createRangeMask(copyRequest({ copy_sample_from = { photo_id = "9", mask_id = "C1", tool_id = "C1T1" } }))
+            end)
+
+            assert.is_truthy(unknownMask:find("copy_sample_from: mask C9 not found on photo 1", 1, true))
+            assert.is_truthy(otherMask:find("copy_sample_from: tool C1T1 is not in mask C2 on photo 1", 1, true))
+            assert.is_truthy(unknownPhoto:find("Photo not found: 9", 1, true))
+            assert.are.equal(0, #stores["1"].writes)
+            assert.are.equal(0, #calls.modules)
+        end)
+
+        it("rejects a sample next to copy_sample_from and a copy for other range types before reading", function()
+            local Handler, stores = setup({ photos = { { id = "1", entries = sourceEntries() } } })
+
+            local both = errorOf(function()
+                Handler.createRangeMask(copyRequest({ color = { sample = { x = 0, y = 0, l = 0, a = 0, b = 0 } } }))
+            end)
+            local luminanceCopy = errorOf(function()
+                Handler.createRangeMask(luminanceRequest({ copy_sample_from = { mask_id = "C1", tool_id = "C1T1" } }))
+            end)
+
+            assert.is_truthy(both:find("both give the sample", 1, true))
+            assert.is_truthy(luminanceCopy:find("only applies to color range masks", 1, true))
+            assert.are.equal(0, stores["1"].reads)
+        end)
+
+        it("never queries or reads settings outside the gates", function()
+            local Handler, stores, _, catalog = setup({ photos = { { id = "1", entries = sourceEntries() }, { id = "2" } } })
+
+            Handler.createRangeMask(copyRequest({ photo_id = "2", copy_sample_from = { photo_id = "1", mask_id = "C1", tool_id = "C1T1" } }))
+
+            assert.is_false(catalog.getQueriedInsideReadAccess())
+            assert.are.equal(0, stores["1"].readsOutsideGate)
+            assert.are.equal(0, stores["2"].readsOutsideGate)
+        end)
+    end)
+
     it("fails for an unknown mask id without writing or opening Develop", function()
         local Handler, stores, calls = setup({ photos = { { id = "1", entries = existingGradient() } } })
 
