@@ -1,5 +1,6 @@
 local helper = require 'spec_helper'
 local Store = require 'fake_mask_store'
+local RadialEllipse = require 'radial_ellipse'
 
 local linearComponent = Store.linearComponent
 local radialComponent = Store.radialComponent
@@ -373,15 +374,16 @@ describe("HandlerGradientMasks.updateGradientMask", function()
         local Handler, stores = setup({ photos = { { id = "1", dimensions = { width = 3000, height = 2000 } } } })
 
         local result = Handler.createGradientMask(radialRequest({
-            center = point(0.5, 0.4), width = 0.2, height = 0.2, rotation = 90,
+            center = point(0.5, 0.4), width = 0.2, height = 0.2, rotation = 45,
         }))
 
         local component = stores["1"].writes[1][1].CorrectionMasks[1]
-        assert.is_true(math.abs(component.Left - (0.5 + 0.1 / 1.5)) < 1e-9)
-        assert.is_true(math.abs(component.Right - (0.5 - 0.1 / 1.5)) < 1e-9)
-        assert.is_true(math.abs(component.Top - 0.25) < 1e-9)
-        assert.is_true(math.abs(component.Bottom - 0.55) < 1e-9)
-        assert.are.equal(90, component.Angle)
+        local reach = math.sqrt(0.5)
+        assert.is_true(math.abs(component.Left - (0.5 - 0.05 * reach / 1.5)) < 1e-9)
+        assert.is_true(math.abs(component.Right - (0.5 + 0.05 * reach / 1.5)) < 1e-9)
+        assert.is_true(math.abs(component.Top - (0.4 - 0.25 * reach)) < 1e-9)
+        assert.is_true(math.abs(component.Bottom - (0.4 + 0.25 * reach)) < 1e-9)
+        assert.are.equal(45, component.Angle)
         assert.is_true(math.abs(result.geometry.width - 0.2) < 1e-5)
         assert.is_true(math.abs(result.geometry.height - 0.2) < 1e-5)
     end)
@@ -609,6 +611,82 @@ describe("HandlerGradientMasks in the stored frame of a rotated photo", function
             assert.is_true(math.abs(0.5 - result.geometry.height) < 1e-5)
             local component = stores["1"].writes[2][1].CorrectionMasks[1]
             assert.are.equal(radial.angle > 0 and 45 or -45, component.Angle)
+        end)
+    end
+
+    local function rotationSweep()
+        local rotations = {}
+        for rotation = -180, 180, 15 do rotations[#rotations + 1] = rotation end
+        for _, rotation in ipairs({ -360, -61, -59, -46, 46, 59, 61, 91, 270, 360 }) do
+            rotations[#rotations + 1] = rotation
+        end
+        return rotations
+    end
+
+    local DISPLAYED_ASPECT = 3000 / 2000
+
+    local function requestedEllipse(rotation)
+        return RadialEllipse.ofGeometry({
+            center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = rotation,
+        }, DISPLAYED_ASPECT)
+    end
+
+    local function expectedStoredEllipse(orientation, rotation)
+        local radial = RADIAL_BY_ORIENTATION[orientation]
+        local storedAspect = radial.width == 0.5 and 1 / DISPLAYED_ASPECT or DISPLAYED_ASPECT
+        local center = LINEAR_BY_ORIENTATION[orientation].start
+        return RadialEllipse.ofGeometry({
+            center = center, width = radial.width, height = radial.height,
+            rotation = (radial.angle > 0 and 1 or -1) * rotation,
+        }, storedAspect)
+    end
+
+    local function storedEllipseOf(orientation, component)
+        local radial = RADIAL_BY_ORIENTATION[orientation]
+        local storedAspect = radial.width == 0.5 and 1 / DISPLAYED_ASPECT or DISPLAYED_ASPECT
+        return RadialEllipse.ofComponent(component, storedAspect)
+    end
+
+    for _, orientation in ipairs(ORIENTATIONS) do
+        it("creates the displayed radial ellipse at every rotation for " .. orientation, function()
+            for _, rotation in ipairs(rotationSweep()) do
+                local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+
+                local result = Handler.createGradientMask(radialRequest({
+                    center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = rotation,
+                }))
+
+                local component = stores["1"].writes[1][1].CorrectionMasks[1]
+                assert.is_true(math.abs(component.Angle) <= 45, "angle " .. component.Angle .. " for " .. rotation)
+                assert.is_true(RadialEllipse.differenceBetween(
+                    expectedStoredEllipse(orientation, rotation), storedEllipseOf(orientation, component)) < 1e-9,
+                    "stored ellipse differs for rotation " .. rotation)
+                assert.is_true(RadialEllipse.differenceBetween(
+                    requestedEllipse(rotation), RadialEllipse.ofGeometry(result.geometry, DISPLAYED_ASPECT)) < 1e-4,
+                    "reported ellipse differs for rotation " .. rotation)
+            end
+        end)
+
+        it("turns an existing radial to every rotation for " .. orientation, function()
+            for _, rotation in ipairs(rotationSweep()) do
+                local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+                local created = Handler.createGradientMask(radialRequest({
+                    center = point(0.2, 0.1), width = 0.3, height = 0.5,
+                }))
+
+                local result = Handler.updateGradientMask({
+                    photo_id = "1", tool_id = created.tool_id, rotation = rotation,
+                })
+
+                local component = stores["1"].writes[2][1].CorrectionMasks[1]
+                assert.is_true(math.abs(component.Angle) <= 45, "angle " .. component.Angle .. " for " .. rotation)
+                assert.is_true(RadialEllipse.differenceBetween(
+                    expectedStoredEllipse(orientation, rotation), storedEllipseOf(orientation, component)) < 1e-9,
+                    "stored ellipse differs for rotation " .. rotation)
+                assert.is_true(RadialEllipse.differenceBetween(
+                    requestedEllipse(rotation), RadialEllipse.ofGeometry(result.geometry, DISPLAYED_ASPECT)) < 1e-4,
+                    "reported ellipse differs for rotation " .. rotation)
+            end
         end)
     end
 
