@@ -39,6 +39,32 @@ function FakeMaskStore.radialComponent(overrides)
     }, overrides)
 end
 
+function FakeMaskStore.paint(overrides)
+    return merge({
+        What = "Mask/Paint",
+        MaskActive = true,
+        MaskInverted = false,
+        MaskBlendMode = 0,
+        MaskValue = 1,
+        Flow = 1,
+        Radius = 0.14,
+        CenterWeight = 0,
+        Dabs = { "d 0.200000 0.300000", "d 0.300000 0.300000" },
+    }, overrides)
+end
+
+function FakeMaskStore.brushComponent(overrides, paints)
+    return merge({
+        What = "Mask/Aggregate",
+        MaskActive = true,
+        MaskInverted = false,
+        MaskBlendMode = 0,
+        MaskValue = 1,
+        MaskName = "Brush",
+        Masks = paints or { FakeMaskStore.paint() },
+    }, overrides)
+end
+
 function FakeMaskStore.correction(name, components, overrides)
     return merge({
         What = "Correction",

@@ -45,6 +45,9 @@ const EXPECTED_TOOL_NAMES = [
   'list_masks',
   'create_gradient_mask',
   'update_gradient_mask',
+  'create_brush_mask',
+  'add_brush_strokes',
+  'create_range_mask',
   'delete_masks',
   'delete_empty_masks',
   'set_mask_adjustments',
@@ -55,11 +58,12 @@ const EXPECTED_TOOL_NAMES = [
   'get_mask_curves',
   'edit_mask_point_colors',
   'get_mask_point_colors',
+  'combine_mask',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 43 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(43);
+  it('contains exactly 47 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(47);
   });
 
   it('tool names are unique', () => {
@@ -137,6 +141,9 @@ describe('tool required fields', () => {
     ['list_masks', ['photo_id']],
     ['create_gradient_mask', ['photo_id', 'shape']],
     ['update_gradient_mask', ['photo_id', 'tool_id']],
+    ['create_brush_mask', ['photo_id', 'strokes']],
+    ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
+    ['create_range_mask', ['photo_id', 'type']],
     ['delete_masks', ['photo_id']],
     ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
@@ -147,6 +154,7 @@ describe('tool required fields', () => {
     ['get_mask_curves', ['photo_id', 'mask_id']],
     ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
     ['get_mask_point_colors', ['photo_id', 'mask_id']],
+    ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
   });
@@ -368,6 +376,25 @@ describe('mask curve schema', () => {
     const properties = contract?.inputSchema.properties as Record<string, { properties?: Record<string, unknown> }>;
 
     expect(Object.keys(properties.curves.properties ?? {})).toEqual([...MASK_CURVE_CHANNELS]);
+  });
+});
+
+describe('AI mask types', () => {
+  function typeEnumOf(toolName: string): string[] {
+    const contract = TOOL_CONTRACTS.find((c) => c.name === toolName);
+    const properties = contract?.inputSchema.properties as Record<string, { enum?: string[] }>;
+    return properties.type.enum ?? [];
+  }
+
+  it('offers the types the Lua type table knows to create_mask and combine_mask alike', () => {
+    const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskTypes.lua');
+    const source = fs.readFileSync(luaPath, 'utf8');
+    const namesBlock = source.match(/MaskTypes\.NAMES = \{([^}]*)\}/)?.[1] ?? '';
+    const luaNames = [...namesBlock.matchAll(/"(\w+)"/g)].map((m) => m[1]);
+
+    expect(luaNames.length).toBeGreaterThan(0);
+    expect(typeEnumOf('create_mask')).toEqual(luaNames);
+    expect(typeEnumOf('combine_mask')).toEqual(luaNames);
   });
 });
 
