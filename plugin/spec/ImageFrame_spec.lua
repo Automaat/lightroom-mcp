@@ -58,6 +58,38 @@ describe("ImageFrame.fromOrientation", function()
     end)
 end)
 
+describe("ImageFrame axis facts", function()
+    local FACTS = {
+        AB = { swapsAxes = false, reversesTurnDirection = false },
+        BA = { swapsAxes = false, reversesTurnDirection = true },
+        CD = { swapsAxes = false, reversesTurnDirection = false },
+        DC = { swapsAxes = false, reversesTurnDirection = true },
+        CB = { swapsAxes = true, reversesTurnDirection = true },
+        BC = { swapsAxes = true, reversesTurnDirection = false },
+        AD = { swapsAxes = true, reversesTurnDirection = true },
+        DA = { swapsAxes = true, reversesTurnDirection = false },
+    }
+
+    for orientation, expected in pairs(FACTS) do
+        it("reports whether " .. orientation .. " swaps the axes and reverses the turn direction", function()
+            local frame = ImageFrame.fromOrientation(orientation)
+
+            assert.are.equal(expected.swapsAxes, frame.swapsAxes)
+            assert.are.equal(expected.reversesTurnDirection, frame.reversesTurnDirection)
+        end)
+
+        it("maps a point to the stored frame and back for " .. orientation, function()
+            local frame = ImageFrame.fromOrientation(orientation)
+
+            local storedX, storedY = frame.toStored(0.2, 0.7)
+            local x, y = frame.toDisplayed(storedX, storedY)
+
+            assert.is_true(math.abs(x - 0.2) < 1e-12)
+            assert.is_true(math.abs(y - 0.7) < 1e-12)
+        end)
+    end
+end)
+
 describe("ImageFrame.forPhoto", function()
     it("reads the orientation inside the read gate", function()
         local insideGate = false

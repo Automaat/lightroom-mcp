@@ -292,3 +292,53 @@ describe("GradientGeometry stored form", function()
         assert.is_true(component.MaskInverted)
     end)
 end)
+
+describe("GradientGeometry frame conversion", function()
+    local ImageFrame
+
+    before_each(function()
+        helper.installImport({})
+        package.loaded.GradientGeometry = nil
+        package.loaded.ImageFrame = nil
+        GradientGeometry = require 'GradientGeometry'
+        ImageFrame = require 'ImageFrame'
+    end)
+
+    local radial = { center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30, feather = 40, area = "outside" }
+
+    it("hands back the very same geometry for a photo that is not rotated", function()
+        local frame = ImageFrame.fromOrientation("AB")
+
+        assert.are.equal(radial, GradientGeometry.toStoredFrame("radial", radial, frame))
+        assert.are.equal(radial, GradientGeometry.toDisplayedFrame("radial", radial, frame))
+    end)
+
+    it("turns a displayed radial into the stored one and back for every orientation", function()
+        for _, orientation in ipairs({ "BA", "CD", "DC", "CB", "BC", "AD", "DA" }) do
+            local frame = ImageFrame.fromOrientation(orientation)
+
+            local stored = GradientGeometry.toStoredFrame("radial", radial, frame)
+            local displayed = GradientGeometry.toDisplayedFrame("radial", stored, frame)
+
+            assert.are.same(radial, displayed)
+            assert.are.equal(40, stored.feather)
+            assert.are.equal("outside", stored.area)
+            assert.are.equal(frame.swapsAxes and 0.5 or 0.3, stored.width)
+        end
+    end)
+
+    it("does not change the geometry it was given", function()
+        local frame = ImageFrame.fromOrientation("BC")
+
+        GradientGeometry.toStoredFrame("radial", radial, frame)
+
+        assert.are.same(point(0.2, 0.1), radial.center)
+        assert.are.equal(0.3, radial.width)
+    end)
+
+    it("inverts the aspect ratio only for orientations that swap the axes", function()
+        assert.are.equal(1.5, GradientGeometry.storedAspectOf(ImageFrame.fromOrientation("CD"), 1.5))
+        assert.is_true(math.abs(GradientGeometry.storedAspectOf(ImageFrame.fromOrientation("BC"), 1.5) - 2 / 3) < 1e-12)
+        assert.is_nil(GradientGeometry.storedAspectOf(ImageFrame.fromOrientation("BC"), nil))
+    end)
+end)

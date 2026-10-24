@@ -10,6 +10,7 @@ local SHAPE_FIELDS = {
     [LINEAR] = { "start", "end" },
     [RADIAL] = { "center", "width", "height", "rotation", "feather", "area" },
 }
+local POINT_FIELDS = { [LINEAR] = { "start", "end" }, [RADIAL] = { "center" } }
 local OTHER_SHAPE = { [LINEAR] = RADIAL, [RADIAL] = LINEAR }
 
 local BLEND_MODE_OF_MODE = { add = 0, subtract = 1 }
@@ -202,12 +203,39 @@ function GradientGeometry.parseUpdate(args)
     return { toolId = toolId, changes = changes }
 end
 
-function GradientGeometry.shapeOf(component)
-    return SHAPE_OF_WHAT[component.What]
-end
-
 local function round(value)
     return math.floor(value * STORED_DECIMALS + 0.5) / STORED_DECIMALS
+end
+
+local function carriedAcrossFrame(shape, geometry, frame, mapPoint)
+    if frame.isNormal then return geometry end
+    local carried = copyGeometry(geometry)
+    for _, field in ipairs(POINT_FIELDS[shape]) do
+        local x, y = mapPoint(geometry[field].x, geometry[field].y)
+        carried[field] = { x = round(x), y = round(y) }
+    end
+    if shape == RADIAL then
+        if frame.swapsAxes then carried.width, carried.height = geometry.height, geometry.width end
+        if frame.reversesTurnDirection then carried.rotation = 0 - geometry.rotation end
+    end
+    return carried
+end
+
+function GradientGeometry.toStoredFrame(shape, geometry, frame)
+    return carriedAcrossFrame(shape, geometry, frame, frame.toStored)
+end
+
+function GradientGeometry.toDisplayedFrame(shape, geometry, frame)
+    return carriedAcrossFrame(shape, geometry, frame, frame.toDisplayed)
+end
+
+function GradientGeometry.storedAspectOf(frame, displayedAspect)
+    if displayedAspect == nil or not frame.swapsAxes then return displayedAspect end
+    return 1 / displayedAspect
+end
+
+function GradientGeometry.shapeOf(component)
+    return SHAPE_OF_WHAT[component.What]
 end
 
 local function requireAspect(aspect, rotation)
