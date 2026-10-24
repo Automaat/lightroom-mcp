@@ -18,7 +18,7 @@ local function setup(opts)
     local photos, stores, storeOf = {}, {}, {}
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
         local photo = helper.fakePhoto({
-            id = spec.id, path = "/" .. spec.id .. ".jpg",
+            id = spec.id, path = "/" .. spec.id .. ".jpg", orientation = spec.orientation or "AB",
             dimensions = not spec.noDimensions and (spec.dimensions or { width = 3000, height = 2000 }) or nil,
         })
         stores[spec.id] = Store.attach(photo, spec)
@@ -486,5 +486,172 @@ describe("HandlerGradientMasks.updateGradientMask", function()
 
         assert.is_truthy(message:find("process version (11.0)", 1, true))
         assert.are.equal(0, #stores["1"].writes)
+    end)
+end)
+
+local LINEAR_BY_ORIENTATION = {
+    AB = { start = point(0.2, 0.1), finish = point(0.2, 0.6) },
+    BA = { start = point(0.8, 0.1), finish = point(0.8, 0.6) },
+    CD = { start = point(0.8, 0.9), finish = point(0.8, 0.4) },
+    DC = { start = point(0.2, 0.9), finish = point(0.2, 0.4) },
+    CB = { start = point(0.1, 0.2), finish = point(0.6, 0.2) },
+    BC = { start = point(0.1, 0.8), finish = point(0.6, 0.8) },
+    AD = { start = point(0.9, 0.8), finish = point(0.4, 0.8) },
+    DA = { start = point(0.9, 0.2), finish = point(0.4, 0.2) },
+}
+
+local RADIAL_BY_ORIENTATION = {
+    AB = { width = 0.3, height = 0.5, angle = 30 },
+    BA = { width = 0.3, height = 0.5, angle = -30 },
+    CD = { width = 0.3, height = 0.5, angle = 30 },
+    DC = { width = 0.3, height = 0.5, angle = -30 },
+    CB = { width = 0.5, height = 0.3, angle = -30 },
+    BC = { width = 0.5, height = 0.3, angle = 30 },
+    AD = { width = 0.5, height = 0.3, angle = -30 },
+    DA = { width = 0.5, height = 0.3, angle = 30 },
+}
+
+local ORIENTATIONS = { "AB", "BA", "CD", "DC", "CB", "BC", "AD", "DA" }
+
+local function near(expected, actual)
+    return math.abs(expected - actual) < 1e-9
+end
+
+local function displayedVertical(overrides)
+    return linearRequest(overrides or {
+        start = point(0.2, 0.1), ["end"] = point(0.2, 0.6),
+    })
+end
+
+describe("HandlerGradientMasks in the stored frame of a rotated photo", function()
+    for _, orientation in ipairs(ORIENTATIONS) do
+        local expected = LINEAR_BY_ORIENTATION[orientation]
+
+        it("stores a displayed vertical linear gradient for " .. orientation, function()
+            local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+
+            local result = Handler.createGradientMask(displayedVertical())
+
+            local component = stores["1"].writes[1][1].CorrectionMasks[1]
+            assert.is_true(near(expected.start.x, component.FullX))
+            assert.is_true(near(expected.start.y, component.FullY))
+            assert.is_true(near(expected.finish.x, component.ZeroX))
+            assert.is_true(near(expected.finish.y, component.ZeroY))
+            assert.are.same(point(0.2, 0.1), result.geometry.start)
+            assert.are.same(point(0.2, 0.6), result.geometry["end"])
+        end)
+
+        it("moves one end of a linear gradient in the displayed frame for " .. orientation, function()
+            local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+            local created = Handler.createGradientMask(displayedVertical())
+
+            local result = Handler.updateGradientMask({
+                photo_id = "1", tool_id = created.tool_id, ["end"] = point(0.2, 0.8),
+            })
+
+            assert.are.same(point(0.2, 0.1), result.geometry.start)
+            assert.are.same(point(0.2, 0.8), result.geometry["end"])
+            local component = stores["1"].writes[2][1].CorrectionMasks[1]
+            assert.is_true(near(expected.start.x, component.FullX))
+            assert.is_true(near(expected.start.y, component.FullY))
+        end)
+
+        local radial = RADIAL_BY_ORIENTATION[orientation]
+
+        it("stores a displayed radial gradient with swapped sizes and mirrored rotation for " .. orientation,
+            function()
+                local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+
+                local result = Handler.createGradientMask(radialRequest({
+                    center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30,
+                }))
+
+                local component = stores["1"].writes[1][1].CorrectionMasks[1]
+                local storedCenter = LINEAR_BY_ORIENTATION[orientation].start
+                assert.are.equal(radial.angle, component.Angle)
+                assert.is_true(near(storedCenter.x, (component.Left + component.Right) / 2))
+                assert.is_true(near(storedCenter.y, (component.Top + component.Bottom) / 2))
+                assert.is_true(near(0.2, result.geometry.center.x))
+                assert.is_true(near(0.1, result.geometry.center.y))
+                assert.is_true(math.abs(0.3 - result.geometry.width) < 1e-5)
+                assert.is_true(math.abs(0.5 - result.geometry.height) < 1e-5)
+                assert.are.equal(30, result.geometry.rotation)
+            end)
+
+        it("sizes an unrotated radial gradient along the stored axes for " .. orientation, function()
+            local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+
+            Handler.createGradientMask(radialRequest({
+                center = point(0.2, 0.1), width = 0.3, height = 0.5,
+            }))
+
+            local component = stores["1"].writes[1][1].CorrectionMasks[1]
+            assert.is_true(near(radial.width, component.Right - component.Left))
+            assert.is_true(near(radial.height, component.Bottom - component.Top))
+            assert.are.equal(0, component.Angle)
+        end)
+
+        it("reshapes a radial gradient in the displayed frame for " .. orientation, function()
+            local Handler, stores = setup({ photos = { { id = "1", orientation = orientation } } })
+            local created = Handler.createGradientMask(radialRequest({
+                center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30,
+            }))
+
+            local result = Handler.updateGradientMask({
+                photo_id = "1", tool_id = created.tool_id, rotation = 45, feather = 20,
+            })
+
+            assert.are.equal(45, result.geometry.rotation)
+            assert.are.equal(20, result.geometry.feather)
+            assert.is_true(near(0.2, result.geometry.center.x))
+            assert.is_true(near(0.1, result.geometry.center.y))
+            assert.is_true(math.abs(0.3 - result.geometry.width) < 1e-5)
+            assert.is_true(math.abs(0.5 - result.geometry.height) < 1e-5)
+            local component = stores["1"].writes[2][1].CorrectionMasks[1]
+            assert.are.equal(radial.angle > 0 and 45 or -45, component.Angle)
+        end)
+    end
+
+    it("reads an existing gradient from the stored frame back to the displayed one", function()
+        local entries = {
+            correction("Sky", {
+                linearComponent({ MaskID = "C1T1", FullX = 0.1, FullY = 0.2, ZeroX = 0.6, ZeroY = 0.2 }),
+            }, { CorrectionID = "C1" }),
+        }
+        local Handler = setup({ photos = { { id = "1", orientation = "CB", entries = entries } } })
+
+        local result = Handler.updateGradientMask({
+            photo_id = "1", tool_id = "C1T1", ["end"] = point(0.2, 0.9),
+        })
+
+        assert.are.same(point(0.2, 0.1), result.geometry.start)
+        assert.are.same(point(0.2, 0.9), result.geometry["end"])
+    end)
+
+    it("leaves the stored values equal to the displayed ones when the photo is not rotated", function()
+        local Handler, stores = setup()
+
+        Handler.createGradientMask(radialRequest({
+            center = point(0.2, 0.1), width = 0.3, height = 0.5, rotation = 30,
+        }))
+        Handler.createGradientMask(displayedVertical())
+
+        local radial = stores["1"].writes[1][1].CorrectionMasks[1]
+        local linear = stores["1"].writes[2][2].CorrectionMasks[1]
+        assert.are.equal(30, radial.Angle)
+        assert.are.equal(0.2, linear.FullX)
+        assert.are.equal(0.1, linear.FullY)
+        assert.are.equal(0.2, linear.ZeroX)
+        assert.are.equal(0.6, linear.ZeroY)
+    end)
+
+    it("refuses a photo whose orientation it cannot map, writing nothing", function()
+        local Handler, stores, calls = setup({ photos = { { id = "1", orientation = "ZZ" } } })
+
+        local message = errorOf(function() Handler.createGradientMask(displayedVertical()) end)
+
+        assert.is_truthy(message:find("cannot map", 1, true))
+        assert.are.equal(0, #stores["1"].writes)
+        assert.are.equal(0, #calls.modules)
     end)
 end)
