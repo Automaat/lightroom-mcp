@@ -105,7 +105,7 @@ local function colorRequest(overrides)
     local args = {
         photo_id = "1",
         type = "color",
-        color = { sample = { x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }, amount = 0.4 },
+        color = { sample = { x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, amount = 0.4 },
     }
     for key, value in pairs(overrides or {}) do args[key] = value end
     return args
@@ -187,7 +187,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal(1, #range.PointModels)
         assert.are.equal("0.462745 0.400000 0.100000 0.200000 0.800000 0", range.PointModels[1])
         assert.are.equal("color", result.type)
-        assert.are.same({ x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }, result.color.sample)
+        assert.are.same({ x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, result.color.sample)
         assert.are.equal(0.4, result.color.amount)
     end)
 
@@ -198,7 +198,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
         local range = stores["1"].writes[1][1].CorrectionMasks[1].CorrectionRangeMask
         assert.are.equal("0.462745 0.400000 0.100000 0.800000 0.800000 0", range.PointModels[1])
-        assert.are.same({ x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }, result.color.sample)
+        assert.are.same({ x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }, result.color.sample)
     end)
 
     it("refuses a photo whose orientation it cannot map, writing nothing", function()
@@ -212,7 +212,7 @@ describe("HandlerRangeMasks.createRangeMask", function()
 
     it("never writes a second PointModels entry even when asked for one", function()
         local Handler, stores = setup()
-        local sample = { x = 0.2, y = 0.8, red = 0.4, green = 0.4, blue = 0.1 }
+        local sample = { x = 0.2, y = 0.8, l = 0.4, a = 0.4, b = 0.1 }
 
         local message = errorOf(function()
             Handler.createRangeMask(colorRequest({ color = { sample = { sample, sample } } }))

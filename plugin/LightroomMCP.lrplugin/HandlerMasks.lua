@@ -3,8 +3,10 @@ local LrDevelopController = import 'LrDevelopController'
 local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
+local GuardedMaskWrite = require 'GuardedMaskWrite'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
+local RangeMaskGeometry = require 'RangeMaskGeometry'
 
 local MaskHandler = {}
 
@@ -36,7 +38,24 @@ local function sortedKeyNames(entry)
     return table.concat(names, ", ")
 end
 
-local function normalizeTool(tool, photoId)
+local function rangesByToolId(catalog, photo)
+    local ranges = {}
+    local ok, entries = LrTasks.pcall(GuardedMaskWrite.readEntries, catalog, photo)
+    if not ok then
+        Log.warn(string.format("Could not read the stored ranges of photo %s: %s",
+            tostring(photo.localIdentifier), tostring(entries)))
+        return ranges
+    end
+    for _, entry in ipairs(entries) do
+        for _, component in ipairs(entry.CorrectionMasks or {}) do
+            local kind, range = RangeMaskGeometry.rangeOf(component)
+            if kind ~= nil then ranges[tostring(component.MaskID)] = range end
+        end
+    end
+    return ranges
+end
+
+local function normalizeTool(tool, photoId, ranges)
     if type(tool) ~= "table" then
         error("Lightroom returned a mask tool that is not a table for photo " .. photoId)
     end
@@ -50,10 +69,11 @@ local function normalizeTool(tool, photoId)
         type = scalarOrNil(tool.Type),
         subtype = scalarOrNil(tool.Subtype),
         inverted = tool.Inverted == true,
+        range = ranges[id],
     }
 end
 
-local function normalizeMask(mask, photoId)
+local function normalizeMask(mask, photoId, ranges)
     if type(mask) ~= "table" then
         error("Lightroom returned a mask that is not a table for photo " .. photoId)
     end
@@ -65,7 +85,7 @@ local function normalizeMask(mask, photoId)
     local tools = {}
     if type(mask.Tools) == "table" then
         for _, tool in ipairs(mask.Tools) do
-            tools[#tools + 1] = normalizeTool(tool, photoId)
+            tools[#tools + 1] = normalizeTool(tool, photoId, ranges)
         end
     end
     return {
@@ -104,12 +124,12 @@ function MaskHandler.listMasks(args)
     end
 
     local raw = DevelopSession.withPhoto("list_masks", catalog, photo, function()
-        return { masks = readAllMasks(photoId) }
-    end).masks
+        return { masks = readAllMasks(photoId), ranges = rangesByToolId(catalog, photo) }
+    end)
 
     local masks = {}
-    for _, mask in ipairs(raw) do
-        masks[#masks + 1] = normalizeMask(mask, photoId)
+    for _, mask in ipairs(raw.masks) do
+        masks[#masks + 1] = normalizeMask(mask, photoId, raw.ranges)
     end
 
     Log.info(string.format("Listed %d masks on photo %s", #masks, photoId))

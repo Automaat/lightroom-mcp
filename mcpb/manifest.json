@@ -156,7 +156,7 @@
     },
     {
       "name": "list_masks",
-      "description": "List the masks on a photo with their ids, names and component tools."
+      "description": "List the masks on a photo with their ids, names, component tools and stored ranges."
     },
     {
       "name": "create_gradient_mask",
@@ -176,7 +176,7 @@
     },
     {
       "name": "create_range_mask",
-      "description": "Create a luminance or color range mask on a photo, as a new mask or a component of one."
+      "description": "Create a luminance, color or depth range mask on a photo, as a new mask or a component of one."
     },
     {
       "name": "delete_masks",

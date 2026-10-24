@@ -177,7 +177,7 @@ describe('validateToolArgs', () => {
 
   describe('create_range_mask', () => {
     const luminance = { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6, falloff: 0.1 } };
-    const sample = { x: 0.2, y: 0.8, red: 0.46, green: 0.46, blue: 0.46 };
+    const sample = { x: 0.2, y: 0.8, l: 0.46, a: 0.5, b: 0.52 };
     const color = { photo_id: '/a.dng', type: 'color', color: { sample, amount: 0.4 } };
     const depth = { photo_id: 7, type: 'depth', depth: { min: 0, max: 0.1, falloff: 0.25 } };
 
@@ -218,6 +218,17 @@ describe('validateToolArgs', () => {
         'unknown property "samples"',
       );
       expect(validateToolArgs('create_range_mask', { ...color, color: { amount: 0.4 } })).toContain('sample');
+    });
+
+    it('takes Lightroom l, a and b, not sRGB', () => {
+      const { l: _l, a: _a, b: _b, ...position } = sample;
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample: position } })).toContain("'l'");
+      expect(
+        validateToolArgs('create_range_mask', { ...color, color: { sample: { ...sample, red: 0.5 } } }),
+      ).toContain('unknown property "red"');
+      expect(validateToolArgs('create_range_mask', { ...color, color: { sample: { ...sample, a: 1.5 } } })).toContain(
+        'color.sample.a',
+      );
     });
 
     it('bounds the numbers', () => {
