@@ -16,6 +16,7 @@ local SELECT_TIMEOUT_SECONDS = 8
 local RESELECT_SECONDS = 1
 local POLL_SECONDS = 0.1
 local COPY_CONFIRM_TIMEOUT_SECONDS = 2
+local COPY_PERSIST_SETTLE_SECONDS = 0.5
 local TWO_DECIMAL_ROUNDING_TOLERANCE = 0.01
 local WHOLE_NUMBER_ROUNDING_TOLERANCE = 0.5
 local COPIED_SLIDERS = {
@@ -272,6 +273,10 @@ local function invertAsCopy(photoId, maskId)
         error(string.format("Lightroom does not copy the local adjustments to an inverted copy and they could"
             .. " not be copied (%s); %s", tostring(copiedCount),
             removed and "the copy was removed" or "remove the copy " .. copyId .. " in Develop"), 0)
+    end
+    if copiedCount > 0 then
+        DevelopSession.flushPendingEdits()
+        LrTasks.sleep(COPY_PERSIST_SETTLE_SECONDS)
     end
     if previousMask and previousMask ~= copyId then
         LrTasks.pcall(LrDevelopController.selectMask, previousMask)

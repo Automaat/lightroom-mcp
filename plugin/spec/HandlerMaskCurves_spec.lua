@@ -32,7 +32,7 @@ local function setup(overrides)
             },
             { id = "2" },
         },
-        modules = { "HandlerMaskCurves", "MaskCurves", "MaskSelection", "DevelopSession" },
+        modules = { "HandlerMaskCurves", "MaskCurves", "MaskSelection", "DevelopSession", "MaskSettle" },
         handler = "HandlerMaskCurves",
     }
     for key, value in pairs(overrides or {}) do opts[key] = value end
@@ -260,6 +260,45 @@ describe("HandlerMaskCurves.setMaskCurves", function()
 
         assert.truthy(err:find("Lightroom did not keep the main curve", 1, true), err)
         assert.are.same(LINE, ctx.valuesOf[ctx.photos[1]]["mask-a"].local_Maincurve)
+    end)
+
+    it("waits until Lightroom has saved the curves to the photo's settings before returning", function()
+        local ctx = setup({ commitLagSleeps = 15 })
+
+        ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
+
+        local saved
+        for _, entry in ipairs(ctx.photos[1]:getDevelopSettings().MaskGroupBasedCorrections) do
+            if entry.CorrectionID == "mask-a" then saved = entry.Stored_local_Maincurve end
+        end
+        assert.are.same({ 0, 9, 255, 255 }, saved)
+    end)
+
+    it("commits the curves to the photo with a forced flush", function()
+        local ctx = setup({ commitLagSleeps = 100000 })
+
+        ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
+
+        assert.are.same({ true }, ctx.calls.stopTracking)
+    end)
+
+    it("fails naming the late save when Lightroom never saves the curves", function()
+        local ctx = setup({ neverCommit = true })
+
+        local err = errorOf(function()
+            ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = { 0, 9, 255, 255 } } })
+        end)
+
+        assert.truthy(err:find("had not saved them to the photo's settings after 8 s", 1, true))
+        assert.truthy(err:find("written: main", 1, true))
+    end)
+
+    it("does not wait for a save when no curve changed", function()
+        local ctx = setup({ neverCommit = true })
+
+        local r = ctx.Handler.setMaskCurves({ photo_id = "1", mask_id = "mask-a", curves = { main = LINE } })
+
+        assert.are.same({}, r.changed)
     end)
 
     it("fails when another mask becomes selected while writing", function()

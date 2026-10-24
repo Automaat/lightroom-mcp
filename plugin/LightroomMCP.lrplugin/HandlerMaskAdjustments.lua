@@ -5,6 +5,7 @@ local LrTasks = import 'LrTasks'
 local DevelopSession = require 'DevelopSession'
 local LocalSliders = require 'LocalSliders'
 local Log = require 'Log'
+local MaskSettle = require 'MaskSettle'
 local PhotoLookup = require 'PhotoLookup'
 
 local MaskAdjustmentsHandler = {}
@@ -207,8 +208,15 @@ local function failedWrite(slider, wanted, written)
         slider.name, formatNumber(wanted), actual and formatNumber(actual) or "nothing", describeWritten(written)), 0)
 end
 
-local function applyToSelectedMask(photoId, maskId, requested)
+local function failedCommit(written)
+    error(string.format("Lightroom changed the sliders but had not saved them to the photo's settings after %d s,"
+        .. " so a mask change made now could be undone by the late save; %s",
+        MaskSettle.COMMIT_TIMEOUT_SECONDS, describeWritten(written)), 0)
+end
+
+local function applyToSelectedMask(catalog, photo, photoId, maskId, requested)
     requireInRange(requested)
+    local storedBefore = MaskSettle.storedAdjustmentFields(catalog, photo, maskId)
 
     local before = {}
     for _, entry in ipairs(requested) do
@@ -235,6 +243,7 @@ local function applyToSelectedMask(photoId, maskId, requested)
     end
 
     if #changed > 0 then
+        DevelopSession.flushPendingEdits()
         LrTasks.sleep(WRITE_PERSIST_SETTLE_SECONDS)
         for _, entry in ipairs(requested) do
             if not near(entry.slider, readValue(entry.slider.name), entry.value) then
@@ -243,6 +252,9 @@ local function applyToSelectedMask(photoId, maskId, requested)
         end
         if readSelectedMask() ~= maskId then
             error("Another mask became selected while writing; " .. describeWritten(written), 0)
+        end
+        if not MaskSettle.waitForCommit(catalog, photo, maskId, storedBefore) then
+            failedCommit(written)
         end
     end
 
@@ -290,7 +302,7 @@ function MaskAdjustmentsHandler.setMaskAdjustments(args)
 
     local outcome = DevelopSession.withPhoto("set_mask_adjustments", catalog, photo, function()
         return withMaskSelected(photoId, maskId, function()
-            return applyToSelectedMask(photoId, maskId, requested)
+            return applyToSelectedMask(catalog, photo, photoId, maskId, requested)
         end)
     end)
 

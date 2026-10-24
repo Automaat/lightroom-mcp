@@ -25,8 +25,29 @@ function M.build(opts)
         valuesOf = valuesOf,
         selectedMaskOf = selectedMaskOf,
         photos = photos,
-        calls = { setValue = {}, selectMask = {}, modules = {}, selections = {}, goToMasking = 0 },
+        calls = { setValue = {}, selectMask = {}, modules = {}, selections = {}, goToMasking = 0, stopTracking = {} },
     }
+
+    local storedOf, pendingCommits = {}, {}
+    ctx.sleepsSeen = 0
+    local function storeFields(photo, maskId)
+        storedOf[photo] = storedOf[photo] or {}
+        local fields = {}
+        for name, value in pairs(valuesOf[photo][maskId]) do fields["Stored_" .. name] = M.deepCopy(value) end
+        storedOf[photo][maskId] = fields
+    end
+    for _, photo in ipairs(photos) do
+        for maskId in pairs(valuesOf[photo]) do storeFields(photo, maskId) end
+        photo.getDevelopSettings = function()
+            local entries = {}
+            for maskId, fields in pairs(storedOf[photo]) do
+                local entry = { What = "Correction", CorrectionID = maskId, CorrectionMasks = {} }
+                for key, value in pairs(fields) do entry[key] = M.deepCopy(value) end
+                entries[#entries + 1] = entry
+            end
+            return { MaskGroupBasedCorrections = entries }
+        end
+    end
 
     function ctx.currentValues()
         local selected = selectedMaskOf[ctx.active]
@@ -67,8 +88,21 @@ function M.build(opts)
             if opts.rejectSet and opts.rejectSet[name] then error(opts.rejectSet[name]) end
             if opts.ignoreSet and opts.ignoreSet[name] then return end
             values[name] = M.deepCopy(value)
+            if not opts.neverCommit then
+                local commit = { photo = ctx.active, maskId = selectedMaskOf[ctx.active], dueAt = ctx.sleepsSeen + (opts.commitLagSleeps or 0) }
+                if commit.dueAt <= ctx.sleepsSeen then
+                    storeFields(commit.photo, commit.maskId)
+                else
+                    pendingCommits[#pendingCommits + 1] = commit
+                end
+            end
         end,
     }
+    controller.stopTracking = function(commit)
+        ctx.calls.stopTracking[#ctx.calls.stopTracking + 1] = commit
+        for _, commit_ in ipairs(pendingCommits) do storeFields(commit_.photo, commit_.maskId) end
+        pendingCommits = {}
+    end
     ctx.controller = controller
     if opts.extend then opts.extend(controller, ctx) end
 
@@ -102,12 +136,23 @@ function M.build(opts)
         LrTasks = {
             pcall = pcall,
             sleep = function()
+                ctx.sleepsSeen = ctx.sleepsSeen + 1
+                local stillPending = {}
+                for _, commit in ipairs(pendingCommits) do
+                    if commit.dueAt <= ctx.sleepsSeen then
+                        storeFields(commit.photo, commit.maskId)
+                    else
+                        stillPending[#stillPending + 1] = commit
+                    end
+                end
+                pendingCommits = stillPending
                 if opts.onSleep then opts.onSleep(ctx) end
             end,
         },
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs(opts.modules) do package.loaded[name] = nil end
+    for _, name in ipairs({ "MaskSettle", "GuardedMaskWrite" }) do package.loaded[name] = nil end
     ctx.Handler = require(opts.handler)
     return ctx
 end
