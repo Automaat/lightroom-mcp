@@ -17,7 +17,9 @@ end
 local function setup(opts)
     local photos, masksOf, outside, failuresLeft, readErrorOf = {}, {}, {}, {}, {}
     for _, spec in ipairs(opts.photos) do
-        local p = helper.fakePhoto({ id = spec.id, path = "/" .. spec.id .. ".jpg" })
+        local p = helper.fakePhoto({
+            id = spec.id, path = "/" .. spec.id .. ".jpg", developSettings = spec.developSettings,
+        })
         photos[#photos + 1] = p
         masksOf[p] = spec.masks
         outside[p] = spec.outsideSource
@@ -143,6 +145,64 @@ describe("HandlerMasks.listMasks", function()
                 tools = { { id = "t-3", type = "rangeMask", subtype = "luminance", inverted = false } },
             },
         }, r.masks)
+    end)
+
+    it("returns the stored range of a range mask tool next to its Lightroom ids", function()
+        local Handler = setup({
+            photos = { {
+                id = "1",
+                masks = { mask("m-1", "Mask 1", false, {
+                    tool("t-color", "rangeMask", "color", false),
+                    tool("t-lum", "rangeMask", "luminance", false),
+                    tool("t-grad", "gradient", nil, false),
+                }) },
+                developSettings = { MaskGroupBasedCorrections = { {
+                    What = "Correction",
+                    CorrectionID = "m-1",
+                    CorrectionMasks = {
+                        {
+                            What = "Mask/RangeMask",
+                            MaskID = "t-color",
+                            CorrectionRangeMask = {
+                                Type = 1,
+                                ColorAmount = 0.494949,
+                                PointModels = { "0.522527 0.888059 0.758296 0.050000 0.188000 0" },
+                            },
+                        },
+                        {
+                            What = "Mask/RangeMask",
+                            MaskID = "t-lum",
+                            CorrectionRangeMask = { Type = 2, LumRange = "0.200000 0.300000 0.600000 0.700000" },
+                        },
+                        { What = "Mask/Gradient", MaskID = "t-grad" },
+                    },
+                } } },
+            } },
+        })
+
+        local tools = Handler.listMasks({ photo_id = "1" }).masks[1].tools
+
+        assert.are.same({
+            sample = { x = 0.05, y = 0.188, l = 0.522527, a = 0.888059, b = 0.758296 },
+            amount = 0.494949,
+        }, tools[1].range)
+        assert.are.same({ min = 0.3, max = 0.6, lower_falloff = 0.1, upper_falloff = 0.1 }, tools[2].range)
+        assert.is_nil(tools[3].range)
+    end)
+
+    it("still lists the masks when the stored ranges cannot be read", function()
+        local Handler = setup({
+            photos = { {
+                id = "1",
+                masks = { mask("m-1", "Mask 1", false, { tool("t-color", "rangeMask", "color", false) }) },
+                developSettings = { MaskGroupBasedCorrections = "not a list" },
+            } },
+        })
+
+        local r = Handler.listMasks({ photo_id = "1" })
+
+        assert.are.equal(1, r.count)
+        assert.is_nil(r.masks[1].tools[1].range)
     end)
 
     it("returns an empty list for a photo without masks", function()

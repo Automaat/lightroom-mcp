@@ -24,7 +24,8 @@ local STORED_DECIMALS = 1e6
 
 local TRAPEZOID_KEYS = { min = true, max = true, falloff = true }
 local COLOR_KEYS = { sample = true, amount = true }
-local SAMPLE_FIELDS = { "x", "y", "red", "green", "blue" }
+local SAMPLE_FIELDS = { "x", "y", "l", "a", "b" }
+local RETIRED_SAMPLE_FIELDS = { red = true, green = true, blue = true }
 local SAMPLE_KEYS = {}
 for _, field in ipairs(SAMPLE_FIELDS) do SAMPLE_KEYS[field] = true end
 
@@ -84,6 +85,14 @@ local function parseTrapezoid(name)
 end
 
 local function parseSample(value)
+    if type(value) == "table" then
+        for field in pairs(RETIRED_SAMPLE_FIELDS) do
+            if value[field] ~= nil then
+                fail("color.sample." .. field .. " is not supported: Lightroom does not store sRGB, it ranks the"
+                    .. " sampled color against the photo's own pixels, so give l, a and b (0 to 1) instead")
+            end
+        end
+    end
     requireObject(value, "color.sample", SAMPLE_KEYS)
     local sample = {}
     for _, field in ipairs(SAMPLE_FIELDS) do
@@ -190,7 +199,7 @@ local function rangeSettingsFor(kind, range)
     settings.ColorAmount = round(range.amount)
     settings.PointModels = {
         string.format("%.6f %.6f %.6f %.6f %.6f %d",
-            sample.red, sample.green, sample.blue, sample.x, sample.y, POINT_MODEL_TRAILER),
+            sample.l, sample.a, sample.b, sample.x, sample.y, POINT_MODEL_TRAILER),
     }
     return settings
 end
@@ -248,7 +257,7 @@ function RangeMaskGeometry.rangeOf(component)
         return kind, {
             sample = {
                 x = round(point[4]), y = round(point[5]),
-                red = round(point[1]), green = round(point[2]), blue = round(point[3]),
+                l = round(point[1]), a = round(point[2]), b = round(point[3]),
             },
             amount = round(range.ColorAmount),
         }

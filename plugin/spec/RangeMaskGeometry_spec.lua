@@ -9,9 +9,32 @@ local function errorOf(fn)
 end
 
 local function sample(overrides)
-    local value = { x = 0.2, y = 0.8, red = 0.462745, green = 0.4, blue = 0.1 }
+    local value = { x = 0.2, y = 0.8, l = 0.462745, a = 0.4, b = 0.1 }
     for key, item in pairs(overrides or {}) do value[key] = item end
     return value
+end
+
+local LIGHTROOM_AUTHORED_SAMPLES = {
+    { photo = "chart one", srgb = { 0, 0, 0 }, stored = "0.000000 0.412168 0.482436 0.050000 0.062000 0" },
+    { photo = "chart one", srgb = { 255, 255, 255 }, stored = "1.000000 0.412168 0.482436 0.950000 0.062000 0" },
+    { photo = "chart one", srgb = { 142, 142, 142 }, stored = "0.526449 0.507206 0.517751 0.550000 0.062000 0" },
+    { photo = "chart one", srgb = { 255, 0, 0 }, stored = "0.522527 0.888059 0.758296 0.050000 0.188000 0" },
+    { photo = "chart one", srgb = { 0, 255, 0 }, stored = "0.877652 0.042200 0.948882 0.150000 0.188000 0" },
+    { photo = "chart one", srgb = { 0, 0, 255 }, stored = "0.203667 0.847788 0.000076 0.250000 0.188000 0" },
+    { photo = "chart one", srgb = { 0, 255, 255 }, stored = "0.937129 0.000085 0.412180 0.350000 0.188000 0" },
+    { photo = "chart one", srgb = { 255, 0, 255 }, stored = "0.705572 1.000000 0.260581 0.450000 0.188000 0" },
+    { photo = "chart one", srgb = { 255, 255, 0 }, stored = "0.999979 0.382554 1.000000 0.550000 0.188000 0" },
+    { photo = "chart one", srgb = { 128, 80, 40 }, stored = "0.295014 0.570518 0.616284 0.950000 0.188000 0" },
+    { photo = "chart two", srgb = { 0, 0, 0 }, stored = "0.000000 0.487187 0.520188 0.016250 0.062000 0" },
+    { photo = "chart two", srgb = { 132, 132, 132 }, stored = "0.715088 0.499362 0.525540 0.516250 0.062000 0" },
+    { photo = "chart two", srgb = { 255, 255, 255 }, stored = "1.000000 0.487187 0.520188 0.985000 0.062000 0" },
+    { photo = "chart two", srgb = { 255, 0, 0 }, stored = "0.722002 0.866458 0.751496 0.985000 0.188000 0" },
+}
+
+local function sampleOf(stored)
+    local values = {}
+    for token in stored:gmatch("%S+") do values[#values + 1] = tonumber(token) end
+    return { l = values[1], a = values[2], b = values[3], x = values[4], y = values[5] }
 end
 
 local function luminanceArgs(overrides)
@@ -165,13 +188,22 @@ describe("RangeMaskGeometry", function()
 
             assert.is_truthy(parse({ sample = sample({ x = 1.2 }) })
                 :find("color.sample.x must be between 0 and 1", 1, true))
-            assert.is_truthy(parse({ sample = sample({ red = -1 }) }):find("color.sample.red", 1, true))
-            assert.is_truthy(parse({ sample = { x = 0.1, y = 0.1, red = 0.1, green = 0.1 } })
-                :find("color.sample.blue is required", 1, true))
+            assert.is_truthy(parse({ sample = sample({ l = -1 }) }):find("color.sample.l must be between 0 and 1", 1, true))
+            assert.is_truthy(parse({ sample = { x = 0.1, y = 0.1, l = 0.1, a = 0.1 } })
+                :find("color.sample.b is required", 1, true))
             assert.is_truthy(parse({ sample = sample({ extra = 1 }) }):find("unknown property extra", 1, true))
             assert.is_truthy(parse({ sample = sample(), amount = 0 }):find("color.amount", 1, true))
             assert.is_truthy(parse({ sample = sample(), amount = 1.5 }):find("color.amount", 1, true))
             assert.is_truthy(parse({ amount = 0.4 }):find("color.sample is required", 1, true))
+        end)
+
+        it("rejects the sRGB fields, which Lightroom does not store", function()
+            for _, field in ipairs({ "red", "green", "blue" }) do
+                local message = parseError(colorArgs({ color = { sample = sample({ [field] = 0.5 }) } }))
+
+                assert.is_truthy(message:find("color.sample." .. field .. " is not supported", 1, true))
+                assert.is_truthy(message:find("give l, a and b", 1, true))
+            end
         end)
 
         it("rejects more than one sample point", function()
@@ -263,6 +295,15 @@ describe("RangeMaskGeometry", function()
             assert.is_nil(range.LumRange)
         end)
 
+        it("writes the stored triple of every Lightroom-authored sample unchanged", function()
+            for _, authored in ipairs(LIGHTROOM_AUTHORED_SAMPLES) do
+                local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
+                    colorArgs({ color = { sample = sampleOf(authored.stored), amount = 0.5 } })))
+
+                assert.are.equal(authored.stored, component.CorrectionRangeMask.PointModels[1])
+            end
+        end)
+
         it("maps invert and subtract onto the component", function()
             local component = RangeMaskGeometry.newComponent(RangeMaskGeometry.parseCreate(
                 luminanceArgs({ mask_id = "C1", mode = "subtract", invert = true })))
@@ -291,7 +332,39 @@ describe("RangeMaskGeometry", function()
             })
 
             assert.are.equal("color", kind)
-            assert.are.same({ sample = { x = 0.4, y = 0.5, red = 0.1, green = 0.2, blue = 0.3 }, amount = 0.4 }, range)
+            assert.are.same({ sample = { x = 0.4, y = 0.5, l = 0.1, a = 0.2, b = 0.3 }, amount = 0.4 }, range)
+        end)
+
+        it("reads every Lightroom-authored sample back as the l, a and b it stored", function()
+            for _, authored in ipairs(LIGHTROOM_AUTHORED_SAMPLES) do
+                local kind, range = RangeMaskGeometry.rangeOf({
+                    What = "Mask/RangeMask",
+                    CorrectionRangeMask = { Type = 1, ColorAmount = 0.494949, PointModels = { authored.stored } },
+                })
+                local expected = sampleOf(authored.stored)
+
+                assert.are.equal("color", kind)
+                for field, value in pairs(expected) do
+                    assert.is_true(math.abs(range.sample[field] - value) < 1e-6)
+                end
+            end
+        end)
+
+        it("shows the stored triple is not a function of sRGB: one color stores different triples per photo", function()
+            local function storedFor(photo, srgb)
+                for _, authored in ipairs(LIGHTROOM_AUTHORED_SAMPLES) do
+                    if authored.photo == photo and authored.srgb[1] == srgb[1] and authored.srgb[2] == srgb[2]
+                        and authored.srgb[3] == srgb[3] then
+                        return sampleOf(authored.stored)
+                    end
+                end
+            end
+
+            for _, srgb in ipairs({ { 0, 0, 0 }, { 255, 255, 255 }, { 255, 0, 0 } }) do
+                local one, two = storedFor("chart one", srgb), storedFor("chart two", srgb)
+
+                assert.is_true(math.abs(one.a - two.a) > 0.01 or math.abs(one.l - two.l) > 0.01)
+            end
         end)
 
         it("reads a depth trapezoid back from the stored depth type", function()
