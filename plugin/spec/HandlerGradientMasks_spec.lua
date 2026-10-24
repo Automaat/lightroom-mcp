@@ -27,8 +27,8 @@ local function setup(opts)
         photos[#photos + 1] = photo
     end
     local active = photos[1]
-    local module = "library"
-    local calls = { modules = {}, getAllMasks = 0 }
+    local module = opts.startModule or "library"
+    local calls = { modules = {}, getAllMasks = 0, stopTracking = {} }
     local catalog = helper.fakeCatalog({ photos = photos })
     for _, spec in ipairs(opts.photos or { { id = "1" } }) do
         Store.trackGates(stores[spec.id], catalog)
@@ -51,6 +51,7 @@ local function setup(opts)
         end,
         selectMask = function() end,
         selectMaskTool = function() end,
+        stopTracking = function(commit) calls.stopTracking[#calls.stopTracking + 1] = commit end,
     }
     if opts.withoutMaskApi then controller = {} end
 
@@ -103,6 +104,22 @@ local function existingGradients()
 end
 
 describe("HandlerGradientMasks.createGradientMask", function()
+    it("commits an edit pending on the photo open in Develop before it writes the mask", function()
+        local Handler, _, calls = setup({ startModule = "develop" })
+
+        Handler.createGradientMask(linearRequest())
+
+        assert.are.same({ true }, calls.stopTracking)
+    end)
+
+    it("leaves Lightroom's edit tracking alone when it has to open the photo itself", function()
+        local Handler, _, calls = setup()
+
+        Handler.createGradientMask(linearRequest())
+
+        assert.are.same({}, calls.stopTracking)
+    end)
+
     it("places a linear gradient as a new mask and returns its ids", function()
         local Handler, stores = setup()
 

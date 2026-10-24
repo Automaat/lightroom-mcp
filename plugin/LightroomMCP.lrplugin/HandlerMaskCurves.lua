@@ -4,6 +4,7 @@ local LrTasks = import 'LrTasks'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 local MaskCurves = require 'MaskCurves'
+local MaskSettle = require 'MaskSettle'
 local MaskSelection = require 'MaskSelection'
 
 local MaskCurvesHandler = {}
@@ -66,7 +67,18 @@ local function failedWrite(channel, written)
     error(string.format("Lightroom did not keep the %s curve; %s", channel.name, describeRestored(written)), 0)
 end
 
-local function applyToSelectedMask(photoId, maskId, requested)
+local function failedCommit(written)
+    local names = {}
+    for _, entry in ipairs(written) do
+        names[#names + 1] = entry.channel.name
+    end
+    error(string.format("Lightroom changed the curves but had not saved them to the photo's settings after %d s,"
+        .. " so a mask change made now could be undone by the late save; written: %s",
+        MaskSettle.COMMIT_TIMEOUT_SECONDS, table.concat(names, ", ")), 0)
+end
+
+local function applyToSelectedMask(catalog, photo, photoId, maskId, requested)
+    local storedBefore = MaskSettle.storedAdjustmentFields(catalog, photo, maskId)
     local before, unreadable = {}, {}
     for _, entry in ipairs(requested) do
         local current = readCurve(entry.channel)
@@ -94,6 +106,7 @@ local function applyToSelectedMask(photoId, maskId, requested)
     end
 
     if #changed > 0 then
+        DevelopSession.flushPendingEdits()
         LrTasks.sleep(WRITE_PERSIST_SETTLE_SECONDS)
         for _, entry in ipairs(requested) do
             if not MaskCurves.same(readCurve(entry.channel), entry.points) then
@@ -103,6 +116,9 @@ local function applyToSelectedMask(photoId, maskId, requested)
         if MaskSelection.readSelectedMask() ~= maskId then
             restoreCurves(written)
             error("Another mask became selected while writing; " .. describeRestored(written), 0)
+        end
+        if not MaskSettle.waitForCommit(catalog, photo, maskId, storedBefore) then
+            failedCommit(written)
         end
     end
 
@@ -140,7 +156,7 @@ function MaskCurvesHandler.setMaskCurves(args)
 
     local outcome = DevelopSession.withPhoto("set_mask_curves", catalog, photo, function()
         return MaskSelection.withMaskSelected(photoId, maskId, function()
-            return applyToSelectedMask(photoId, maskId, requested)
+            return applyToSelectedMask(catalog, photo, photoId, maskId, requested)
         end)
     end)
 

@@ -37,7 +37,7 @@ local function setup(opts)
     end
     local active = photos[1]
     local module = "library"
-    local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {}, deleted = {}, setValue = {}, selectedMasks = {} }
+    local calls = { modules = {}, selections = {}, goToMasking = 0, invert = {}, duplicate = {}, deleted = {}, setValue = {}, selectedMasks = {}, stopTracking = {} }
     local copiesMade = 0
     local selected = opts.startSelected
     local values = {}
@@ -68,6 +68,7 @@ local function setup(opts)
             values[selected] = values[selected] or {}
             values[selected][param] = opts.copyIgnoresValues and 0 or value
         end,
+        stopTracking = function(commit) calls.stopTracking[#calls.stopTracking + 1] = commit end,
         deleteMask = function(id)
             calls.deleted[#calls.deleted + 1] = id
             for index = #currentMasks(), 1, -1 do
@@ -285,6 +286,25 @@ describe("HandlerMaskInvert.invertMask as a copy", function()
             { mask = "copy-1", param = "local_Exposure", value = 1.25 },
             { mask = "copy-1", param = "local_Contrast", value = 10 },
         }, calls.setValue)
+    end)
+
+    it("commits the copied adjustments to the photo before returning", function()
+        local Handler, calls = setup({
+            photos = { { id = "1", masks = subjectMasks() } },
+            values = { ["m-1"] = { local_Exposure = 1.25 } },
+        })
+
+        Handler.invertMask(args({ mode = "copy" }))
+
+        assert.are.same({ true }, calls.stopTracking)
+    end)
+
+    it("does not force a commit when nothing was copied", function()
+        local Handler, calls = setup({ photos = { { id = "1", masks = subjectMasks() } } })
+
+        Handler.invertMask(args({ mode = "copy" }))
+
+        assert.are.same({}, calls.stopTracking)
     end)
 
     it("writes nothing to the copy when the original has no adjustments", function()

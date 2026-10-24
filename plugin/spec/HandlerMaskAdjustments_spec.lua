@@ -15,7 +15,27 @@ local function setup(opts)
         valuesOf[p] = spec.masks or {}
     end
     local active = photos[1]
-    local module = "library"
+    local module = opts.startModule or "library"
+    local storedOf, pendingCommits, sleepsSeen = {}, {}, 0
+    local function storeFields(photo, maskId)
+        storedOf[photo] = storedOf[photo] or {}
+        local fields = {}
+        for name, value in pairs(valuesOf[photo][maskId]) do fields["Local" .. name] = value end
+        storedOf[photo][maskId] = fields
+    end
+    for _, photo in ipairs(photos) do
+        for maskId in pairs(valuesOf[photo]) do storeFields(photo, maskId) end
+        photo.getDevelopSettings = function()
+            local entries = {}
+            for maskId, fields in pairs(storedOf[photo] or {}) do
+                local entry = { What = "Correction", CorrectionID = maskId }
+                for key, value in pairs(fields) do entry[key] = value end
+                entries[#entries + 1] = entry
+            end
+            if opts.maskMissingFromStore then entries = {} end
+            return { MaskGroupBasedCorrections = entries }
+        end
+    end
     local selectedMaskOf = {}
     for index, spec in ipairs(opts.photos) do
         selectedMaskOf[photos[index]] = spec.selectedMask
@@ -26,6 +46,7 @@ local function setup(opts)
         modules = {},
         selections = {},
         goToMasking = 0,
+        stopTracking = {},
     }
     local controller
 
@@ -76,6 +97,14 @@ local function setup(opts)
             if opts.ignoreSet and opts.ignoreSet[name] then return end
             if opts.roundSet then value = math.floor(value + 0.5) end
             values[name] = value
+            local commit = { photo = active, maskId = selectedMaskOf[active], dueAt = sleepsSeen + (opts.commitLagSleeps or 0) }
+            if not opts.neverCommit then
+                if commit.dueAt <= sleepsSeen then
+                    storeFields(commit.photo, commit.maskId)
+                else
+                    pendingCommits[#pendingCommits + 1] = commit
+                end
+            end
             if opts.revertAfterSettle and opts.revertAfterSettle[name] then
                 opts.revertQueue = opts.revertQueue or {}
                 opts.revertQueue[#opts.revertQueue + 1] = function() values[name] = opts.revertAfterSettle[name] end
@@ -83,6 +112,12 @@ local function setup(opts)
             if opts.stealSelectionOnSet then selectedMaskOf[active] = opts.stealSelectionOnSet end
         end,
     }
+    controller.stopTracking = function(commit)
+        calls.stopTracking[#calls.stopTracking + 1] = commit
+        for _, pending in ipairs(pendingCommits) do storeFields(pending.photo, pending.maskId) end
+        pendingCommits = {}
+    end
+    if opts.withoutStopTracking then controller.stopTracking = nil end
     if opts.withoutSetValue then controller.setValue = nil end
     if opts.withoutMaskApi then
         controller.getAllMasks, controller.selectMask, controller.selectMaskTool = nil, nil, nil
@@ -114,13 +149,23 @@ local function setup(opts)
         LrTasks = {
             pcall = pcall,
             sleep = function()
+                sleepsSeen = sleepsSeen + 1
+                local stillPending = {}
+                for _, commit in ipairs(pendingCommits) do
+                    if commit.dueAt <= sleepsSeen then
+                        storeFields(commit.photo, commit.maskId)
+                    else
+                        stillPending[#stillPending + 1] = commit
+                    end
+                end
+                pendingCommits = stillPending
                 for _, revert in ipairs(opts.revertQueue or {}) do revert() end
                 opts.revertQueue = nil
             end,
         },
         LrLogger = helper.defaultLrLogger(),
     })
-    for _, name in ipairs({ "HandlerMaskAdjustments", "DevelopSession", "LocalSliders" }) do
+    for _, name in ipairs({ "HandlerMaskAdjustments", "DevelopSession", "LocalSliders", "MaskSettle", "GuardedMaskWrite" }) do
         package.loaded[name] = nil
     end
     local Handler = require 'HandlerMaskAdjustments'
@@ -426,6 +471,123 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
         end)
 
         assert.truthy(err:find("Lightroom did not keep local_Contrast 40 (reads 10)", 1, true))
+    end)
+
+    it("waits until Lightroom has saved the sliders to the photo's settings before returning", function()
+        local Handler, _, _, _, photos = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            commitLagSleeps = 12,
+        })
+
+        local r = Handler.setMaskAdjustments({
+            photo_id = "1",
+            mask_id = "mask-a",
+            adjustments = { local_Exposure = 2, local_Contrast = 40 },
+        })
+
+        assert.is_true(r.success)
+        local stored = photos[1]:getDevelopSettings().MaskGroupBasedCorrections
+        local savedExposure
+        for _, entry in ipairs(stored) do
+            if entry.CorrectionID == "mask-a" then savedExposure = entry["Locallocal_Exposure"] end
+        end
+        assert.are.equal(2, savedExposure)
+    end)
+
+    it("commits the sliders to the photo with a forced flush instead of waiting for Lightroom's own timer", function()
+        local Handler, calls, _, _, photos = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            commitLagSleeps = 100000,
+        })
+
+        local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+
+        assert.is_true(r.success)
+        assert.are.same({ true }, calls.stopTracking)
+        local savedExposure
+        for _, entry in ipairs(photos[1]:getDevelopSettings().MaskGroupBasedCorrections) do
+            if entry.CorrectionID == "mask-a" then savedExposure = entry["Locallocal_Exposure"] end
+        end
+        assert.are.equal(2, savedExposure)
+    end)
+
+    it("works on a Lightroom without stopTracking by waiting for the save", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            commitLagSleeps = 12,
+            withoutStopTracking = true,
+        })
+
+        local r = Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+
+        assert.is_true(r.success)
+    end)
+
+    it("flushes edits pending on a photo already open in Develop before touching it", function()
+        local Handler, calls = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            startModule = "develop",
+        })
+
+        Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 0.5 } })
+
+        assert.are.same({ true }, calls.stopTracking)
+    end)
+
+    it("does not flush when it has to open the photo, which Lightroom saves on switching", function()
+        local Handler, calls = setup({
+            photos = {
+                { id = "1" },
+                { id = "2", masks = twoMasks(), selectedMask = "mask-b" },
+            },
+            startModule = "develop",
+        })
+
+        Handler.setMaskAdjustments({ photo_id = "2", mask_id = "mask-a", adjustments = { local_Exposure = 0.5 } })
+
+        assert.are.same({}, calls.stopTracking)
+    end)
+
+    it("does not wait for a save when no slider changed", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            neverCommit = true,
+        })
+
+        local r = Handler.setMaskAdjustments({
+            photo_id = "1",
+            mask_id = "mask-a",
+            adjustments = { local_Exposure = 0.5 },
+        })
+
+        assert.are.same({}, r.changed)
+    end)
+
+    it("fails naming the late save when Lightroom never saves the sliders", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            neverCommit = true,
+        })
+
+        local err = errorOf(function()
+            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+        end)
+
+        assert.truthy(err:find("had not saved them to the photo's settings after 8 s", 1, true))
+        assert.truthy(err:find("already written: local_Exposure", 1, true))
+    end)
+
+    it("fails when the mask is absent from the photo's saved settings", function()
+        local Handler = setup({
+            photos = { { id = "1", masks = twoMasks(), selectedMask = "mask-b" } },
+            maskMissingFromStore = true,
+        })
+
+        local err = errorOf(function()
+            Handler.setMaskAdjustments({ photo_id = "1", mask_id = "mask-a", adjustments = { local_Exposure = 2 } })
+        end)
+
+        assert.truthy(err:find("had not saved them", 1, true))
     end)
 
     it("surfaces the error when Lightroom rejects a write", function()
