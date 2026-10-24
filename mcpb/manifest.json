@@ -151,6 +151,18 @@
       "description": "Move or reshape an existing linear or radial gradient mask by tool id."
     },
     {
+      "name": "create_brush_mask",
+      "description": "Paint a brush mask on a photo from strokes of normalized image coordinates (add strokes only)."
+    },
+    {
+      "name": "add_brush_strokes",
+      "description": "Paint more strokes into an existing brush mask by tool id (add strokes only)."
+    },
+    {
+      "name": "create_range_mask",
+      "description": "Create a luminance or color range mask on a photo, as a new mask or a component of one."
+    },
+    {
       "name": "delete_masks",
       "description": "Delete masks, or component tools of masks, from a photo by id, or all masks on it."
     },
@@ -177,6 +189,34 @@
     {
       "name": "create_mask_batch",
       "description": "Add the same Subject, Sky or Background mask to many photos, each recomputed for its own photo."
+    },
+    {
+      "name": "create_people_mask",
+      "description": "Create People masks for chosen parts such as skin, hair, eyes, lips or clothes, covering all people."
+    },
+    {
+      "name": "create_landscape_mask",
+      "description": "Create Landscape masks for chosen categories such as sky, water, vegetation or mountains."
+    },
+    {
+      "name": "set_mask_curves",
+      "description": "Set the local tone curve of a mask on a photo, per channel."
+    },
+    {
+      "name": "get_mask_curves",
+      "description": "Read the local tone curve of a mask on a photo."
+    },
+    {
+      "name": "edit_mask_point_colors",
+      "description": "Add, update, delete or clear the local Point Color swatches of a mask."
+    },
+    {
+      "name": "get_mask_point_colors",
+      "description": "Read the local Point Color swatches of a mask on a photo."
+    },
+    {
+      "name": "combine_mask",
+      "description": "Add, subtract or intersect a Subject, Sky or Background component on an existing mask."
     }
   ],
   "user_config": {

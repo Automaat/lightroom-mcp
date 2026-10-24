@@ -53,6 +53,7 @@ const ACTION_TIMEOUTS_MS: Record<string, number> = {
   apply_denoise: LONG_RUNNING_TIMEOUT_MS,
   create_mask: LONG_RUNNING_TIMEOUT_MS,
   create_mask_batch: LONG_RUNNING_TIMEOUT_MS,
+  combine_mask: LONG_RUNNING_TIMEOUT_MS,
   ping: PING_TIMEOUT_MS,
 };
 const SHUTDOWN_GRACE_MS = Math.max(REQUEST_TIMEOUT_MS, ...Object.values(ACTION_TIMEOUTS_MS)) + 5_000;

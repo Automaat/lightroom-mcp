@@ -35,6 +35,10 @@ local ENTRY_OPTIONAL_FIELDS = {
     CorrectionName = "string",
     CorrectionActive = "boolean",
     CorrectionAmount = "number",
+    MainCurve = "table",
+    RedCurve = "table",
+    GreenCurve = "table",
+    BlueCurve = "table",
 }
 
 local COMPONENT_OPTIONAL_FIELDS = {
@@ -253,20 +257,50 @@ local function sameNumberList(expected, actual)
     return true
 end
 
+local FLOW_TOKEN = "f"
+local POSITION_TOKEN = "d"
+
 local function dabParts(dab)
     local tag, rest = tostring(dab):match("^(%a+)%s*(.*)$")
     return tag, numbersIn(rest or "")
 end
 
+local function splitFlowTokens(dabs)
+    local positions, flows = {}, {}
+    for _, dab in ipairs(dabs) do
+        local tag, numbers = dabParts(dab)
+        if tag == FLOW_TOKEN then
+            flows[#flows + 1] = numbers[1]
+        else
+            positions[#positions + 1] = dab
+        end
+    end
+    return positions, flows
+end
+
+local function sameFlowTokens(expected, actual)
+    if #expected == 0 or #actual == 0 then return true end
+    if #expected ~= #actual then return false end
+    for index, value in ipairs(expected) do
+        if value == nil or actual[index] == nil or not closeEnough(value, actual[index]) then return false end
+    end
+    return true
+end
+
 local function compareDabs(expected, actual, where, problems)
-    if #expected ~= #actual then
-        addProblem(problems, where .. ": dab count changed from " .. #expected .. " to " .. #actual)
+    local expectedPositions, expectedFlows = splitFlowTokens(expected)
+    local actualPositions, actualFlows = splitFlowTokens(actual)
+    if #expectedPositions ~= #actualPositions then
+        addProblem(problems, where .. ": dab count changed from " .. #expectedPositions .. " to " .. #actualPositions)
         return
     end
-    for index, dab in ipairs(expected) do
+    if not sameFlowTokens(expectedFlows, actualFlows) then
+        addProblem(problems, where .. ": flow token changed")
+    end
+    for index, dab in ipairs(expectedPositions) do
         local expectedTag, expectedNumbers = dabParts(dab)
-        local actualTag, actualNumbers = dabParts(actual[index])
-        local compared = expectedTag == "d" and 2 or 1
+        local actualTag, actualNumbers = dabParts(actualPositions[index])
+        local compared = expectedTag == POSITION_TOKEN and 2 or 1
         local same = expectedTag == actualTag and #actualNumbers >= compared
         for position = 1, compared do
             same = same and expectedNumbers[position] ~= nil and actualNumbers[position] ~= nil
