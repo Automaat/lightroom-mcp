@@ -326,6 +326,43 @@ describe('validateToolArgs', () => {
     })).toContain('unknown property "vibrance"');
   });
 
+  it('validates create_mask_batch photo ids, type and adjustment ranges', () => {
+    expect(validateToolArgs('create_mask_batch', { photo_ids: [914, '/a.dng'], type: 'sky' })).toBeNull();
+    expect(validateToolArgs('create_mask_batch', {
+      photo_ids: [914],
+      type: 'subject',
+      adjustments: { exposure: 0.7, noise: -100 },
+    })).toBeNull();
+    expect(validateToolArgs('create_mask_batch', { type: 'sky' })).toContain('photo_ids');
+    expect(validateToolArgs('create_mask_batch', { photo_ids: [914] })).toContain('type');
+    expect(validateToolArgs('create_mask_batch', { photo_ids: [], type: 'sky' })).toContain('photo_ids');
+    expect(validateToolArgs('create_mask_batch', {
+      photo_ids: Array.from({ length: 201 }, (_, index) => index + 1),
+      type: 'sky',
+    })).toContain('photo_ids');
+    expect(validateToolArgs('create_mask_batch', {
+      photo_ids: Array.from({ length: 200 }, (_, index) => index + 1),
+      type: 'sky',
+    })).toBeNull();
+    expect(validateToolArgs('create_mask_batch', { photo_ids: [914], type: 'people' })).toContain('type');
+    expect(validateToolArgs('create_mask_batch', { photo_ids: 914, type: 'sky' })).toContain('photo_ids');
+    expect(validateToolArgs('create_mask_batch', {
+      photo_ids: [914],
+      type: 'sky',
+      adjustments: { exposure: 4.1 },
+    })).toContain('adjustments.exposure');
+    expect(validateToolArgs('create_mask_batch', {
+      photo_ids: [914],
+      type: 'sky',
+      adjustments: { vibrance: 1 },
+    })).toContain('unknown property "vibrance"');
+    expect(validateToolArgs('create_mask_batch', {
+      photo_id: 914,
+      photo_ids: [914],
+      type: 'sky',
+    })).toContain('unknown property "photo_id"');
+  });
+
   it('validates set_mask_curves channels and point arrays', () => {
     const base = { photo_id: 914, mask_id: 'm-1' };
     expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0, 64, 48, 255, 255] } })).toBeNull();

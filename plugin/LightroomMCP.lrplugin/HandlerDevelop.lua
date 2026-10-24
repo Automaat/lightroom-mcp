@@ -5,6 +5,7 @@ local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 
+local AIMaskData = require 'AIMaskData'
 local PhotoLookup = require 'PhotoLookup'
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
@@ -660,67 +661,10 @@ function DevelopHandler.exportDevelopPreset(args)
     return result
 end
 
-local AI_MASK_KIND = "Mask/Image"
 local AI_UPDATE_UNSUPPORTED_NOTE = "; AI mask update needs Lightroom Classic 13.3 or later"
 
-local function containsAIMasks(settings)
-    local groups = type(settings) == "table" and settings.MaskGroupBasedCorrections
-    if type(groups) ~= "table" then
-        return false
-    end
-    for _, correction in ipairs(groups) do
-        local masks = type(correction) == "table" and correction.CorrectionMasks
-        if type(masks) == "table" then
-            for _, mask in ipairs(masks) do
-                if type(mask) == "table" and mask.What == AI_MASK_KIND then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
-local AI_MASK_COMPUTED_KEYS = { "MaskDigest", "InputDigest", "LocalInputDigest" }
-
-local function shallowCopy(source)
-    local copy = {}
-    for key, value in pairs(source) do
-        copy[key] = value
-    end
-    return copy
-end
-
-local function withoutComputedAIMaskData(settings)
-    if not containsAIMasks(settings) then
-        return settings
-    end
-    local stripped = shallowCopy(settings)
-    stripped.MaskGroupBasedCorrections = {}
-    for groupIndex, correction in ipairs(settings.MaskGroupBasedCorrections) do
-        local strippedCorrection = correction
-        if type(correction) == "table" then
-            strippedCorrection = shallowCopy(correction)
-        end
-        if type(correction) == "table" and type(correction.CorrectionMasks) == "table" then
-            strippedCorrection.CorrectionMasks = {}
-            for maskIndex, mask in ipairs(correction.CorrectionMasks) do
-                local strippedMask = mask
-                if type(mask) == "table" then
-                    strippedMask = shallowCopy(mask)
-                    if mask.What == AI_MASK_KIND then
-                        for _, key in ipairs(AI_MASK_COMPUTED_KEYS) do
-                            strippedMask[key] = nil
-                        end
-                    end
-                end
-                strippedCorrection.CorrectionMasks[maskIndex] = strippedMask
-            end
-        end
-        stripped.MaskGroupBasedCorrections[groupIndex] = strippedCorrection
-    end
-    return stripped
-end
+local containsAIMasks = AIMaskData.containsAIMasks
+local withoutComputedAIMaskData = AIMaskData.withoutComputedData
 
 local function presetContainsAIMasks(preset)
     return containsAIMasks(callPresetMethod(preset, "getSetting"))

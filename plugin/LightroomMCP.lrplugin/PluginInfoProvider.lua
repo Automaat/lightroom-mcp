@@ -30,6 +30,7 @@ local HandlerMaskInvert = require 'HandlerMaskInvert'
 local HandlerMaskCurves = require 'HandlerMaskCurves'
 local HandlerMaskPointColors = require 'HandlerMaskPointColors'
 local HandlerMaskCreate = require 'HandlerMaskCreate'
+local HandlerMaskBatch = require 'HandlerMaskBatch'
 local HandlerMaskCombine = require 'HandlerMaskCombine'
 local Log = require 'Log'
 
@@ -246,6 +247,7 @@ local DISPATCH = {
     edit_mask_point_colors = HandlerMaskPointColors.editMaskPointColors,
     get_mask_point_colors = HandlerMaskPointColors.getMaskPointColors,
     create_mask = HandlerMaskCreate.createMask,
+    create_mask_batch = HandlerMaskBatch.createMaskBatch,
     combine_mask = HandlerMaskCombine.combineMask,
 }
 

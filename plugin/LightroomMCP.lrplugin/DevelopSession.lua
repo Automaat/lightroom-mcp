@@ -123,17 +123,21 @@ function DevelopSession.run(toolName, catalog, restore, body)
     return result
 end
 
+function DevelopSession.openPhoto(catalog, photo, state)
+    DevelopSession.openDevelop()
+    if not DevelopSession.activate(catalog, photo, state) then
+        error("Could not open photo " .. tostring(photo.localIdentifier) .. " in Develop")
+    end
+    LrTasks.sleep(PHOTO_SETTLE_SECONDS)
+    if catalog:getTargetPhoto() ~= photo then
+        error("Another photo became active in Develop while opening photo "
+            .. tostring(photo.localIdentifier))
+    end
+end
+
 function DevelopSession.withPhoto(toolName, catalog, photo, fn)
     return DevelopSession.run(toolName, catalog, true, function(state)
-        DevelopSession.openDevelop()
-        if not DevelopSession.activate(catalog, photo, state) then
-            error("Could not open photo " .. tostring(photo.localIdentifier) .. " in Develop")
-        end
-        LrTasks.sleep(PHOTO_SETTLE_SECONDS)
-        if catalog:getTargetPhoto() ~= photo then
-            error("Another photo became active in Develop while opening photo "
-                .. tostring(photo.localIdentifier))
-        end
+        DevelopSession.openPhoto(catalog, photo, state)
         return fn()
     end)
 end

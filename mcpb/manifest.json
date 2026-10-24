@@ -187,6 +187,10 @@
       "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
     },
     {
+      "name": "create_mask_batch",
+      "description": "Add the same Subject, Sky or Background mask to many photos, each recomputed for its own photo."
+    },
+    {
       "name": "create_people_mask",
       "description": "Create People masks for chosen parts such as skin, hair, eyes, lips or clothes, covering all people."
     },
