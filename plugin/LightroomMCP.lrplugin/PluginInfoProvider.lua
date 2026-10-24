@@ -27,6 +27,7 @@ local HandlerMaskDelete = require 'HandlerMaskDelete'
 local HandlerMaskAdjustments = require 'HandlerMaskAdjustments'
 local HandlerMaskInvert = require 'HandlerMaskInvert'
 local HandlerMaskCreate = require 'HandlerMaskCreate'
+local HandlerMaskCombine = require 'HandlerMaskCombine'
 local Log = require 'Log'
 
 local DEFAULT_REQUEST_PORT = 58763
@@ -236,6 +237,7 @@ local DISPATCH = {
     get_mask_adjustments = HandlerMaskAdjustments.getMaskAdjustments,
     invert_mask = HandlerMaskInvert.invertMask,
     create_mask = HandlerMaskCreate.createMask,
+    combine_mask = HandlerMaskCombine.combineMask,
 }
 
 -- Generous wait so the very first response after handshake doesn't get

@@ -292,6 +292,20 @@ describe('validateToolArgs', () => {
     })).toContain('unknown property "vibrance"');
   });
 
+  it('validates combine_mask operation and type', () => {
+    const valid = { photo_id: 914, mask_id: 'abc', operation: 'subtract', type: 'sky' };
+    expect(validateToolArgs('combine_mask', valid)).toBeNull();
+    expect(validateToolArgs('combine_mask', { ...valid, photo_id: '/a.dng', operation: 'add', type: 'background' })).toBeNull();
+    expect(validateToolArgs('combine_mask', { ...valid, operation: 'intersect', type: 'subject' })).toBeNull();
+    expect(validateToolArgs('combine_mask', { ...valid, operation: 'invert' })).toContain('operation');
+    expect(validateToolArgs('combine_mask', { ...valid, type: 'people' })).toContain('type');
+    expect(validateToolArgs('combine_mask', { ...valid, mask_id: '' })).toContain('mask_id');
+    expect(validateToolArgs('combine_mask', { photo_id: 914, operation: 'add', type: 'sky' })).toContain('mask_id');
+    expect(validateToolArgs('combine_mask', { photo_id: 914, mask_id: 'abc', type: 'sky' })).toContain('operation');
+    expect(validateToolArgs('combine_mask', { photo_id: 914, mask_id: 'abc', operation: 'add' })).toContain('type');
+    expect(validateToolArgs('combine_mask', { ...valid, adjustments: {} })).toContain('unknown property "adjustments"');
+  });
+
   it('rejects a photo id that is neither a string nor a number', () => {
     const msg = validateToolArgs('get_photo_metadata', { photo_id: { nested: true } });
 
