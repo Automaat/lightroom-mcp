@@ -196,7 +196,7 @@ If you'd rather drop the plugin in by hand:
 | `get_mask_adjustments` | Read a mask's current local slider values by mask id (LrC 11+); briefly opens the photo in Develop. |
 | `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original (LrC 11.4+); briefly opens the photo in Develop. |
 | `create_mask` | Create a Subject, Sky or Background mask with optional local adjustments and get its id (LrC 11+); briefly opens the photo in Develop. |
-| `create_people_mask` | Create People masks for chosen parts (skin, hair, eyes, lips, clothes, ...), for all people or one person, and get their ids; guarded write, LrC 15.6 only; no Develop switch; fails and leaves nothing if there is no such person or part. |
+| `create_people_mask` | Create People masks for chosen parts (skin, hair, eyes, lips, clothes, ...) covering all people, and get their ids; one person cannot be chosen; guarded write, LrC 15.6 only; no Develop switch; fails and leaves nothing if there is no person or part. |
 | `create_landscape_mask` | Create Landscape masks for chosen categories (sky, water, vegetation, mountains, ...) and get their ids; same guarded write and no-leftover rule; no Develop switch. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).

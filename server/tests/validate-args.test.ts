@@ -96,22 +96,19 @@ describe('validateToolArgs', () => {
   });
 
   describe('create_people_mask and create_landscape_mask', () => {
-    it('accepts known parts for all people or one person', () => {
+    it('accepts known parts for all people', () => {
       expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair', 'face_skin'] })).toBeNull();
-      expect(
-        validateToolArgs('create_people_mask', { photo_id: 1, parts: ['entire_person'], person: 2 }),
-      ).toBeNull();
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['entire_person'] })).toBeNull();
     });
 
-    it('rejects unknown, duplicate or missing people parts and a bad person', () => {
+    it('rejects unknown, duplicate or missing people parts and a person option', () => {
       expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['ears'] })).toContain('parts');
       expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair', 'hair'] })).toContain('parts');
       expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: [] })).toContain('parts');
       expect(validateToolArgs('create_people_mask', { photo_id: 1 })).toContain('parts');
       expect(validateToolArgs('create_people_mask', { parts: ['hair'] })).toContain('photo_id');
-      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair'], person: 0 })).toContain('person');
-      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair'], person: 1.5 })).toContain(
-        'person',
+      expect(validateToolArgs('create_people_mask', { photo_id: 1, parts: ['hair'], person: 2 })).toContain(
+        'unknown property "person"',
       );
     });
 

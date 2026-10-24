@@ -21,7 +21,6 @@ local function computeEveryEntry(opts)
                     component.MaskDigest = DIGEST
                     component.InputDigest = DIGEST
                     component.LocalInputDigest = DIGEST
-                    if opts.instanceBounds then component.InstanceBounds = opts.instanceBounds end
                 end
             end
         end
@@ -88,7 +87,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
         assert.are.equal(1, calls.updateAI)
         assert.is_true(result.success)
         assert.are.equal("people", result.type)
-        assert.are.equal("all", result.person)
+        assert.is_nil(result.person)
         assert.are.equal("C1", result.mask_id)
         assert.are.same({
             { mask_id = "C1", part = "hair" },
@@ -97,23 +96,17 @@ describe("HandlerAiMasks.createPeopleMask", function()
         assert.are.equal(0, #calls.modules)
     end)
 
-    it("addresses one person by instance and keeps the masks already on the photo", function()
-        local Handler, store = setup({
-            entries = { existingGradient() },
-            instanceBounds = { { Top = 0, Left = 0, Bottom = 1, Right = 0.5 }, { Top = 0, Left = 0.5, Bottom = 1, Right = 1 } },
-        })
+    it("writes entire_person as an all-people part and keeps the masks already on the photo", function()
+        local Handler, store = setup({ entries = { existingGradient() } })
 
-        local result = Handler.createPeopleMask({ photo_id = "1", parts = { "face_skin", "entire_person" }, person = 2 })
+        local result = Handler.createPeopleMask({ photo_id = "1", parts = { "face_skin", "entire_person" } })
 
         local written = store.writes[1]
         assert.are.equal(3, #written)
         assert.are.equal("Sky gradient", written[1].CorrectionName)
-        local face = written[2].CorrectionMasks[1]
-        assert.are.equal(0, face.MaskSubType)
-        assert.are.equal(2, face.MaskSubCategoryID)
-        assert.are.same({ { InstanceID = 1 } }, face.InstanceIDs)
-        assert.are.equal(20036, written[3].CorrectionMasks[1].MaskSubCategoryID)
-        assert.are.equal(2, result.person)
+        assert.are.equal(3, written[2].CorrectionMasks[1].MaskSubType)
+        assert.are.equal(3, written[3].CorrectionMasks[1].MaskSubType)
+        assert.are.equal(13, written[3].CorrectionMasks[1].MaskSubCategoryID)
         assert.are.equal(3, #store.entries)
         assert.are.equal("C2", result.masks[1].mask_id)
     end)
@@ -131,28 +124,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
         assert.are.equal("Sky gradient", store.entries[1].CorrectionName)
     end)
 
-    it("removes the new mask when the requested person does not exist", function()
-        local Handler, store = setup({ instanceBounds = { { Top = 0, Left = 0, Bottom = 1, Right = 1 } } })
-
-        local message = errorOf(function()
-            Handler.createPeopleMask({ photo_id = "1", parts = { "hair" }, person = 3 })
-        end)
-
-        assert.matches("the photo has 1 person, not 3", message, 1, true)
-        assert.are.equal(0, #store.entries)
-    end)
-
-    it("names the person in the no-part error", function()
-        local Handler = setup({ absentCategories = { [6] = true } })
-
-        local message = errorOf(function()
-            Handler.createPeopleMask({ photo_id = "1", parts = { "lips" }, person = 2 })
-        end)
-
-        assert.matches("found no lips on person 2", message, 1, true)
-    end)
-
-    it("rejects unknown and duplicate parts, a bad person and entire_person alone before any write", function()
+    it("rejects unknown and duplicate parts and a single person before any write", function()
         local Handler, store, calls = setup()
 
         for _, case in ipairs({
@@ -160,9 +132,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
             { { photo_id = "1", parts = { "hair", "hair" } }, "Duplicate part hair" },
             { { photo_id = "1", parts = {} }, "part must be a non-empty list" },
             { { photo_id = "1" }, "part must be a non-empty list" },
-            { { photo_id = "1", parts = { "hair" }, person = 0 }, "person must be a whole number" },
-            { { photo_id = "1", parts = { "hair" }, person = 1.5 }, "person must be a whole number" },
-            { { photo_id = "1", parts = { "entire_person" } }, "entire_person needs person" },
+            { { photo_id = "1", parts = { "hair" }, person = 2 }, "person is not supported" },
             { { parts = { "hair" } }, "photo_id is required" },
         }) do
             assert.matches(case[2], errorOf(function() Handler.createPeopleMask(case[1]) end), 1, true)

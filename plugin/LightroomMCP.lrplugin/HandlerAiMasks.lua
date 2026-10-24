@@ -12,7 +12,6 @@ local AiMaskHandler = {}
 local COMPUTE_TIMEOUT_SECONDS = 120
 local COMPUTE_POLL_SECONDS = 0.5
 local UPDATE_AI_MINIMUM_VERSION = "Lightroom Classic 13.3"
-local ALL_PEOPLE = "all"
 
 local function requirePhotoId(value)
     if type(value) == "number" then return tostring(value) end
@@ -97,23 +96,10 @@ end
 local function missingMessage(request, photoId, fresh)
     local missing = listNames(request, fresh, "failed")
     if request.kind == "people" then
-        local whom = request.person and ("person " .. request.person) or "any person"
-        return string.format("Lightroom found no %s on %s in photo %s; no mask was left on the photo",
-            missing, whom, photoId)
+        return string.format("Lightroom found no %s on any person in photo %s; no mask was left on the photo",
+            missing, photoId)
     end
     return string.format("Lightroom found no %s in photo %s; no mask was left on the photo", missing, photoId)
-end
-
-local function peopleCountProblem(request, fresh)
-    if not request.person then return nil end
-    for _, entry in ipairs(fresh) do
-        local bounds = entry.CorrectionMasks[1].InstanceBounds
-        if type(bounds) == "table" and request.person > #bounds then
-            return string.format("the photo has %d %s, not %d", #bounds, #bounds == 1 and "person" or "people",
-                request.person)
-        end
-    end
-    return nil
 end
 
 local function appendEntries(entries, request)
@@ -138,7 +124,6 @@ local function resultFor(photoId, request, fresh)
         mask_id = masks[1].mask_id,
         masks = masks,
     }
-    if request.kind == "people" then result.person = request.person or ALL_PEOPLE end
     return result
 end
 
@@ -182,11 +167,6 @@ local function createAiMasks(toolName, args, request)
         end
         if listNames(request, computed, "failed") ~= "" then
             failAndRemove(catalog, photo, keepCount, missingMessage(request, photoId, computed))
-        end
-        local countProblem = peopleCountProblem(request, computed)
-        if countProblem then
-            failAndRemove(catalog, photo, keepCount, "Lightroom found no such person: " .. countProblem
-                .. "; no mask was left on the photo")
         end
         return computed
     end)

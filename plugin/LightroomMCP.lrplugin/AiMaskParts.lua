@@ -1,9 +1,6 @@
 local AiMaskParts = {}
 
-local MAX_PERSON_NUMBER = 1000
-
 local ALL_PEOPLE_SUBTYPE = 3
-local ONE_PERSON_SUBTYPE = 0
 local LANDSCAPE_SUBTYPE = 0
 local MASK_VERSION = 1
 local CENTRE_REFERENCE_POINT = "0.500000 0.500000"
@@ -20,7 +17,7 @@ local PEOPLE_PARTS = {
     { name = "eyebrows", category = 9, label = "Eyebrows" },
     { name = "clothes", category = 11, label = "Clothes" },
     { name = "teeth", category = 12, label = "Teeth" },
-    { name = "entire_person", category = 20036, label = "Person", needsPerson = true },
+    { name = "entire_person", category = 13, label = "Person" },
 }
 
 local LANDSCAPE_CATEGORIES = {
@@ -76,23 +73,17 @@ local function requireNames(value, field, byName, names)
     return specs
 end
 
-local function requirePerson(value)
-    if value == nil then return nil end
-    if type(value) ~= "number" or value ~= math.floor(value) or value < 1 or value > MAX_PERSON_NUMBER then
-        error("person must be a whole number from 1 (Lightroom's \"Person 1\")")
+local function refuseSinglePerson(value)
+    if value ~= nil then
+        error("person is not supported: Lightroom ignores the InstanceID of a written mask and always"
+            .. " masks the first person, so a single person cannot be chosen")
     end
-    return value
 end
 
 function AiMaskParts.parsePeople(args)
     local specs = requireNames(args.parts, "part", PEOPLE_BY_NAME, PEOPLE_NAMES)
-    local person = requirePerson(args.person)
-    for _, spec in ipairs(specs) do
-        if spec.needsPerson and not person then
-            error(spec.name .. " needs person: Lightroom has no all-people form of it")
-        end
-    end
-    return { kind = "people", specs = specs, person = person }
+    refuseSinglePerson(args.person)
+    return { kind = "people", specs = specs }
 end
 
 function AiMaskParts.parseLandscape(args)
@@ -103,8 +94,8 @@ local function newComponent(spec, request)
     local subType = LANDSCAPE_SUBTYPE
     local name = spec.label
     if request.kind == "people" then
-        subType = request.person and ONE_PERSON_SUBTYPE or ALL_PEOPLE_SUBTYPE
-        name = request.person and ("Person " .. request.person .. " - " .. spec.label) or ("People - " .. spec.label)
+        subType = ALL_PEOPLE_SUBTYPE
+        name = "People - " .. spec.label
     end
     local component = {
         What = "Mask/Image",
@@ -119,9 +110,6 @@ local function newComponent(spec, request)
         ReferencePoint = CENTRE_REFERENCE_POINT,
         ErrorReason = NO_ERROR,
     }
-    if request.kind == "people" and request.person then
-        component.InstanceIDs = { { InstanceID = request.person - 1 } }
-    end
     return component, name
 end
 

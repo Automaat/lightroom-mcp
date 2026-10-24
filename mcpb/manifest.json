@@ -176,7 +176,7 @@
     },
     {
       "name": "create_people_mask",
-      "description": "Create People masks for chosen parts such as skin, hair, eyes, lips or clothes, for all people or one person."
+      "description": "Create People masks for chosen parts such as skin, hair, eyes, lips or clothes, covering all people."
     },
     {
       "name": "create_landscape_mask",

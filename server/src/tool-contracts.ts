@@ -1153,7 +1153,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "create_people_mask",
     luaHandler: "HandlerAiMasks.createPeopleMask",
     description:
-      "Create People masks on a photo, one mask per requested part, and return their ids (Lightroom Classic 15.6 with process version 15.4, which also needs the AI mask update of Lightroom Classic 13.3+). parts lists what to select: face_skin, body_skin, hair, facial_hair, eyebrows, eye_sclera, iris_and_pupil, lips, teeth, clothes, and entire_person (only with person). Without person every part covers all people in the photo. With person (1 for Lightroom's \"Person 1\", 2 for \"Person 2\", numbered as the Masking panel lists them) the masks cover that person only; this one-person form is built from a hand-made Lightroom mask and has had less testing than the all-people form. mask_id is the first mask; masks lists every mask with its part. If the photo has no person, no such person, or no region of a requested part, the call fails and none of the new masks is left on the photo. An unknown or duplicate part is rejected before anything is read or written. This writes Lightroom's undocumented develop-setting format through the same guarded write as create_gradient_mask (version check, format check of every existing mask, read-back, restore on mismatch), then asks Lightroom to compute the selection and waits for it, up to 120 seconds. It does not use the Develop module, but if the photo's masks are open in Develop Lightroom can show an \"AI process is running\" alert that stays up until someone clicks OK in Lightroom. The new masks carry no adjustments; set them with set_mask_adjustments. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
+      "Create People masks on a photo, one mask per requested part, and return their ids (Lightroom Classic 15.6 with process version 15.4, which also needs the AI mask update of Lightroom Classic 13.3+). parts lists what to select: face_skin, body_skin, hair, facial_hair, eyebrows, eye_sclera, iris_and_pupil, lips, teeth, clothes, and entire_person. Every part covers all people in the photo. Choosing a single person is not supported: Lightroom ignores the person of a written mask and always masks the first one, so the tool offers no person option. mask_id is the first mask; masks lists every mask with its part. If the photo has no person or no region of a requested part, the call fails and none of the new masks is left on the photo. An unknown or duplicate part is rejected before anything is read or written. This writes Lightroom's undocumented develop-setting format through the same guarded write as create_gradient_mask (version check, format check of every existing mask, read-back, restore on mismatch), then asks Lightroom to compute the selection and waits for it, up to 120 seconds. It does not use the Develop module, but if the photo's masks are open in Develop Lightroom can show an \"AI process is running\" alert that stays up until someone clicks OK in Lightroom. The new masks carry no adjustments; set them with set_mask_adjustments. One Develop-driving call runs at a time; a second call is rejected until the first finishes.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1166,12 +1166,6 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           maxItems: PEOPLE_MASK_PARTS.length,
           uniqueItems: true,
           description: "Parts of a person to select; each part becomes its own mask",
-        },
-        person: {
-          type: "integer",
-          minimum: 1,
-          description:
-            "Select only this person (1 is Lightroom's \"Person 1\"); omit to select all people",
         },
       },
       required: ["photo_id", "parts"],

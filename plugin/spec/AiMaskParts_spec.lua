@@ -34,16 +34,23 @@ describe("AiMaskParts", function()
         assert.are.equal(1, entry.CorrectionAmount)
     end)
 
-    it("builds a one-person part as sub type 0 with a zero-based instance", function()
-        local request = AiMaskParts.parsePeople({ parts = { "teeth" }, person = 3 })
+    it("builds entire_person as the all-people person category", function()
+        local request = AiMaskParts.parsePeople({ parts = { "entire_person" } })
 
         local entry = AiMaskParts.newEntry(request.specs[1], request)
 
         local component = entry.CorrectionMasks[1]
-        assert.are.equal("Person 3 - Teeth", entry.CorrectionName)
-        assert.are.equal(0, component.MaskSubType)
-        assert.are.equal(12, component.MaskSubCategoryID)
-        assert.are.same({ { InstanceID = 2 } }, component.InstanceIDs)
+        assert.are.equal("People - Person", entry.CorrectionName)
+        assert.are.equal(3, component.MaskSubType)
+        assert.are.equal(13, component.MaskSubCategoryID)
+    end)
+
+    it("refuses to pick a single person because Lightroom ignores a written instance", function()
+        for _, person in ipairs({ 1, 2, "1", 0, 1.5 }) do
+            local ok, message = pcall(AiMaskParts.parsePeople, { parts = { "teeth" }, person = person })
+            assert.is_false(ok)
+            assert.matches("person is not supported", tostring(message), 1, true)
+        end
     end)
 
     it("builds a landscape category as sub type 0 with its 5000x id", function()
@@ -62,6 +69,5 @@ describe("AiMaskParts", function()
         assert.has_error(function() AiMaskParts.parsePeople({ parts = "hair" }) end)
         assert.has_error(function() AiMaskParts.parsePeople({ parts = { 5 } }) end)
         assert.has_error(function() AiMaskParts.parseLandscape({ categories = { true } }) end)
-        assert.has_error(function() AiMaskParts.parsePeople({ parts = { "hair" }, person = "1" }) end)
     end)
 end)
