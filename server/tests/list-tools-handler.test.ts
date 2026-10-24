@@ -404,6 +404,29 @@ describe('AI mask types', () => {
   });
 });
 
+describe('tool contracts vs mcpb manifest', () => {
+  function readManifestTools(): Array<{ name: string; description: string }> {
+    const manifestPath = path.resolve(process.cwd(), '..', 'mcpb', 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+      tools: Array<{ name: string; description: string }>;
+    };
+    return manifest.tools;
+  }
+
+  it('lists exactly the contract tool names', () => {
+    const manifestNames = readManifestTools().map((tool) => tool.name).sort();
+    const contractNames = TOOL_CONTRACTS.map((contract) => contract.name).sort();
+
+    expect(manifestNames).toEqual(contractNames);
+  });
+
+  it('gives every manifest tool a description', () => {
+    for (const tool of readManifestTools()) {
+      expect(tool.description.trim()).not.toBe('');
+    }
+  });
+});
+
 describe('tool contracts vs Lua dispatch', () => {
   function parseLuaDispatch(): Record<string, string> {
     const pluginPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'PluginInfoProvider.lua');
