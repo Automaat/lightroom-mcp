@@ -123,6 +123,22 @@
       "description": "List available Develop presets."
     },
     {
+      "name": "get_develop_preset",
+      "description": "Read the settings and backing-file metadata for one exact Develop preset."
+    },
+    {
+      "name": "compare_develop_presets",
+      "description": "Compare two Develop presets and return a deterministic per-setting diff for iterative style matching."
+    },
+    {
+      "name": "create_develop_preset",
+      "description": "Create a versioned plugin-managed Develop preset checkpoint from selected settings on one photo."
+    },
+    {
+      "name": "export_develop_preset",
+      "description": "Copy one exact custom or plugin-managed Develop preset backing file to a destination directory."
+    },
+    {
       "name": "apply_develop_preset",
       "description": "Apply a Develop preset to photos."
     },
