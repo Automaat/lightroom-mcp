@@ -1,0 +1,43 @@
+{
+  "samples": [
+    {
+      "key": "arw_14bit",
+      "file": "_DSC0009.ARW",
+      "url": "https://raw.pixls.us/data/Sony/ILCE-7M3/_DSC0009.ARW",
+      "sha256": "250784580ea527442c09004417bb0eead484f2bf3ee8f9121a776ac65bb50d0f",
+      "bytes": 25639680,
+      "camera": "Sony ILCE-7M3, 14-bit compressed ARW, 6000x4000 landscape with sky",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "https://raw.pixls.us/"
+    },
+    {
+      "key": "arw_12bit",
+      "file": "_DSC0010.ARW",
+      "url": "https://raw.pixls.us/data/Sony/ILCE-7M3/_DSC0010.ARW",
+      "sha256": "3ae2ff75cfa7240d0b4458f662afd28665c5fd1e83d230ac73f5ad69d3df8592",
+      "bytes": 25631488,
+      "camera": "Sony ILCE-7M3, 12-bit compressed ARW, 6000x4000 landscape with sky",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "source": "https://raw.pixls.us/"
+    }
+  ],
+  "supplied": [
+    {
+      "key": "depth_heic",
+      "envVar": "LRMCP_LIVE_DEPTH_HEIC",
+      "description": "iPhone Portrait-mode HEIC that carries a device depth map; depth range checks are skipped without it"
+    },
+    {
+      "key": "subject_photo",
+      "envVar": "LRMCP_LIVE_SUBJECT_PHOTO",
+      "description": "Photo with one clear foreground subject for create_mask subject/object checks; optional"
+    },
+    {
+      "key": "people_photo",
+      "envVar": "LRMCP_LIVE_PEOPLE_PHOTO",
+      "description": "Photo with at least one person for create_people_mask checks; optional"
+    }
+  ]
+}
