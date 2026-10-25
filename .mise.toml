@@ -54,3 +54,19 @@ run = "lua_modules/bin/busted"
 [tasks."lua:lint"]
 description = "Lint the Lightroom plugin with selene"
 run = "selene plugin/LightroomMCP.lrplugin"
+
+[tasks."live:fixtures"]
+description = "Generate the live-test fixtures, download the CC0 raw samples and verify both"
+run = [
+  "node tests/e2e/live/generate-fixtures.mjs",
+  "node tests/e2e/live/fetch-samples.mjs",
+  "node tests/e2e/live/verify-fixtures.mjs",
+]
+
+[tasks."live:test"]
+description = "Run the unit tests of the live-test kit (no Lightroom needed)"
+run = "node --test \"tests/e2e/live/unit/*.test.mjs\""
+
+[tasks."live:setup"]
+description = "Create a throwaway Lightroom catalog and import the live-test fixtures (macOS)"
+run = "node tests/e2e/live/setup-catalog.mjs"

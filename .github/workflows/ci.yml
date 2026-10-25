@@ -49,6 +49,10 @@ jobs:
       - name: Test
         run: npm run test:coverage -- --ci --reporters=default
 
+      - name: Live kit tests
+        working-directory: .
+        run: node --test "tests/e2e/live/unit/*.test.mjs"
+
       - name: Upload build artifacts
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -42,6 +42,7 @@ Use mise tasks from repo root:
 - `mise run lua:lint` — `selene plugin/LightroomMCP.lrplugin`
 - `mise run lua:test` — `busted` specs for the plugin
 - `mise run skill:test` — Python unittest for bundled skill scripts
+- `mise run live:test` — node:test unit tests for the live-test kit (`tests/e2e/live/unit/`)
 
 Lua tooling: `mise install` provisions `lua` + `luarocks` + `selene`. `lua:test` auto-installs `busted` into `lua_modules/` (gitignored) via the `lua:deps` task. `selene` is a mise tool (`aqua:Kampfkarren/selene`), a native binary that does not run on `lua` — so unlike luacheck it is immune to Lua-version breakage. `selene.toml` configures it; `lightroom.yml` is the custom std declaring LR SDK globals; `JSON.lua` is excluded.
 
@@ -83,7 +84,13 @@ Click **Start Server** in Plug-in Manager. Logs at `~/Documents/LrClassicLogs/Li
 
 ## Live manual testing on macOS
 
-- Work from an isolated checkout. Back up the installed `LightroomMCP.lrplugin` bundle before copying a candidate into `~/Library/Application Support/Adobe/Lightroom/Plugins/`; restore the backup after testing.
+`tests/e2e/live/` is the kit for live runs (README there: fixtures, tool-by-fixture verification matrix, traps). It never touches the real catalog: `openLiveSession()`, the snapshot and DB helpers and `smoke.mjs` call `requireThrowawayCatalog()`, which refuses unless the open catalog has the `lrmcp-live-catalog.json` marker written by the setup script.
+
+- Bootstrap: `mise run build`, `mise run live:fixtures` (generates synthetic images, downloads the CC0 ARW samples into gitignored `tests/e2e/live/.fixtures/`), `node tests/e2e/live/install-bundle.mjs install`, `mise run live:setup` (File > New Catalog in a new empty folder through AX, imports the fixtures, records photo ids by fixture name in the marker), `node tests/e2e/live/smoke.mjs`. For the 200-photo batch budget: `make-batch.mjs`, then `import-batch.mjs`.
+- Helpers in `tests/e2e/live/lib/`: `ax` (front-process assert and re-activate, dismiss "No X detected" and "Enable address lookup?", close Plug-in Manager), `preview` (settle protocol, region/patch deltas, IoU against an analytic shape), `catalog-db` (stored develop row and masks, flushed by switching photos), `snapshot` (copy `.lrcat` + `-wal`/`-shm` to `~/.cache/lightroom-mcp-live-snapshots/`), `plugin-bundle` (install/restore with backup outside TMPDIR, `diff -rq`), `mcp` (session against the built server).
+- The throwaway catalog is rebuilt with `live:setup`, never committed. Never commit a `.lrcat`, a photo of unknown license or a depth HEIC. Depth range needs a user-supplied iPhone Portrait HEIC (`LRMCP_LIVE_DEPTH_HEIC`); depth checks skip without it.
+- `mise run live:test` runs the kit's unit tests (no Lightroom); CI runs them too.
+- Work from an isolated checkout. Back up the installed `LightroomMCP.lrplugin` bundle outside `$TMPDIR` before copying a candidate into `~/Library/Application Support/Adobe/Lightroom/Plugins/` (`install-bundle.mjs` does it); restore the backup after testing.
 - With Lightroom running, use `mise run plugin:reload` to select Lightroom MCP in Plug-in Manager and click **Reload Plug-in**. The task runs `tests/e2e/reload-plugin.applescript`; macOS must grant Accessibility access to the process running `osascript`.
 - Check `lsof -nP -iTCP:58763-58764 -sTCP:LISTEN`, then call `node tests/e2e/mcp-runner.mjs tool list_collections '{"limit":1}'` from the tested checkout. A listening socket alone does not prove that requests work. Use the configured ports if they differ from the defaults.
 - If reload does not answer the tool call, check Plug-in Manager. A stale `Running: true` state can remain after `Server task context cleanup`; click **Stop Server**, then **Start Server**, and retry the tool call. If the plug-in is disabled or reports a toolkit script error, close Plug-in Manager and any Save dialog, quit Lightroom normally, and reopen it. Check the sockets and tool call again. Do not force quit Lightroom or remove another process's socket.
