@@ -97,7 +97,7 @@ export class McpSession {
     const result = await this.rpc("tools/call", { name, arguments: args }, timeoutMs);
     const text = result?.content?.find((block) => block.type === "text")?.text ?? "";
     const image = result?.content?.find((block) => block.type === "image") ?? null;
-    let data = text;
+    let data;
     try {
       data = JSON.parse(text);
     } catch {

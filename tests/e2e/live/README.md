@@ -45,7 +45,7 @@ Generated (`generate-fixtures.mjs`, deterministic; PNG is pure JS, JPEG goes thr
 | `orient_1`..`orient_8` | 1000x600 JPEG | One asymmetric pattern (red, green, blue, yellow corner squares and a white F) stored once, EXIF orientation tag 1..8. A turned or mirrored result is detectable: `expectedDisplayedCorners(n)`, `classifyOrientation(sampleCorners(pixels))`. Orientations 5..8 display 600x1000. |
 | `batch/batch_001..200.jpg` | 1200x800 JPEG | `make-batch.mjs [count]`: distinct crops of the 14-bit CC0 raw, with sky. `import-batch.mjs` imports them into the open throwaway catalog and stores their ids under `batch.ids` in the marker file (about 4 minutes for 200). For `create_mask_batch` and `delete_empty_masks`. |
 
-Downloaded (`manifest.json`, `fetch-samples.mjs [--verify]`): both from raw.pixls.us, CC0 (the site lists them as Creative Commons 0 with the checksums used here). The manifest test rejects any non-CC0 sample or a bad hash.
+Downloaded (`manifest.json`, `fetch-samples.mjs [--verify]`): both from raw.pixls.us, CC0 (the site lists them as Creative Commons 0 with the checksums used here). The manifest test rejects any non-CC0 sample or a bad hash, and the downloader only talks to `raw.pixls.us`.
 
 | Key | File | Purpose |
 |---|---|---|

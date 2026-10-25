@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ALLOWED_SAMPLE_LICENSE = "CC0-1.0";
+export const DEFAULT_DOWNLOAD_HOSTS = ["raw.pixls.us"];
 
 export function loadManifest(manifestPath) {
   return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -41,7 +42,17 @@ export async function verifySample(sample, directory) {
   return { status: actual === sample.sha256 ? "ok" : "mismatch", filePath, actual };
 }
 
-export async function downloadSample(sample, directory, fetchImplementation = fetch) {
+export function assertDownloadHostAllowed(url, allowedHosts) {
+  const { hostname } = new URL(url);
+  if (!allowedHosts.includes(hostname)) throw new Error(`refusing to download from ${hostname}; allowed hosts: ${allowedHosts.join(", ")}`);
+}
+
+export async function downloadSample(
+  sample,
+  directory,
+  { fetchImplementation = fetch, allowedHosts = DEFAULT_DOWNLOAD_HOSTS } = {},
+) {
+  assertDownloadHostAllowed(sample.url, allowedHosts);
   fs.mkdirSync(directory, { recursive: true });
   const filePath = path.join(directory, sample.file);
   const partialPath = `${filePath}.partial`;
