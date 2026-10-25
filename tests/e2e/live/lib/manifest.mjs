@@ -6,7 +6,10 @@ import { pipeline } from "node:stream/promises";
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const ALLOWED_SAMPLE_LICENSE = "CC0-1.0";
-export const DEFAULT_DOWNLOAD_HOSTS = ["raw.pixls.us"];
+export const DOWNLOADABLE_URLS = [
+  "https://raw.pixls.us/data/Sony/ILCE-7M3/_DSC0009.ARW",
+  "https://raw.pixls.us/data/Sony/ILCE-7M3/_DSC0010.ARW",
+];
 
 export function loadManifest(manifestPath) {
   return JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -42,21 +45,22 @@ export async function verifySample(sample, directory) {
   return { status: actual === sample.sha256 ? "ok" : "mismatch", filePath, actual };
 }
 
-export function assertDownloadHostAllowed(url, allowedHosts) {
-  const { hostname } = new URL(url);
-  if (!allowedHosts.includes(hostname)) throw new Error(`refusing to download from ${hostname}; allowed hosts: ${allowedHosts.join(", ")}`);
+export function allowlistedUrl(requestedUrl, allowedUrls) {
+  const match = allowedUrls.find((allowed) => allowed === requestedUrl);
+  if (!match) throw new Error(`refusing to download ${requestedUrl}: not in the downloader allowlist`);
+  return match;
 }
 
 export async function downloadSample(
   sample,
   directory,
-  { fetchImplementation = fetch, allowedHosts = DEFAULT_DOWNLOAD_HOSTS } = {},
+  { fetchImplementation = fetch, allowedUrls = DOWNLOADABLE_URLS } = {},
 ) {
-  assertDownloadHostAllowed(sample.url, allowedHosts);
+  const url = allowlistedUrl(sample.url, allowedUrls);
   fs.mkdirSync(directory, { recursive: true });
   const filePath = path.join(directory, sample.file);
   const partialPath = `${filePath}.partial`;
-  const response = await fetchImplementation(sample.url, { redirect: "follow" });
+  const response = await fetchImplementation(url, { redirect: "follow" });
   if (!response.ok || !response.body) throw new Error(`${sample.key}: download failed with HTTP ${response.status}`);
   try {
     await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(partialPath));

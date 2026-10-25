@@ -6,7 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import {
-  assertDownloadHostAllowed,
+  DOWNLOADABLE_URLS,
+  allowlistedUrl,
   downloadSample,
   loadManifest,
   resolveSuppliedFiles,
@@ -16,7 +17,6 @@ import {
 } from "../lib/manifest.mjs";
 import { MANIFEST_PATH } from "../lib/paths.mjs";
 
-const LOCAL_HOSTS = ["127.0.0.1"];
 const PAYLOAD = Buffer.from("raw sample stand-in");
 const PAYLOAD_SHA256 = createHash("sha256").update(PAYLOAD).digest("hex");
 
@@ -41,6 +41,10 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve));
   fs.rmSync(workDirectory, { recursive: true, force: true });
 });
+
+function localUrls() {
+  return [`${baseUrl}/ok`, `${baseUrl}/missing`];
+}
 
 function sample(overrides = {}) {
   return { key: "stand_in", file: "stand_in.bin", url: `${baseUrl}/ok`, sha256: PAYLOAD_SHA256, ...overrides };
@@ -80,20 +84,20 @@ test("verify distinguishes missing, ok and mismatch", async () => {
 
 test("download stores a file whose hash matches", async () => {
   const directory = path.join(workDirectory, "download-ok");
-  const filePath = await downloadSample(sample(), directory, { allowedHosts: LOCAL_HOSTS });
+  const filePath = await downloadSample(sample(), directory, { allowedUrls: localUrls() });
   assert.equal(await sha256File(filePath), PAYLOAD_SHA256);
   assert.deepEqual(fs.readdirSync(directory), ["stand_in.bin"]);
 });
 
 test("download refuses a hash mismatch and leaves nothing behind", async () => {
   const directory = path.join(workDirectory, "download-bad");
-  await assert.rejects(downloadSample(sample({ sha256: "0".repeat(64) }), directory, { allowedHosts: LOCAL_HOSTS }), /sha256 mismatch/);
+  await assert.rejects(downloadSample(sample({ sha256: "0".repeat(64) }), directory, { allowedUrls: localUrls() }), /sha256 mismatch/);
   assert.deepEqual(fs.readdirSync(directory), []);
 });
 
 test("download refuses an HTTP error", async () => {
   const directory = path.join(workDirectory, "download-404");
-  await assert.rejects(downloadSample(sample({ url: `${baseUrl}/missing` }), directory, { allowedHosts: LOCAL_HOSTS }), /HTTP 404/);
+  await assert.rejects(downloadSample(sample({ url: `${baseUrl}/missing` }), directory, { allowedUrls: localUrls() }), /HTTP 404/);
 });
 
 test("supplied files are resolved from environment variables", () => {
@@ -116,10 +120,14 @@ test("supplied files are resolved from environment variables", () => {
   );
 });
 
-test("downloads from a host outside the allowlist are refused before any request", async () => {
+test("downloads outside the allowlist are refused before any request", async () => {
   const directory = path.join(workDirectory, "download-foreign");
-  await assert.rejects(downloadSample(sample({ url: "https://example.com/a.ARW" }), directory), /refusing to download from example.com/);
+  await assert.rejects(downloadSample(sample({ url: "https://example.com/a.ARW" }), directory), /not in the downloader allowlist/);
   assert.equal(fs.existsSync(directory), false);
-  assert.doesNotThrow(() => assertDownloadHostAllowed("https://raw.pixls.us/data/x", ["raw.pixls.us"]));
-  assert.throws(() => assertDownloadHostAllowed("https://raw.pixls.us.evil.test/x", ["raw.pixls.us"]));
+  assert.equal(allowlistedUrl(DOWNLOADABLE_URLS[0], DOWNLOADABLE_URLS), DOWNLOADABLE_URLS[0]);
+  assert.throws(() => allowlistedUrl(`${DOWNLOADABLE_URLS[0]}.evil`, DOWNLOADABLE_URLS));
+});
+
+test("every manifest sample url is in the downloader allowlist", () => {
+  for (const entry of loadManifest(MANIFEST_PATH).samples) assert.ok(DOWNLOADABLE_URLS.includes(entry.url), entry.key);
 });
