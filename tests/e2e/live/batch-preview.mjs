@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { labelForRestore } from "./lib/color-label.mjs";
 import jpeg from "../../../server/node_modules/jpeg-js/index.js";
 import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 
@@ -36,7 +37,7 @@ try {
   try {
     if (original && originalReason !== undefined) {
       await session.toolOrThrow("set_flag", { photo_ids: [photoId], flag: ({ "-1": "reject", "1": "pick" })[original.pickStatus] ?? "none" });
-      await session.toolOrThrow("set_color_label", { photo_ids: [photoId], label: original.colorLabel || "none" });
+      await session.toolOrThrow("set_color_label", { photo_ids: [photoId], label: labelForRestore(original.colorLabel) });
       await session.toolOrThrow("set_ai_metadata", { photo_ids: [photoId], reason: originalReason });
       const restored = (await session.toolOrThrow("get_photo_metadata", { photo_id: photoId })).data;
       assert.equal(restored.pickStatus, original.pickStatus);

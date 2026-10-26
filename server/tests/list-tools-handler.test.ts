@@ -15,6 +15,7 @@ const EXPECTED_TOOL_NAMES = [
   'search_photos',
   'get_selected_photos',
   'get_photo_metadata',
+  'summarize_develop_settings',
   'get_photo_preview',
   'get_photo_previews',
   'get_photo_stats',
@@ -84,8 +85,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 69 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(69);
+  it('contains exactly 70 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(70);
   });
 
   it('tool names are unique', () => {
