@@ -88,6 +88,18 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 `node tests/e2e/live/photo-stats.mjs` checks `get_photo_stats` on untouched `ramp256` and `wide_plain`: each ramp quarter holds 25 percent of the histogram mass within 5 points; plain gray has mean luminance 110 within 4 and no clipping. The script only reads the marked throwaway catalog.
 
+For a catalog whose shared fixtures already have develop edits, import your own gray ramp and gray-110 images and pass their IDs as `node tests/e2e/live/photo-stats.mjs RAMP_ID PLAIN_ID`. Preserve the shared fixtures and their edits.
+
+For AI metadata, run `node tests/e2e/live/ai-metadata.mjs write`, then `verify`
+after Reload Plug-in and again after quitting and reopening Lightroom. Run
+`clear` to check clearing and restore the fixtures' original plug-in values.
+Each phase checks that keywords, title and caption stay unchanged. The new
+metadata provider registers a persistent schema: obtain approval of its field
+IDs and types before installing it, keep it confined to the throwaway catalog,
+and restore the original bundle while Lightroom is closed before reopening
+the real catalog. Finish with `node tests/e2e/live/smoke.mjs` on the throwaway
+catalog.
+
 Positions are always in the displayed frame of the uncropped photo; Lightroom stores masks in the unrotated frame (`ImageFrame.lua`).
 
 | Tool | Fixtures | Key checks |
@@ -110,6 +122,8 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `set_mask_curves`, `get_mask_curves` | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask_curves`. |
 | `edit_mask_point_colors`, `get_mask_point_colors` | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask_point_colors`. |
 | `delete_masks`, `delete_empty_masks` | any, `batch.ids` | Remaining count matches, the photos stay in the catalog. `delete_empty_masks` is catalog-only: it does not open Develop and keeps the selection. |
+
+Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
 
 ## Known traps
 

@@ -64,12 +64,32 @@
       "description": "Set the IPTC location fields of photos."
     },
     {
+      "name": "set_ai_metadata",
+      "description": "Store or clear private AI scores and reasons in the catalog"
+    },
+    {
+      "name": "get_ai_metadata",
+      "description": "Read private AI scores and reasons for a batch of photos"
+    },
+    {
       "name": "set_metadata",
       "description": "Set title, caption, headline, creator and copyright fields of photos."
     },
     {
+      "name": "list_folders",
+      "description": "List catalog folders with full paths and direct photo counts."
+    },
+    {
+      "name": "get_folder_photos",
+      "description": "List photos in a folder, optionally including subfolders."
+    },
+    {
       "name": "list_collections",
       "description": "List all collections and collection sets."
+    },
+    {
+      "name": "create_smart_collection",
+      "description": "Save search filters as a smart collection"
     },
     {
       "name": "create_collection",
@@ -160,8 +180,16 @@
       "description": "Set Develop settings directly on a photo."
     },
     {
+      "name": "set_process_version",
+      "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
+    },
+    {
       "name": "apply_auto_adjustments",
       "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
+    },
+    {
+      "name": "reset_develop_adjustments",
+      "description": "Reset all develop adjustments; requires confirmation. Recover edits through Lightroom History."
     },
     {
       "name": "apply_denoise",
@@ -250,6 +278,10 @@
     {
       "name": "list_develop_snapshots",
       "description": "List saved develop snapshots for a photo"
+    },
+    {
+      "name": "create_virtual_copies",
+      "description": "Create virtual copies and restore the previous selection"
     },
     {
       "name": "create_develop_snapshot",

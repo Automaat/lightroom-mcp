@@ -4,8 +4,9 @@ import { openLiveSession, requireFixtureId } from "./lib/live-catalog.mjs";
 
 const { session, marker } = await openLiveSession();
 try {
-  const rampId = requireFixtureId(marker, "ramp256");
-  const plainId = requireFixtureId(marker, "wide_plain");
+  assert.ok(process.argv.length === 2 || process.argv.length === 4, "Supply both ramp and plain photo IDs, or neither");
+  const rampId = process.argv[2] ?? requireFixtureId(marker, "ramp256");
+  const plainId = process.argv[3] ?? requireFixtureId(marker, "wide_plain");
   const response = await session.toolOrThrow("get_photo_stats", { photo_ids: [rampId, plainId] });
   const [ramp, plain] = response.data.results;
   assert.equal(ramp.photo_id, rampId);
