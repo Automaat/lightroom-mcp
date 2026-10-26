@@ -1,8 +1,42 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
+import type { Dispatcher } from '../src/dispatcher.js';
 
 describe('validateToolArgs', () => {
+  describe.each([
+    ['create_gradient_mask', { photo_id: 1, shape: 'radial', center: { x: 0.5, y: 0.5 }, width: 0.4, height: 0.6 }],
+    ['create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0.5, y: 0.5 }] }] }],
+    ['create_range_mask', { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6 } }],
+  ])('%s creation adjustments', (name, base) => {
+    it('accepts shared unprefixed sliders and preserves calls without adjustments', () => {
+      expect(validateToolArgs(name, base)).toBeNull();
+      expect(validateToolArgs(name, { ...base, adjustments: { exposure: 1, noise: -20, contrast: 0 } })).toBeNull();
+      expect(validateToolArgs(name, { ...base, mask_id: 'existing' })).toBeNull();
+    });
+
+    it.each([{}, { exposure: 5 }, { contrast: -101 }, { exposure: '1' }, { local_Exposure: 1 }, { unknown: 1 }])(
+      'rejects invalid adjustments before dispatch: %p', async (adjustments) => {
+        const dispatch = jest.fn<Dispatcher['call']>();
+        const result = await createCallToolHandler({ dispatcher: { call: dispatch }, isReady: () => true })(
+          name, { ...base, adjustments },
+        );
+        expect(result.isError).toBe(true);
+        expect(dispatch).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects adjustments on an existing mask before dispatch', async () => {
+      const dispatch = jest.fn<Dispatcher['call']>();
+      const result = await createCallToolHandler({ dispatcher: { call: dispatch }, isReady: () => true })(
+        name, { ...base, mask_id: 'existing', adjustments: { exposure: 1 } },
+      );
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain('adjustments');
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(['Circle', 'SoapBubble', 'Blade', 'Ring', 'Anamorphic'])('set_lens_blur accepts %s bokeh', (bokeh) => {
     expect(validateToolArgs('set_lens_blur', { photo_id: 914, bokeh })).toBeNull();
   });
