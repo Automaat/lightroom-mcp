@@ -59,7 +59,20 @@ Already using Claude Code, Codex, Cursor, Windsurf, or VS Code? Pick your tool b
 <details>
 <summary><b>Claude Code</b></summary>
 
-Same `.mcpb` file as Claude Desktop above — Claude Code accepts it too. Or install via the CLI:
+Load the Claude plugin from a checkout to get the MCP server and the bundled skill together:
+
+```bash
+git clone https://github.com/Automaat/lightroom-mcp.git
+claude --plugin-dir ./lightroom-mcp
+```
+
+Use `/plugin` to check that `lightroom` is loaded. The skill is available as
+`/lightroom:raw-photo-lightroom-preset`. Node.js is required: the plugin starts
+the published npm server with `npx`. That package includes the Lua bundle and
+installs it on first start when no Lightroom MCP plug-in is already installed.
+Restart Lightroom and click **Start Server** in Plug-in Manager.
+
+The same `.mcpb` file as Claude Desktop also works. To install only the MCP server:
 
 ```bash
 claude mcp add lightroom -- npx -y @mskalski/lightroom-mcp
