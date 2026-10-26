@@ -1,12 +1,8 @@
 # Lightroom MCP Integration
 
-## Evaluated baseline
+## Server capabilities
 
 Upstream repository: `https://github.com/Automaat/lightroom-mcp`
-
-Evaluation snapshot: 2026-08-09, release `v0.9.0`; main commit inspected: `b05c845a546a42a6bc719f06f9310ce9cad8f7b1`.
-
-Preset-roundtrip fork: `https://github.com/John-owo/lightroom-mcp`, branch `feat/preset-roundtrip`. Detect tools at runtime because an installed server may still be upstream `v0.9.0`.
 
 Detect available tools at runtime because main can differ from the installed release.
 
@@ -15,7 +11,8 @@ Detect available tools at runtime because main can differ from the installed rel
 The integration adds the missing feedback loop:
 
 - `get_selected_photos`: identify representatives selected in Lightroom.
-- `get_photo_metadata`: read EXIF and a partial Develop state.
+- `get_photo_metadata`: read EXIF and every Develop key supported by `set_develop_settings`.
+- `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.
 - `set_develop_settings`: apply bounded global/HSL/detail settings.
 - `export_photos`: render the actual Lightroom result for visual comparison.
 - `copy_develop_settings`: apply an approved subset to a cluster.
@@ -23,20 +20,21 @@ The integration adds the missing feedback loop:
 - `compare_develop_presets`: diff an approved look and a versioned candidate.
 - `create_develop_preset`: capture explicit settings from a representative as a plugin-managed checkpoint.
 - `export_develop_preset`: copy an exportable backing file without overwriting.
+- `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.
+- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks`, and `delete_empty_masks`: inspect and manage local masks.
+- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_people_mask`, and `create_landscape_mask`: create or edit mask geometry and AI parts on supported Lightroom versions.
+- `get_mask_adjustments`, `set_mask_adjustments`, `get_mask_curves`, `set_mask_curves`, `get_mask_point_colors`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color.
 
 This improves setting selection. It does not by itself create a canonical preset XMP.
 
 ## Current gaps
 
-- No direct `render_preview` tool; use `export_photos` to a new empty review folder.
 - Export returns a destination and count, not exact output filenames. Export one representative per unique folder and inspect the new file.
 - No virtual-copy, snapshot, undo, reset, or restore tool.
-- Upstream `v0.9.0` has no create/export preset tools; the local fork adds them.
 - Adobe's SDK creates plugin-managed presets that are hidden from the Develop panel. Use versioned names and export/import the accepted file, or create a visible canonical preset through Lightroom's UI.
 - A preset can be exported only when Lightroom exposes a backing file. Built-in presets can lack one, and the backing format is determined by Lightroom.
-- `get_photo_metadata` exposes only part of Develop state.
-- The local fork's `set_develop_settings`, `copy_develop_settings`, and `create_develop_preset` allowlists include common global, HSL, detail, lens, crop, vignette, grain, and master/RGB point-curve arrays. They still do not expose Profile, Color Grading, Calibration, or Point Color.
-- Tool schemas allow number/string/boolean values but do not enforce Lightroom-specific numeric ranges. Apply the bounds in the v2 workflow or fallback generator.
+- Global develop-setting allowlists do not expose Profile, Color Grading, Calibration, or global Point Color. Local Point Color is available through the mask tools above.
+- Global develop-setting schemas do not enforce Lightroom-specific numeric ranges. Apply the bounds in the v2 workflow or fallback generator.
 - `copy_develop_settings` without an explicit field list copies the full source settings. Always provide the intended field list for cluster work.
 
 ## Safe closed-loop sequence
@@ -56,7 +54,7 @@ Do not use this route on a master edit when the baseline cannot be restored with
 
 ## Preset creation decision
 
-- Best with the fork: create a versioned plugin checkpoint from explicit intended fields, compare it to the approved look, export it, then import/round-trip it in Lightroom.
+- Best with Lightroom MCP: create a versioned plugin checkpoint from explicit intended fields, compare it to the approved look, export it, then import/round-trip it in Lightroom.
 - Best for a visible Develop-panel preset: use Lightroom's Create Preset UI from the accepted representative and select only intended fields.
 - Acceptable fallback: use `generate_xmp_preset.py` for supported global settings, then import and visually validate it in Lightroom.
 - Not acceptable: wrap the old one-shot XMP generator in MCP and call that a closed loop.

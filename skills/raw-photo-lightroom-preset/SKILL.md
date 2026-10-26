@@ -36,8 +36,8 @@ Use one representative RAW per lighting cluster first.
    - creative look;
    - detail/noise.
 5. Export and inspect after each pass. Compare against the baseline and any user-approved reference image.
-6. When the fork tools are available, create uniquely versioned checkpoints with `create_develop_preset` and diff them against the approved look with `compare_develop_presets`.
-7. Keep a checkpoint log of settings and rendered files. Stop when the remaining difference needs masks, crop, healing, AI Denoise, or subjective user choice.
+6. Create uniquely versioned checkpoints with `create_develop_preset` and diff them against the approved look with `compare_develop_presets`.
+7. Keep a checkpoint log of settings and rendered files. Stop when the remaining difference needs healing or subjective user choice.
 8. Ask for approval on representative before/after results before copying settings across a cluster.
 9. Export an accepted custom/checkpoint preset with `export_develop_preset`; never overwrite an existing destination. Import it into Lightroom before claiming compatibility. Use Lightroom's UI for a visible canonical preset when needed. The bundled generator remains a fallback for a verified global-setting subset.
 

@@ -58,7 +58,7 @@ if (!bunPath) {
 log(`using bun at ${bunPath}`);
 
 run("npm ci --ignore-scripts", serverDir);
-run("npx tsc", serverDir);
+run("npm run build", serverDir);
 
 fs.mkdirSync(outDir, { recursive: true });
 
