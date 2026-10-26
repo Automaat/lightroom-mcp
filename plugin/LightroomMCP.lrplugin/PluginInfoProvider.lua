@@ -222,6 +222,7 @@ local DISPATCH = {
     set_ai_metadata = HandlerAiMetadata.setAiMetadata,
     get_ai_metadata = HandlerAiMetadata.getAiMetadata,
     set_keywords = HandlerOrganization.setKeywords,
+    remove_keyword_subtree = HandlerOrganization.removeKeywordSubtree,
     list_keywords = HandlerKeywords.listKeywords,
     rename_keyword = HandlerKeywords.renameKeyword,
     set_rating = HandlerOrganization.setRating,
