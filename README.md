@@ -255,6 +255,19 @@ The initial provider schema is version 1: `aiScore` and `aiReason` are strings
 persistent field definitions require a schema version bump and migration;
 incompatible field changes also require a field version bump.
 
+`copy_develop_settings` and `apply_develop_preset` accept `dry_run: true` to
+preview without writes or AI recomputation. Replies include per-setting totals
+and detail for at most five targets. `detail_truncated` flags omitted detail;
+`missing_count` and one-based `missing_indices` identify missing inputs when
+`missing_truncated` limits their path detail.
+
+Preset previews compare only declared settings whose current values the SDK
+exposes. `preview_scope` states this limit, and `unknown_current_totals` counts
+unreadable values excluded from the diff. `unknown_effects` lists effects that
+remain unpredicted: SDK-generated values such as `GrainSeed` and preset
+bookkeeping. This preview does not predict the complete result of applying a
+preset.
+
 ### Iterative preset workflow
 
 Use a representative photo or virtual copy rather than a master edit:
