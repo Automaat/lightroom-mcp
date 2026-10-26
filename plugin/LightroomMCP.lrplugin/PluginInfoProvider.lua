@@ -213,6 +213,7 @@ local DISPATCH = {
     rename_keyword = HandlerKeywords.renameKeyword,
     set_rating = HandlerOrganization.setRating,
     set_flag = HandlerOrganization.setFlag,
+    set_color_label = HandlerOrganization.setColorLabel,
     import_photos = HandlerImport.importPhotos,
     export_photos = HandlerExport.exportPhotos,
     export_photo_metadata = HandlerExport.exportPhotoMetadata,
