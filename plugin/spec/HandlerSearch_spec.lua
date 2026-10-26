@@ -93,6 +93,84 @@ describe("HandlerSearch.searchPhotos", function()
         assert.is_false(result.has_more)
     end)
 
+    for _, case in ipairs({
+        { args = { camera = "Sony ILCE-7M3" }, criterion = { criteria = "camera", operation = "==", value = "Sony ILCE-7M3" } },
+        { args = { lens = "24-70mm" }, criterion = { criteria = "lens", operation = "==", value = "24-70mm" } },
+        { args = { iso = 100 }, criterion = { criteria = "isoSpeedRating", operation = "==", value = 100 } },
+        { args = { focal_length = 32 }, criterion = { criteria = "focalLength", operation = "==", value = 32 } },
+        { args = { flag = "pick" }, criterion = { criteria = "pick", operation = "==", value = 1 } },
+        { args = { flag = "reject" }, criterion = { criteria = "pick", operation = "==", value = -1 } },
+        { args = { flag = "none" }, criterion = { criteria = "pick", operation = "==", value = 0 } },
+        { args = { color_label = "red" }, criterion = { criteria = "labelColor", operation = "==", value = 1 } },
+        { args = { color_label = "yellow" }, criterion = { criteria = "labelColor", operation = "==", value = 2 } },
+        { args = { color_label = "green" }, criterion = { criteria = "labelColor", operation = "==", value = 3 } },
+        { args = { color_label = "blue" }, criterion = { criteria = "labelColor", operation = "==", value = 4 } },
+        { args = { color_label = "purple" }, criterion = { criteria = "labelColor", operation = "==", value = 5 } },
+        { args = { color_label = "none" }, criterion = { criteria = "labelColor", operation = "==", value = "none" } },
+        { args = { edited = true }, criterion = { criteria = "hasAdjustments", operation = "isTrue", value = true } },
+        { args = { edited = false }, criterion = { criteria = "hasAdjustments", operation = "isFalse", value = false } },
+        { args = { file_type = "RAW" }, criterion = { criteria = "fileFormat", operation = "==", value = "RAW" } },
+        { args = { folder = "Photos Travel" }, criterion = { criteria = "folder", operation = "all", value = "Photos Travel" } },
+    }) do
+        it("passes the Library criterion for " .. case.criterion.criteria .. " " .. tostring(case.criterion.value), function()
+            local queried
+            catalog.findPhotos = function(_, opts) queried = opts.searchDesc return {} end
+            local result = Handler.searchPhotos(case.args)
+            assert.are.same({ combine = "intersect", case.criterion }, queried)
+            assert.are.equal(0, result.count)
+            assert.are.same({}, result.photos)
+            assert.is_false(result.has_more)
+        end)
+    end
+
+    it("intersects flag and rating with other Library filters", function()
+        local photos = {
+            helper.fakePhoto({ id = "1", rating = 5, pickStatus = 1, fileFormat = "RAW", __hasAdjustments = false }),
+            helper.fakePhoto({ id = "2", rating = 5, pickStatus = -1, fileFormat = "RAW", __hasAdjustments = false }),
+            helper.fakePhoto({ id = "3", rating = 3, pickStatus = 1, fileFormat = "RAW", __hasAdjustments = false }),
+            helper.fakePhoto({ id = "4", rating = 5, pickStatus = 1, fileFormat = "JPG", __hasAdjustments = false }),
+            helper.fakePhoto({ id = "5", rating = 5, pickStatus = 1, fileFormat = "RAW", __hasAdjustments = true }),
+        }
+        catalog = helper.fakeCatalog({ photos = photos })
+        local result = Handler.searchPhotos({ flag = "pick", rating = 5, file_type = "RAW", edited = false })
+        assert.are.equal(1, result.count)
+        assert.are.equal("1", result.photos[1].id)
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    for _, args in ipairs({
+        { flag = "maybe" }, { file_type = "GIF" }, { color_label = "pink" },
+        { camera = "" }, { lens = 42 }, { folder = "  " }, { iso = -1 }, { iso = math.huge },
+        { iso = 0/0 }, { edited = "false" },
+        { focal_length = 0 }, { focal_length = -32 }, { focal_length = math.huge },
+        { focal_length = 0/0 }, { focal_length = "32 mm" },
+    }) do
+        it("rejects invalid Library filters before a catalog query", function()
+            assert.has_error(function() Handler.searchPhotos(args) end)
+            assert.are.equal(0, catalog.getQueryCount())
+        end)
+    end
+
+    it("intersects native focal length with other filters", function()
+        catalog = helper.fakeCatalog({ photos = {
+            helper.fakePhoto({ id = "1", focalLength = 32, rating = 5 }),
+            helper.fakePhoto({ id = "2", focalLength = 32, rating = 3 }),
+            helper.fakePhoto({ id = "3", focalLength = 24, rating = 5 }),
+        } })
+        local result = Handler.searchPhotos({ focal_length = 32, rating = 5 })
+        assert.are.equal(1, result.count)
+        assert.are.equal("1", result.photos[1].id)
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("preserves existing criterion tables", function()
+        assert.are.same({ combine = "intersect",
+            { criteria = "filename", operation = "any", value = "sun" },
+            { criteria = "rating", operation = "==", value = 5 },
+            { criteria = "keywords", operation = "all", value = "travel" },
+        }, Handler.buildSearchDesc({ filename = "sun", rating = 5, keywords = { "travel" } }))
+    end)
+
     it("runs findPhotos OUTSIDE the read-access gate (#124 deadlock guard)", function()
         Handler.searchPhotos({ filename = "sunset" })
         assert.is_false(catalog.getQueriedInsideReadAccess())

@@ -9,6 +9,7 @@ yarn-error.log*
 .pnpm-debug.log*
 dist/
 build/
+server/LightroomMCP.lrplugin/
 *.tsbuildinfo
 
 # Environment

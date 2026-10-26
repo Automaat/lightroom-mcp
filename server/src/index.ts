@@ -52,6 +52,7 @@ const ACTION_TIMEOUTS_MS: Record<string, number> = {
   import_photos: LONG_RUNNING_TIMEOUT_MS,
   set_process_version: LONG_RUNNING_TIMEOUT_MS,
   apply_denoise: LONG_RUNNING_TIMEOUT_MS,
+  apply_auto_adjustments: LONG_RUNNING_TIMEOUT_MS,
   create_mask: LONG_RUNNING_TIMEOUT_MS,
   create_mask_batch: LONG_RUNNING_TIMEOUT_MS,
   combine_mask: LONG_RUNNING_TIMEOUT_MS,

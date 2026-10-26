@@ -59,7 +59,20 @@ Already using Claude Code, Codex, Cursor, Windsurf, or VS Code? Pick your tool b
 <details>
 <summary><b>Claude Code</b></summary>
 
-Same `.mcpb` file as Claude Desktop above — Claude Code accepts it too. Or install via the CLI:
+Load the Claude plugin from a checkout to get the MCP server and the bundled skill together:
+
+```bash
+git clone https://github.com/Automaat/lightroom-mcp.git
+claude --plugin-dir ./lightroom-mcp
+```
+
+Use `/plugin` to check that `lightroom` is loaded. The skill is available as
+`/lightroom:raw-photo-lightroom-preset`. Node.js is required: the plugin starts
+the published npm server with `npx`. That package includes the Lua bundle and
+installs it on first start when no Lightroom MCP plug-in is already installed.
+Restart Lightroom and click **Start Server** in Plug-in Manager.
+
+The same `.mcpb` file as Claude Desktop also works. To install only the MCP server:
 
 ```bash
 claude mcp add lightroom -- npx -y @mskalski/lightroom-mcp
@@ -157,7 +170,7 @@ If you'd rather drop the plugin in by hand:
 
 | Tool | What it does |
 | --- | --- |
-| `search_photos` | Search by filename / keywords / rating / date range. |
+| `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
@@ -175,6 +188,7 @@ If you'd rather drop the plugin in by hand:
 | `rename_keyword` | Rename a keyword everywhere it is used. |
 | `set_rating` | Set 0-5 star rating on photos. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
+| `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |
@@ -191,6 +205,7 @@ If you'd rather drop the plugin in by hand:
 | `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
 | `apply_develop_snapshot` | Restore a saved develop snapshot. |
 | `delete_develop_snapshot` | Delete one saved develop snapshot. |
+| `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
 | `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
@@ -245,6 +260,32 @@ curve must start at input 0 and end at input 255.
   }
 }
 ```
+
+## Scope, write safety and limits
+
+### Your local Classic catalog
+
+This server works with the catalog open in Lightroom Classic on your computer through a Lightroom plug-in. Use it to organize photos, adjust edits and masks, and export Lightroom-rendered images. Lightroom Classic must be running. See [How it works](#how-it-works) for the connection and [Security](#security) for local access and authentication.
+
+### Safeguards when changing photos
+
+- Deleting a collection with `delete_collection` keeps its photos in the catalog ([collection handler](plugin/LightroomMCP.lrplugin/HandlerCollections.lua)).
+- Mask tools that write Lightroom's undocumented mask format check the Lightroom version, the photo's process version and the format of existing masks before writing. They read the result back and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit.
+- Connections require the local token described in [Security](#security), checked by [PluginInfoProvider.lua](plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua).
+
+### What Lightroom's plug-in SDK does not expose
+
+The SDK is Adobe's interface for plug-ins. Its [reference](https://lrc.mcor.dev/) provides no documented calls for these operations:
+
+- Reading histogram values, individual pixel data or detected face regions. `get_photo_preview` returns a rendered image for visual inspection.
+- Running an HDR or panorama merge; producing a print or book; creating or editing a slideshow. The SDK does support [slideshow playback](https://lrc.mcor.dev/modules/LrSlideshow.html), but this server has no playback tool.
+- Running Super Resolution or Raw Details through a documented call.
+- Stack create or unstack operations on photos already in the catalog, or auto-stacking. The SDK's import operation can add a new photo to a stack.
+- Folder create, move or delete operations in the catalog, or catalog open or close operations. Importing photos and managing collections are separate operations.
+- Spot creation with the healing tools; Assisted Culling; Dust Removal; or Render to DNG.
+- Running an HTTP server inside the plug-in. The connection uses the SDK's sockets instead; see [How it works](#how-it-works).
+
+Pixel-based AI edits have another limit: copying a table of develop settings does not copy their generated image data. Since Lightroom Classic 15.0, Lightroom stores heavy edits, including AI edits, in [`.acr` sidecars when saving metadata to files](https://helpx.adobe.com/lightroom-classic/help/create-xmp-acr-files.html). Copying develop-settings tables alone does not transfer those sidecar contents.
 
 ## How it works
 

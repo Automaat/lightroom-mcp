@@ -108,8 +108,10 @@ function M.fakePhoto(meta)
             meta.__appliedPreset = preset
             meta.__appliedPresetPlugin = plugin
         end,
-        applyDevelopSettings = function(_, settings)
+        applyDevelopSettings = function(_, settings, historyName, flattenAutoNow)
             meta.__appliedSettings = settings
+            meta.__appliedHistoryName = historyName
+            meta.__appliedFlattenAutoNow = flattenAutoNow
         end,
     }
     -- Opt in with aiUpdate = "ok" | "fail"; absent models LrC before 13.3.
@@ -308,6 +310,24 @@ function M.fakeCatalog(opts)
                 if kw:getName():lower() == target then return true end
             end
             return false
+        elseif (crit == "camera" or crit == "lens" or crit == "isoSpeedRating" or crit == "focalLength"
+            or crit == "pick" or crit == "labelColor" or crit == "fileFormat") and op == "==" then
+            local keys = { camera = "cameraModel", pick = "pickStatus", labelColor = "colorNameForLabel" }
+            local value = photo:getRawMetadata(keys[crit] or crit)
+            if crit == "labelColor" then
+                local colors = { red = 1, yellow = 2, green = 3, blue = 4, purple = 5, none = "none" }
+                value = colors[value or "none"]
+            end
+            return value == criterion.value
+        elseif crit == "hasAdjustments" and (op == "isTrue" or op == "isFalse") then
+            return (photo:getRawMetadata('__hasAdjustments') == true) == (op == "isTrue")
+        elseif crit == "folder" and op == "all" then
+            local folder = (photo:getRawMetadata('path') or ""):match("^(.*)/[^/]+$") or ""
+            folder = folder:lower()
+            for word in criterion.value:lower():gmatch("%S+") do
+                if not folder:find(word, 1, true) then return false end
+            end
+            return true
         elseif crit == "captureTime" then
             local t = photo:getRawMetadata('dateTimeOriginal')
             if not t then return false end

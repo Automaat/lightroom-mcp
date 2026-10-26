@@ -20,6 +20,10 @@ describe('version sources', () => {
     expect(readJson('mcpb', 'manifest.json').version).toBe(VERSION);
   });
 
+  it('Claude plugin follows the server release version', () => {
+    expect(readJson('.claude-plugin', 'plugin.json').version).toBe(VERSION);
+  });
+
   it('plugin Info.lua matches package.json', () => {
     const lua = fs.readFileSync(
       path.join(repoRoot, 'plugin', 'LightroomMCP.lrplugin', 'Info.lua'),
