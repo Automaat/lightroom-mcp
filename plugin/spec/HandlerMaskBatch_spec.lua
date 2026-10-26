@@ -225,6 +225,29 @@ local function entriesOf(world, photoId)
 end
 
 describe("HandlerMaskBatch.createMaskBatch", function()
+    it("cancel keeps the source mask and leaves the later photos untouched", function()
+        local Handler, world = setup({})
+        local progress = {}
+        local context = {
+            isCanceled = function() return #world.calls.created >= 1 end,
+            report = function(_, completed, total, message)
+                progress[#progress + 1] = { completed, total, message }
+            end,
+        }
+
+        local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" }, context)
+
+        assert.are.same({ { 0, 3, "1" }, { 1, 3, "1" } }, progress)
+        assert.are.equal(1, r.created)
+        assert.is_false(r.complete)
+        assert.are.same({ "2", "3" }, r.remaining_ids)
+        assert.are.equal(1, #entriesOf(world, "1"))
+        assert.are.equal(0, #entriesOf(world, "2"))
+        assert.are.equal(0, #entriesOf(world, "3"))
+        assert.are.same({}, world.calls.updates)
+        assert.are.same({ "develop", "library" }, world.calls.modules)
+    end)
+
     it("creates the mask in Develop on the first photo only and reports every photo created", function()
         local Handler, world = setup({})
 

@@ -1,4 +1,4 @@
-import type { Dispatcher } from "./dispatcher.js";
+import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { validateToolArgs } from "./validate-args.js";
 
 export interface ToolHandlerDeps {
@@ -60,7 +60,7 @@ export const NOT_CONNECTED_MESSAGE =
   "in Plug-in Manager.";
 
 export function createCallToolHandler(deps: ToolHandlerDeps) {
-  return async (name: string, args: unknown): Promise<ToolResponse> => {
+  return async (name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> => {
     const invalid = validateToolArgs(name, args);
     if (invalid) {
       return {
@@ -79,7 +79,9 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     }
 
     try {
-      const resp = await deps.dispatcher.call(name, args);
+      const resp = options
+        ? await deps.dispatcher.call(name, args, undefined, options)
+        : await deps.dispatcher.call(name, args);
       if (resp.error) {
         return {
           content: [{ type: "text", text: `Error: ${resp.error}` }],

@@ -15,15 +15,17 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { LineBuffer } from "./line-buffer.js";
+import type { CallOptions, ToolProgress } from "./dispatcher.js";
 import type { ToolResponse } from "./tool-handler.js";
 
-export type ToolCaller = (name: string, args: unknown) => Promise<ToolResponse>;
+export type ToolCaller = (name: string, args: unknown, options?: CallOptions) => Promise<ToolResponse>;
 
 interface BrokerRequest {
   id: number;
   auth: string | null;
   name: string;
   args: unknown;
+  reportProgress?: boolean;
 }
 
 interface BrokerReply {
@@ -86,7 +88,7 @@ function parseRequest(line: string): BrokerRequest | null {
   if (!req) return null;
   if (typeof req.id !== "number" || typeof req.name !== "string") return null;
   if (req.auth !== null && typeof req.auth !== "string") return null;
-  return { id: req.id, auth: req.auth, name: req.name, args: req.args };
+  return { id: req.id, auth: req.auth, name: req.name, args: req.args, reportProgress: req.reportProgress === true };
 }
 
 function errorResponse(text: string): ToolResponse {
@@ -147,6 +149,8 @@ export class BrokerServer {
     this.clients.add(sock);
     sock.on("error", () => {});
     sock.on("close", () => this.clients.delete(sock));
+    const calls = new Map<number, AbortController>();
+    sock.on("close", () => { for (const controller of calls.values()) controller.abort(); });
     const nonce = newNonce();
     let greeted = false;
     onLines(
@@ -156,7 +160,7 @@ export class BrokerServer {
           greeted = this.greet(sock, nonce, line);
           return;
         }
-        this.handle(sock, nonce, line).catch((err: unknown) => {
+        this.handle(sock, nonce, line, calls).catch((err: unknown) => {
           this.log(`[broker] failed to serve a follower call: ${String(err)}`);
         });
       },
@@ -176,7 +180,13 @@ export class BrokerServer {
     return true;
   }
 
-  private async handle(sock: net.Socket, nonce: string, line: string): Promise<void> {
+  private async handle(sock: net.Socket, nonce: string, line: string, calls: Map<number, AbortController>): Promise<void> {
+    const control = parseObject(line);
+    if (typeof control?.cancelFor === "number") {
+      const auth = typeof control.auth === "string" ? control.auth : null;
+      if (authMatches(signNonce(this.opts.readToken(), `follower:${nonce}`), auth)) calls.get(control.cancelFor)?.abort();
+      return;
+    }
     const req = parseRequest(line);
     if (!req) {
       this.log(`[broker] malformed request from follower: ${line.slice(0, 200)}`);
@@ -186,14 +196,24 @@ export class BrokerServer {
       this.reply(sock, req.id, errorResponse("Rejected by the Lightroom MCP bridge: token mismatch."));
       return;
     }
+    if (calls.has(req.id)) return;
+    const controller = new AbortController();
+    calls.set(req.id, controller);
     this.inFlight++;
     let result: ToolResponse;
     try {
-      result = await this.opts.callTool(req.name, req.args);
+      result = await this.opts.callTool(req.name, req.args, {
+        signal: controller.signal,
+        onProgress: req.reportProgress ? (progress) => {
+          if (!sock.destroyed) sock.write(JSON.stringify({ progressFor: req.id, progress }) + "\n");
+        } : undefined,
+      });
     } catch (err) {
+      calls.delete(req.id);
       this.callDone();
       throw err;
     }
+    calls.delete(req.id);
     this.reply(sock, req.id, result, () => this.callDone());
   }
 
@@ -280,7 +300,7 @@ export class BrokerClient {
   private sock: net.Socket | null = null;
   private nonce = "";
   private nextId = 0;
-  private readonly pending = new Map<number, (resp: ToolResponse) => void>();
+  private readonly pending = new Map<number, { resolve: (resp: ToolResponse) => void; options?: CallOptions; cleanup: () => void }>();
 
   constructor(private readonly opts: BrokerClientOptions) {}
 
@@ -322,7 +342,7 @@ export class BrokerClient {
     sock.on("error", () => {});
     sock.on("close", () => {
       this.sock = null;
-      for (const resolve of this.pending.values()) resolve(errorResponse(OWNER_LOST_MESSAGE));
+      for (const pending of this.pending.values()) { pending.cleanup(); pending.resolve(errorResponse(OWNER_LOST_MESSAGE)); }
       this.pending.clear();
       this.opts.onClose?.();
     });
@@ -336,17 +356,23 @@ export class BrokerClient {
       greeted(data);
       return;
     }
+    if (typeof data.progressFor === "number") {
+      this.pending.get(data.progressFor)?.options?.onProgress?.(data.progress as ToolProgress);
+      return;
+    }
     if (typeof data.id !== "number") return;
-    const resolve = this.pending.get(data.id);
+    const pending = this.pending.get(data.id);
     this.pending.delete(data.id);
-    resolve?.((data as unknown as BrokerReply).result);
+    pending?.cleanup();
+    pending?.resolve((data as unknown as BrokerReply).result);
   }
 
   isConnected(): boolean {
     return this.sock !== null;
   }
 
-  callTool(name: string, args: unknown): Promise<ToolResponse> {
+  callTool(name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> {
+    if (options?.signal?.aborted) return Promise.resolve(errorResponse("Request cancelled"));
     const sock = this.sock;
     if (!sock) return Promise.resolve(errorResponse(OWNER_LOST_MESSAGE));
     const id = this.nextId++;
@@ -355,9 +381,14 @@ export class BrokerClient {
       auth: signNonce(this.opts.readToken(), `follower:${this.nonce}`),
       name,
       args,
+      reportProgress: Boolean(options?.onProgress),
     };
     return new Promise((resolve) => {
-      this.pending.set(id, resolve);
+      const cancel = () => {
+        if (this.pending.has(id)) sock.write(JSON.stringify({ cancelFor: id, auth: req.auth }) + "\n");
+      };
+      this.pending.set(id, { resolve, options, cleanup: () => options?.signal?.removeEventListener("abort", cancel) });
+      options?.signal?.addEventListener("abort", cancel, { once: true });
       sock.write(JSON.stringify(req) + "\n");
     });
   }

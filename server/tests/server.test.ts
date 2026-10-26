@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from '@jest/globals';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/create-server.js';
-import type { PluginResponse } from '../src/dispatcher.js';
+import type { CallOptions, PluginResponse } from '../src/dispatcher.js';
 
 const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   search_photos: 'read-only',
@@ -67,7 +67,7 @@ function asToolResult(r: unknown): ToolResult {
   return r as ToolResult;
 }
 
-type CallFn = (action: string, params: unknown) => Promise<PluginResponse>;
+type CallFn = (action: string, params: unknown, timeout?: number, options?: CallOptions) => Promise<PluginResponse>;
 
 interface Pair {
   server: ReturnType<typeof createMcpServer>;
@@ -96,6 +96,66 @@ describe('createMcpServer', () => {
       await pair.server.close();
       pair = null;
     }
+  });
+
+
+  it('sends progress to the connected client without resolving the tool early', async () => {
+    pair = await connect({ call: async (_action, _params, _timeout, options) => {
+      options?.onProgress?.({ progress: 1, total: 2, message: 'a.jpg' });
+      options?.onProgress?.({ progress: 2, total: 2, message: 'b.jpg' });
+      return { id: '1', result: { exported: 2 } };
+    } });
+    const progress: unknown[] = [];
+
+    const result = asToolResult(await pair.client.callTool({ name: 'export_photos', arguments: {
+      photo_ids: ['1', '2'], destination: '/out',
+    } }, undefined, { onprogress: (value) => progress.push(value) }));
+
+    expect(progress).toEqual([
+      { progress: 1, total: 2, message: 'a.jpg' },
+      { progress: 2, total: 2, message: 'b.jpg' },
+    ]);
+    expect(JSON.parse(result.content[0].text)).toEqual({ exported: 2 });
+  });
+
+  it('no progressToken leaves the result unchanged and requests no progress', async () => {
+    let reporting = true;
+    pair = await connect({ call: async (_action, _params, _timeout, options) => {
+      reporting = options?.onProgress !== undefined;
+      return { id: '1', result: { exported: 2 } };
+    } });
+
+    const result = asToolResult(await pair.client.callTool({ name: 'export_photos', arguments: {
+      photo_ids: ['1', '2'], destination: '/out',
+    } }));
+
+    expect(reporting).toBe(false);
+    expect(JSON.parse(result.content[0].text)).toEqual({ exported: 2 });
+  });
+
+  it('forwards client cancel to the running dispatcher request', async () => {
+    let entered: () => void = () => {};
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    let cancelled: () => void = () => {};
+    const stopped = new Promise<void>((resolve) => { cancelled = resolve; });
+    pair = await connect({ call: async (_action, _params, _timeout, options) => {
+      entered();
+      await new Promise<void>((resolve) => options?.signal?.addEventListener('abort', () => {
+        cancelled(); resolve();
+      }, { once: true }));
+      return { id: '1', result: { complete: false } };
+    } });
+    const controller = new AbortController();
+    const pending = pair.client.callTool({ name: 'export_photos', arguments: {
+      photo_ids: ['1', '2'], destination: '/out',
+    } }, undefined, { signal: controller.signal });
+    const rejection = expect(pending).rejects.toThrow();
+
+    await started;
+    controller.abort();
+
+    await stopped;
+    await rejection;
   });
 
   describe('ListTools', () => {
