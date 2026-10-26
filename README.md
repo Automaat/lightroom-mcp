@@ -157,7 +157,7 @@ If you'd rather drop the plugin in by hand:
 
 | Tool | What it does |
 | --- | --- |
-| `search_photos` | Search by filename / keywords / rating / date range. |
+| `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
