@@ -375,9 +375,6 @@ async function main() {
       const r = await c.callTool("list_collections", { limit: 5 });
       checkTrue("not error", !r.isError, r.text);
       checkTrue("count is number", typeof r.parsed.count === "number");
-      checkTrue("page is bounded", r.parsed.presets.length <= 100);
-      checkEq("has_more matches total", r.parsed.has_more, r.parsed.presets.length < r.parsed.count);
-      checkTrue("list omits backing files", r.parsed.presets.every((preset) => !("file" in preset)));
       return `count=${r.parsed.count}, returned=${r.parsed.collections.length}`;
     });
 
@@ -425,6 +422,9 @@ async function main() {
       const r = await c.callTool("list_develop_presets", {});
       checkTrue("not error", !r.isError, r.text);
       checkTrue("count is number", typeof r.parsed.count === "number");
+      checkTrue("page is bounded", r.parsed.presets.length <= 100);
+      checkEq("has_more matches total", r.parsed.has_more, r.parsed.presets.length < r.parsed.count);
+      checkTrue("list omits backing files", r.parsed.presets.every((preset) => !("file" in preset)));
       ctx.presets = r.parsed.presets;
       ctx.exactPresets = r.parsed.presets.filter((preset) =>
         exactPresetSelector(preset, r.parsed.presets));
