@@ -827,6 +827,81 @@ function DevelopHandler.copyDevelopSettings(args)
     }
 end
 
+local styleMatchSerial = 0
+
+local function isStyleSetting(key)
+    return ALLOWED_DEVELOP_SETTING_LOOKUP[key]
+        and not key:match('^Crop') and not key:match('^Perspective')
+        and not key:match('^Lens')
+        and key ~= 'WhiteBalance' and key ~= 'Temperature' and key ~= 'Tint'
+end
+
+local function sameSetting(left, right)
+    if type(left) ~= type(right) then return false end
+    if type(left) ~= 'table' then return left == right end
+    for key, value in pairs(left) do
+        if not sameSetting(value, right[key]) then return false end
+    end
+    for key in pairs(right) do
+        if left[key] == nil then return false end
+    end
+    return true
+end
+
+function DevelopHandler.matchPhotoStyle(args)
+    local sourceId = requirePhotoId(args.reference_id, 'reference_id')
+    local targetIds = requirePhotoIdArray(args.target_ids, 'target_ids', MAX_BULK_PHOTO_IDS)
+    local catalog = LrApplication.activeCatalog()
+    local source = PhotoLookup.resolveOne(catalog, sourceId)
+    if not source then error('Reference photo not found: ' .. sourceId) end
+    local resolved = PhotoLookup.resolveMany(catalog, targetIds)
+    for _, entry in ipairs(resolved) do
+        if entry.photo and entry.photo.localIdentifier == source.localIdentifier then
+            error('Reference photo must not appear in target_ids')
+        end
+    end
+
+    local settings = {}
+    catalog:withReadAccessDo(function()
+        for key, value in pairs(source:getDevelopSettings()) do
+            if isStyleSetting(key) then settings[key] = value end
+        end
+    end)
+    local results, failures, missing = {}, {}, {}
+    local snapshots = require 'HandlerSnapshots'
+    for _, entry in ipairs(resolved) do
+        if not entry.photo then
+            missing[#missing + 1] = tostring(entry.id)
+        else
+            styleMatchSerial = styleMatchSerial + 1
+            local name = string.format('Style match from %s at %.3f #%d',
+                tostring(source.localIdentifier), LrDate.currentTime(), styleMatchSerial)
+            local snapshot
+            local ok, reason = LrTasks.pcall(function()
+                snapshot = snapshots.create({ photo_id = tostring(entry.photo.localIdentifier), name = name }).snapshot
+                local changed = 0
+                catalog:withReadAccessDo(function()
+                    local before = entry.photo:getDevelopSettings()
+                    for key, value in pairs(settings) do
+                        if not sameSetting(value, before[key]) then changed = changed + 1 end
+                    end
+                end)
+                catalog:withWriteAccessDo('Match Photo Style', function()
+                    entry.photo:applyDevelopSettings(settings)
+                end)
+                results[#results + 1] = {
+                    photo_id = tostring(entry.id), snapshot = snapshot, settings_changed = changed,
+                }
+            end)
+            if not ok then
+                failures[#failures + 1] = { photo_id = tostring(entry.id), reason = tostring(reason), snapshot = snapshot }
+            end
+        end
+    end
+    return { success = #failures == 0, reference_id = sourceId, matched = #results,
+        results = results, failures = failures, missing = missing }
+end
+
 function DevelopHandler.setDevelopSettings(args)
     args.photo_id = requirePhotoId(args.photo_id, "photo_id")
     requireDevelopSettingsObject(args.settings)

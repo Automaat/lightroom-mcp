@@ -52,6 +52,10 @@
       "description": "Get a JPEG preview of a photo as an image."
     },
     {
+      "name": "find_duplicate_groups",
+      "description": "Find read-only duplicate and burst groups using preview similarity and raw capture time"
+    },
+    {
       "name": "get_photo_stats",
       "description": "Read histogram, clipping and sharpness from rendered previews for up to 20 photos."
     },
@@ -186,6 +190,10 @@
     {
       "name": "copy_develop_settings",
       "description": "Copy Develop settings from one photo to others."
+    },
+    {
+      "name": "match_photo_style",
+      "description": "Match a reference photo's global style after a confirmed snapshot, preserving framing, white balance, lens corrections and masks."
     },
     {
       "name": "set_develop_settings",
