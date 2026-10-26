@@ -9,6 +9,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   get_photo_metadata: 'read-only',
   summarize_develop_settings: 'read-only',
   get_photo_preview: 'read-only',
+  get_photo_previews: 'read-only',
   get_photo_stats: 'read-only',
   find_duplicate_groups: 'read-only',
   set_gps: 'destructive',
@@ -197,10 +198,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 71 tools', async () => {
+    it('returns all 72 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(71);
+      expect(tools).toHaveLength(72);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
@@ -233,6 +234,21 @@ describe('createMcpServer', () => {
     expect(result.content).toEqual([
       { type: 'text', text: '{"photo_id":914,"bytes":3}' },
       { type: 'image', data: 'QUJD', mimeType: 'image/jpeg' },
+    ]);
+  });
+
+  it('preserves all batch preview image blocks over MCP', async () => {
+    pair = await connect({ call: async () => ({ id: '1', result: {
+      complete: true, remaining_ids: [], previews: [1, 2, 3].map(id => ({
+        requested_id: id, photo_id: id, image: { mime_type: 'image/jpeg', data: 'QUJD' },
+      })),
+    } }) });
+    const result = await pair.client.callTool({ name: 'get_photo_previews', arguments: { photo_ids: [1, 2, 3] } });
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual([
+      { type: 'text', text: JSON.stringify({ complete: true, remaining_ids: [],
+        previews: [1, 2, 3].map(id => ({ requested_id: id, photo_id: id, image_index: id })) }) },
+      ...[1, 2, 3].map(() => ({ type: 'image', data: 'QUJD', mimeType: 'image/jpeg' })),
     ]);
   });
 

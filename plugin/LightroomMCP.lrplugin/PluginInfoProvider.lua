@@ -217,6 +217,7 @@ local DISPATCH = {
     get_photo_metadata = HandlerMetadata.getPhotoMetadata,
     summarize_develop_settings = HandlerStyleSummary.summarize,
     get_photo_preview = HandlerPreview.getPhotoPreview,
+    get_photo_previews = HandlerPreview.getPhotoPreviews,
     find_duplicate_groups = HandlerPreview.findDuplicateGroups,
     get_photo_stats = HandlerPreview.getPhotoStats,
     set_gps = HandlerMetadata.setGps,

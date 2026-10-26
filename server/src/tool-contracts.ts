@@ -544,6 +544,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_photo_previews",
+    title: "Get batch photo previews",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerPreview.getPhotoPreviews",
+    description:
+      "Get JPEG thumbnails for 1–20 photos in input order for first-pass culling. Text maps requested_id and photo_id to each 1-based image_index; failed photos have an error and no image. Default size 256, longest returned edge at most 2000 pixels, total JPEG budget 8 MiB. A 20-second render deadline returns complete:false and remaining_ids to retry. Individual failures do not fail the batch. Catalog contents are unchanged.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: {
+          type: "array", items: photoIdSchema("Photo ID or file path"), minItems: 1, maxItems: 20,
+          description: "Between 1 and 20 IDs or paths, in image order",
+        },
+        size: { type: "number", minimum: 64, maximum: 2048, description: "Minimum longest edge (64–2048, default 256)" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "find_duplicate_groups",
     title: "Find duplicate groups",
     annotations: { readOnlyHint: true, openWorldHint: false },
