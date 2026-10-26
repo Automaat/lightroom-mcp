@@ -433,6 +433,28 @@ const presetSelectorSchema: InputSchema = {
   anyOf: [{ required: ["preset_uuid"] }, { required: ["preset_name"] }],
 };
 
+const searchFilterProperties = {
+  filename: { type: "string", description: "Search by filename (partial match)" },
+  keywords: stringArray("Search by keywords"),
+  rating: {
+    type: "number",
+    description: "Filter by star rating (0-5)",
+    minimum: 0,
+    maximum: 5,
+  },
+  start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
+  end_date: dateStringSchema("End date (YYYY-MM-DD)"),
+  camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
+  lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
+  iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
+  focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
+  flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
+  color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
+  edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
+  file_type: { type: "string", enum: ["DNG", "RAW", "JPG", "TIFF", "PNG", "PSD", "VIDEO", "PSB", "AVIF", "JXL"], description: "Lightroom file format; camera raw formats use RAW" },
+  folder: { type: "string", minLength: 1, pattern: "\\S", description: "Folder text, including parent folders shown in Lightroom's Folders panel (contains all words)" },
+};
+
 export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "search_photos",
@@ -445,25 +467,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        filename: { type: "string", description: "Search by filename (partial match)" },
-        keywords: stringArray("Search by keywords"),
-        rating: {
-          type: "number",
-          description: "Filter by star rating (0-5)",
-          minimum: 0,
-          maximum: 5,
-        },
-        start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
-        end_date: dateStringSchema("End date (YYYY-MM-DD)"),
-        camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
-        lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
-        iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
-        focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
-        flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
-        color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
-        edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
-        file_type: { type: "string", enum: ["DNG", "RAW", "JPG", "TIFF", "PNG", "PSD", "VIDEO", "PSB", "AVIF", "JXL"], description: "Lightroom file format; camera raw formats use RAW" },
-        folder: { type: "string", minLength: 1, pattern: "\\S", description: "Folder text, including parent folders shown in Lightroom's Folders panel (contains all words)" },
+        ...searchFilterProperties,
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
@@ -696,6 +700,24 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "create_smart_collection",
+    title: "Create smart collection",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    luaHandler: "HandlerCollections.createSmartCollection",
+    description: "Save intersecting search_photos filters as a smart collection that updates as photos change. Requires at least one filter. Missing parent collection sets are created; an existing sibling name is rejected.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string", minLength: 1, pattern: "\\S", description: "Smart collection name" },
+        parent: { type: "string", description: "Parent collection set path, with levels separated by ' / ' (e.g. 'Trips / 2026')" },
+        ...searchFilterProperties,
+      },
+      required: ["name"],
+      anyOf: Object.keys(searchFilterProperties).map((key) => ({ required: [key] })),
     },
   },
   {

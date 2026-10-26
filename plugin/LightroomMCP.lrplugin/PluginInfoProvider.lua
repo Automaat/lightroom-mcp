@@ -204,6 +204,7 @@ local DISPATCH = {
     search_photos = HandlerSearch.searchPhotos,
     list_collections = HandlerCollections.listCollections,
     create_collection = HandlerCollections.createCollection,
+    create_smart_collection = HandlerCollections.createSmartCollection,
     add_to_collection = HandlerCollections.addToCollection,
     get_collection_photos = HandlerCollections.getCollectionPhotos,
     remove_from_collection = HandlerCollections.removeFromCollection,
