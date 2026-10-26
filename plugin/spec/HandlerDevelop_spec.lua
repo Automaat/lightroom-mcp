@@ -1700,3 +1700,162 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
         assert.are.equal(0, calls.switched)
     end)
 end)
+
+
+describe("HandlerDevelop batch dry runs", function()
+    it("previews changed values, unchanged targets and missing ids without writes", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5, Contrast2012 = 10 } })
+        local target = helper.fakePhoto({ id = "1002", developSettings = { Exposure2012 = 0, Contrast2012 = 10 } })
+        local identical = helper.fakePhoto({ id = "1003", developSettings = { Exposure2012 = 0.5 } })
+        local catalog, Handler = setup({ photos = { source, target, identical } })
+        catalog.withWriteAccessDo = function() error("dry run wrote") end
+        target.applyDevelopSettings = function() error("dry run applied") end
+        local r = Handler.copyDevelopSettings({
+            source_id = "1001", target_ids = { "1002", "1003", "missing" }, settings = { "Exposure2012" }, dry_run = true,
+        })
+        assert.are.same({ { key = "Exposure2012", before = 0, after = 0.5,
+            before_present = true, after_present = true } }, r.details[1].changes)
+        assert.are.same({}, r.details[2].changes)
+        assert.are.same({ Exposure2012 = 1 }, r.setting_totals)
+        assert.are.same({ "missing" }, r.missing)
+        assert.are.equal(2, r.targets)
+        assert.are.equal(1, r.changed_targets)
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("previews preset keys only and never applies or recomputes AI masks", function()
+        local target = helper.fakePhoto({ id = "1002", developSettings = { Exposure2012 = 0, Contrast2012 = 10 } })
+        local preset = fakePreset("Subject", { settings = AI_MASK_SETTINGS })
+        local catalog, Handler = setup({ photos = { target }, folders = { fakeFolder("User", { preset }) } })
+        catalog.withWriteAccessDo = function() error("dry run wrote") end
+        target.applyDevelopPreset = function() error("dry run applied") end
+        target.updateAISettings = function() error("dry run recomputed") end
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1002", "missing" }, preset_name = "Subject", dry_run = true })
+        assert.are.equal(1, r.setting_totals.Exposure2012)
+        assert.is_nil(r.setting_totals.Contrast2012)
+        assert.is_true(r.masks_would_be_copied)
+        assert.is_false(r.ai_recomputed)
+        assert.are.same({ "missing" }, r.missing)
+    end)
+
+    it("omits equal preset scalars and curves", function()
+        local settings = { Exposure2012 = 0.5, ToneCurvePV2012 = { 0, 0, 255, 255 } }
+        local target = helper.fakePhoto({ id = "1002", developSettings = settings })
+        local preset = fakePreset("Equal", { settings = settings })
+        local _, Handler = setup({ photos = { target }, folders = { fakeFolder("User", { preset }) } })
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1002" }, preset_name = "Equal", dry_run = true })
+        assert.are.same({}, r.details[1].changes)
+        assert.are.same({}, r.setting_totals)
+        assert.are.equal(0, r.changed_targets)
+    end)
+
+    it("limits preset diffs to readable declared keys and reports unknown effects", function()
+        local preset = fakePreset("Heavy", { settings = {
+            GrainAmount = 92, GrainFrequency = 40, GrainSize = 39, Glow = 0, Version = "18.7",
+        } })
+        local first = helper.fakePhoto({ id = "1002", developSettings = {
+            GrainAmount = 0, GrainFrequency = 50, GrainSize = 25,
+        } })
+        local second = helper.fakePhoto({ id = "1003", developSettings = {
+            GrainAmount = 92, GrainFrequency = 40, GrainSize = 39, Glow = 0,
+        } })
+        local catalog, Handler = setup({ photos = { first, second }, folders = { fakeFolder("Grain", { preset }) } })
+        catalog.withWriteAccessDo = function() error("preset preview wrote") end
+        first.applyDevelopPreset = function() error("preset preview applied") end
+        first.updateAISettings = function() error("preset preview recomputed") end
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1002", "1003" }, preset_name = "Heavy", dry_run = true })
+        assert.are.equal("readable_declared_preset_settings", r.preview_scope)
+        assert.are.same({ Glow = 1, Version = 2 }, r.unknown_current_totals)
+        assert.are.same({ GrainAmount = 1, GrainFrequency = 1, GrainSize = 1 }, r.setting_totals)
+        assert.are.equal(3, #r.details[1].changes)
+        assert.are.same({}, r.details[2].changes)
+        assert.are.equal(1, r.changed_targets)
+        assert.are.same({ "SDK-generated values, including GrainSeed", "Preset bookkeeping" }, r.unknown_effects)
+        assert.is_nil(r.setting_totals.GrainSeed)
+        assert.is_nil(r.setting_totals.Preset)
+    end)
+
+    it("keeps unknown preset values separate from unchanged values on all targets", function()
+        local preset = fakePreset("Unknown", { settings = { Glow = 0 } })
+        local target = helper.fakePhoto({ id = "1002" })
+        local _, Handler = setup({ photos = { target }, folders = { fakeFolder("User", { preset }) } })
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1002" }, preset_name = "Unknown", dry_run = true })
+        assert.are.same({}, r.details[1].changes)
+        assert.are.same({ Glow = 1 }, r.unknown_current_totals)
+        assert.are.equal(0, r.changed_targets)
+    end)
+
+    it("still previews copied settings whose current value is absent", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5 } })
+        local target = helper.fakePhoto({ id = "1002" })
+        local _, Handler = setup({ photos = { source, target } })
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+        assert.are.equal(1, r.setting_totals.Exposure2012)
+        assert.is_false(r.details[1].changes[1].before_present)
+        assert.is_nil(r.preview_scope)
+        assert.is_nil(r.unknown_current_totals)
+        assert.is_nil(r.unknown_effects)
+    end)
+
+    it("does not recompute or write copied AI masks", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = AI_MASK_SETTINGS })
+        local target = helper.fakePhoto({ id = "1002" })
+        local catalog, Handler = setup({ photos = { source, target } })
+        catalog.withWriteAccessDo = function() error("dry run wrote") end
+        target.updateAISettings = function() error("dry run recomputed") end
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+        assert.is_true(r.masks_would_be_copied)
+    end)
+
+    it("retains validation errors in both modes", function()
+        local source = helper.fakePhoto({ id = "1001" })
+        local _, Handler = setup({ photos = { source } })
+        for _, dryRun in ipairs({ false, true }) do
+            assert.has_error(function()
+                Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1001" }, settings = { "Unknown" }, dry_run = dryRun })
+            end, "Unsupported develop setting key: Unknown")
+            assert.has_error(function()
+                Handler.copyDevelopSettings({ source_id = "1001", target_ids = {}, dry_run = dryRun })
+            end, "target_ids is required")
+            assert.has_error(function()
+                Handler.applyDevelopPreset({ photo_ids = { "1001" }, preset_name = "Unknown", dry_run = dryRun })
+            end, "Preset not found")
+            assert.has_error(function()
+                Handler.applyDevelopPreset({ photo_ids = {}, preset_name = "Unknown", dry_run = dryRun })
+            end, "photo_ids is required")
+        end
+    end)
+
+    it("bounds missing paths while retaining every missing input index", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5 } })
+        local _, Handler = setup({ photos = { source } })
+        local ids = {}
+        for i = 1, 200 do ids[i] = "/missing/" .. string.rep("a", 200) .. tostring(i) .. ".jpg" end
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
+        assert.is_true(#require('JSON'):encode(r) <= 20000)
+        assert.are.equal(200, r.missing_count)
+        assert.are.equal(200, #r.missing_indices)
+        assert.is_true(r.missing_truncated)
+        assert.is_true(#r.missing < 200)
+        for i, id in ipairs(r.missing) do assert.are.equal(ids[i], id) end
+        for i, index in ipairs(r.missing_indices) do assert.are.equal(i, index) end
+    end)
+
+    it("bounds 200-target detail and totals every target", function()
+        local settings = { Exposure2012 = 0.5, ToneCurvePV2012 = { 0, 0, 255, 255 } }
+        local source = helper.fakePhoto({ id = "1001", developSettings = settings })
+        local photos, ids = { source }, {}
+        for i = 1, 200 do
+            ids[i] = tostring(i)
+            photos[#photos + 1] = helper.fakePhoto({ id = ids[i], developSettings = { Exposure2012 = 0 } })
+        end
+        local _, Handler = setup({ photos = photos })
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
+        assert.is_true(#require('JSON'):encode(r) <= 20000)
+        assert.are.equal(5, #r.details)
+        assert.is_true(r.detail_truncated)
+        assert.are.equal(200, r.setting_totals.Exposure2012)
+        assert.are.equal(200, r.setting_totals.ToneCurvePV2012)
+        assert.are.same({ type = "table", entries = 4 }, r.details[1].changes[2].after)
+    end)
+end)

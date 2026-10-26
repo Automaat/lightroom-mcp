@@ -45,6 +45,22 @@ local function setup(photos, onSleep)
 end
 
 describe("HandlerPreview.getPhotoPreview", function()
+    it("reads duplicate capture seconds raw and opens no write gate", function()
+        local photo = previewPhoto({ id = "1", path = "/a.nef", dateTimeOriginal = 12345 },
+            function(_, _, _, cb) cb("JPEGDATA") end)
+        photo.getFormattedMetadata = function() error("formatted capture time must not be read") end
+        local catalog, Handler = setup({ photo })
+        catalog.withWriteAccessDo = function() error("duplicate grouping must not write") end
+        local first = Handler.findDuplicateGroups({ photo_ids = { "1" } })
+        photo.getRawMetadata = function(_, key)
+            if key == "dateTimeOriginal" then return 12346 end
+            if key == "uuid" then return "uuid-1" end
+        end
+        local second = Handler.findDuplicateGroups({ photo_ids = { "1" } })
+        assert.are.equal(1, second.capture_time - first.capture_time)
+        assert.are.equal(64, first.requested_size)
+    end)
+
     it("supplies a statistics preview without changing the catalog", function()
         local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, _, _, cb) cb("JPEGDATA") end)
         local _, Handler = setup({ photo })

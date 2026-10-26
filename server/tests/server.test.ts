@@ -11,6 +11,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   get_photo_preview: 'read-only',
   get_photo_previews: 'read-only',
   get_photo_stats: 'read-only',
+  find_duplicate_groups: 'read-only',
   set_gps: 'destructive',
   set_location: 'destructive',
   set_metadata: 'destructive',
@@ -44,6 +45,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   export_develop_preset: 'additive',
   apply_develop_preset: 'destructive',
   copy_develop_settings: 'destructive',
+  match_photo_style: 'destructive',
   set_develop_settings: 'destructive',
   set_process_version: 'destructive',
   list_develop_snapshots: 'read-only',
@@ -196,10 +198,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 70 tools', async () => {
+    it('returns all 72 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(70);
+      expect(tools).toHaveLength(72);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

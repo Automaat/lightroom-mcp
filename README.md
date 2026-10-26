@@ -179,6 +179,7 @@ If you'd rather drop the plugin in by hand:
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
 | `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
+| `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
@@ -212,6 +213,7 @@ If you'd rather drop the plugin in by hand:
 | `export_develop_preset` | Copy a custom/checkpoint preset backing file without overwriting. |
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
 | `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
+| `match_photo_style` | Match global style after a confirmed snapshot per target; preserves framing, white balance, lens corrections and local masks. Returns snapshot IDs for restoration. |
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |
@@ -253,6 +255,19 @@ The initial provider schema is version 1: `aiScore` and `aiReason` are strings
 (the tools convert the score to and from an integer). Changes to these
 persistent field definitions require a schema version bump and migration;
 incompatible field changes also require a field version bump.
+
+`copy_develop_settings` and `apply_develop_preset` accept `dry_run: true` to
+preview without writes or AI recomputation. Replies include per-setting totals
+and detail for at most five targets. `detail_truncated` flags omitted detail;
+`missing_count` and one-based `missing_indices` identify missing inputs when
+`missing_truncated` limits their path detail.
+
+Preset previews compare only declared settings whose current values the SDK
+exposes. `preview_scope` states this limit, and `unknown_current_totals` counts
+unreadable values excluded from the diff. `unknown_effects` lists effects that
+remain unpredicted: SDK-generated values such as `GrainSeed` and preset
+bookkeeping. This preview does not predict the complete result of applying a
+preset.
 
 ### First-pass cull workflow
 

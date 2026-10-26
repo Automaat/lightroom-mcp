@@ -174,4 +174,21 @@ function PreviewHandler.getPhotoStats(args)
     return PreviewHandler.getPhotoPreview({ photo_id = args.photo_ids[1], size = DEFAULT_SIZE })
 end
 
+function PreviewHandler.findDuplicateGroups(args)
+    if type(args.photo_ids) ~= "table" or #args.photo_ids ~= 1 then
+        error("The server requests one duplicate-group preview at a time")
+    end
+    local catalog = LrApplication.activeCatalog()
+    local photo = PhotoLookup.resolveOne(catalog, args.photo_ids[1])
+    if not photo then error("Photo not found: " .. tostring(args.photo_ids[1])) end
+    local captureTime
+    catalog:withReadAccessDo(function()
+        captureTime = photo:getRawMetadata("dateTimeOriginal")
+    end)
+    if type(captureTime) ~= "number" then error("No raw capture time") end
+    local result = PreviewHandler.getPhotoPreview({ photo_id = photo.localIdentifier, size = MIN_SIZE })
+    result.capture_time = captureTime
+    return result
+end
+
 return PreviewHandler

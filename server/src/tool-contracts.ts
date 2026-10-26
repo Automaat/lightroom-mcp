@@ -564,6 +564,24 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "find_duplicate_groups",
+    title: "Find duplicate groups",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerPreview.findDuplicateGroups",
+    description:
+      "Find near-duplicate or burst groups in up to 100 photo IDs or paths, without changing the catalog. Uses a 64-bit dHash of current JPEG previews (minimum edge 64), plus raw capture time. Defaults: time_window_seconds=5 and max_hamming_distance=10; both are inclusive and must hold between every pair in a group. Groups are built in input order, exclude singletons, and report resolved photo IDs; repeated photos are ignored. Hash similarity is approximate and does not select the best frame. photos reports each processed ID and raw capture_time in Lightroom seconds; times have second precision and no timezone normalization. No hashes are cached. Stops after a 25-second budget and returns groups found so far, complete=false and remaining_ids; preview failures or missing times appear in unprocessed with a reason. A group can grow when remaining IDs are retried together with the original set.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { type: "array", items: photoIdSchema("Photo ID or file path"), minItems: 1, maxItems: 100, description: "Between 1 and 100 IDs or paths" },
+        time_window_seconds: { type: "number", minimum: 0, maximum: 86400, description: "Maximum capture gap in seconds (default 5)" },
+        max_hamming_distance: { type: "integer", minimum: 0, maximum: 64, description: "Maximum differing dHash bits (default 10)" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "get_photo_stats",
     title: "Get photo statistics",
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -1277,6 +1295,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
+        dry_run: {
+          type: "boolean",
+          default: false,
+          description: "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Missing path detail has a 4,000-character budget and is trimmed further to keep the reply within 20,000 characters: missing_count and one-based missing_indices identify all missing inputs, and missing_truncated flags an incomplete missing list. Tables are summarized by entry count and strings over 128 characters by length and prefix. Preset previews compare only declared settings whose current values the SDK exposes. preview_scope is readable_declared_preset_settings; unknown_current_totals counts unreadable values per key, which are excluded from changes and setting_totals. unknown_effects explicitly excludes SDK-generated values including GrainSeed and preset bookkeeping. These effects are not predicted.",
+        },
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
         preset_name: {
           type: "string",
@@ -1301,6 +1324,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
+        dry_run: {
+          type: "boolean",
+          default: false,
+          description: "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Missing path detail has a 4,000-character budget and is trimmed further to keep the reply within 20,000 characters: missing_count and one-based missing_indices identify all missing inputs, and missing_truncated flags an incomplete missing list. Tables are summarized by entry count and strings over 128 characters by length and prefix.",
+        },
         source_id: photoIdSchema("Source photo ID or file path"),
         target_ids: photoIdArray("Target photo IDs or file paths"),
         settings: {
@@ -1316,6 +1344,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["source_id", "target_ids"],
+    },
+  },
+  {
+    name: "match_photo_style",
+    title: "Match reference photo style",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.matchPhotoStyle",
+    description:
+      "Apply a reference photo's allowlisted global tone, color, curves, detail, noise, grain and vignette settings after creating and confirming a Develop snapshot on each target. Excludes crop, perspective, white balance (WhiteBalance, Temperature, Tint), lens corrections and all local adjustments including AI masks. Returns results with photo_id, snapshot (id and name) and settings_changed (keys whose values differ before applying), plus failures with reasons and missing IDs. Restore a target with apply_develop_snapshot. The reference cannot be a target, including via a file path alias. No pixel-based adaptation is performed.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        reference_id: photoIdSchema("Reference photo ID or file path"),
+        target_ids: photoIdArray("Target photo IDs or file paths"),
+      },
+      required: ["reference_id", "target_ids"],
     },
   },
   {
