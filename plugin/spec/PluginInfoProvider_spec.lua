@@ -25,6 +25,10 @@ local HANDLER_MODULES = {
 local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
+        LrProgressScope = function()
+            return { setCancelable = function() end, setPortionComplete = function() end,
+                setCaption = function() end, isCanceled = function() return false end, done = function() end }
+        end,
         LrTasks = {
             startAsyncTask = function(fn)
                 if asyncTasks then

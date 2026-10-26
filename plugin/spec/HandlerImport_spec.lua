@@ -49,6 +49,25 @@ local function setup(opts)
 end
 
 describe("HandlerImport.importPhotos", function()
+    it("cancel keeps imports already committed and returns unprocessed paths", function()
+        local catalog, Handler = setup({ fs = {
+            directories = { ["/dir"] = true },
+            dirContents = { "/dir/a.jpg", "/dir/b.jpg", "/dir/c.jpg" },
+        } })
+        local done = 0
+        local context = {
+            isCanceled = function() return done >= 1 end,
+            report = function(_, progress) done = progress end,
+        }
+
+        local r = Handler.importPhotos({ source_path = "/dir" }, context)
+
+        assert.are.equal(1, r.imported)
+        assert.is_false(r.complete)
+        assert.are.same({ "/dir/b.jpg", "/dir/c.jpg" }, r.remaining_paths)
+        assert.are.equal(1, #catalog:getAllPhotos())
+    end)
+
     it("imports a single photo", function()
         local catalog, Handler = setup({
             fs = { exists = { ["/photo.jpg"] = true }, directories = {} },

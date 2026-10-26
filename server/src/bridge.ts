@@ -1,5 +1,6 @@
 import { BrokerClient, BrokerServer, type ToolCaller } from "./broker.js";
 import { LockHeldError, type InstanceLock } from "./instance-lock.js";
+import type { CallOptions } from "./dispatcher.js";
 import type { ToolResponse } from "./tool-handler.js";
 
 export interface Leader {
@@ -78,14 +79,14 @@ export class Bridge {
     return this.state.kind;
   }
 
-  async callTool(name: string, args: unknown): Promise<ToolResponse> {
+  async callTool(name: string, args: unknown, options?: CallOptions): Promise<ToolResponse> {
     await this.start();
     if (this.state.kind === "none") await this.waitForRole();
     switch (this.state.kind) {
       case "leader":
-        return this.state.leader.callTool(name, args);
+        return this.state.leader.callTool(name, args, options);
       case "follower":
-        return this.state.client.callTool(name, args);
+        return this.state.client.callTool(name, args, options);
       case "none":
         return this.noOwnerResponse();
     }
@@ -163,7 +164,7 @@ export class Bridge {
     let callTool: ToolCaller = async () => this.noOwnerResponse();
     const server = new BrokerServer({
       path: this.opts.ipcPath,
-      callTool: (name, args) => callTool(name, args),
+      callTool: (name, args, options) => callTool(name, args, options),
       readToken: this.opts.readToken,
       log: this.log,
     });

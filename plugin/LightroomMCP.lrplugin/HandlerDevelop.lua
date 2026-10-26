@@ -968,7 +968,7 @@ local function denoisePhoto(catalog, photo, amount)
     }
 end
 
-local function denoiseAll(catalog, resolved, amount, state, startedAt)
+local function denoiseAll(catalog, resolved, amount, state, startedAt, context)
     DevelopSession.openDevelop(function() return LrDevelopController.getEnhancePanelState() ~= nil end)
 
     local results, remaining = {}, {}
@@ -977,13 +977,15 @@ local function denoiseAll(catalog, resolved, amount, state, startedAt)
 
     for _, entry in ipairs(resolved) do
         local result
-        if #remaining > 0 or LrDate.currentTime() - startedAt >= DENOISE_TIME_BUDGET_SECONDS then
+        if #remaining > 0 or (context and context:isCanceled())
+            or LrDate.currentTime() - startedAt >= DENOISE_TIME_BUDGET_SECONDS then
             remaining[#remaining + 1] = tostring(entry.id)
         elseif not entry.photo then
             result = { status = "skipped", reason = "photo not found" }
         elseif seen[entry.photo] then
             result = { status = "skipped", reason = "duplicate" }
         else
+            if context then context:report(#results, #resolved, entry.photo:getFormattedMetadata("fileName") or tostring(entry.id)) end
             seen[entry.photo] = true
             if DevelopSession.activate(catalog, entry.photo, state) then
                 result = denoisePhoto(catalog, entry.photo, amount)
@@ -996,12 +998,13 @@ local function denoiseAll(catalog, resolved, amount, state, startedAt)
             result.id = result.id or tostring(entry.id)
             counts[result.status] = counts[result.status] + 1
             results[#results + 1] = result
+            if context then context:report(#results, #resolved, result.id) end
         end
     end
     return results, counts, remaining
 end
 
-function DevelopHandler.applyDenoise(args)
+function DevelopHandler.applyDenoise(args, context)
     args.photo_ids = requirePhotoIdArray(args.photo_ids, "photo_ids", MAX_DENOISE_PHOTO_IDS)
     local amount = requireDenoiseAmount(args.amount)
     if args.restore_selection ~= nil and type(args.restore_selection) ~= "boolean" then
@@ -1013,7 +1016,7 @@ function DevelopHandler.applyDenoise(args)
     local startedAt = LrDate.currentTime()
     local outcome = DevelopSession.run("apply_denoise", catalog, args.restore_selection ~= false, function(state)
         local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
-        local results, counts, remaining = denoiseAll(catalog, resolved, amount, state, startedAt)
+        local results, counts, remaining = denoiseAll(catalog, resolved, amount, state, startedAt, context)
         return { results = results, counts = counts, remaining = remaining }
     end)
     local results, counts, remaining = outcome.results, outcome.counts, outcome.remaining

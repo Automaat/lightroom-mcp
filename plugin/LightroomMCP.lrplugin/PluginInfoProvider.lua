@@ -1,4 +1,5 @@
 local LrTasks = import 'LrTasks'
+local LrProgressScope = import 'LrProgressScope'
 local LrDialogs = import 'LrDialogs'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrSocket = import 'LrSocket'
@@ -328,6 +329,9 @@ local function sendResponse(response)
     pluginState.requestsProcessed = pluginState.requestsProcessed + 1
 end
 
+local activeRequests = {}
+local LONG_ACTIONS = { export_photos = true, import_photos = true, apply_denoise = true, create_mask_batch = true }
+
 local function dispatchAction(request)
     if shutdownRequested() then return end
     local id = request.id
@@ -366,9 +370,32 @@ local function dispatchAction(request)
     -- Lightroom's Lua sandbox: using them in the dispatcher's error path
     -- turns a handler error into a silent nil-call that never reaches the
     -- client. Stick to LrTasks.pcall.
+    local context
+    if LONG_ACTIONS[action] then
+        local scope = LrProgressScope { title = action, caption = "Starting" }
+        scope:setCancelable(true)
+        context = activeRequests[id] or { cancelled = false }
+        context.lastProgress = -1
+        function context:isCanceled() return self.cancelled or scope:isCanceled() end
+        function context:report(progress, total, message)
+            scope:setPortionComplete(progress, math.max(total, 1))
+            scope:setCaption(tostring(message))
+            if request.reportProgress and progress > self.lastProgress then
+                self.lastProgress = progress
+                sendResponse({ progressFor = id, progress = { progress = progress, total = total, message = tostring(message) } })
+            end
+        end
+        context.scope = scope
+        activeRequests[id] = context
+    end
     local execOk, resultOrErr = LrTasks.pcall(function()
-        return handler(params)
+        return handler(params, context)
     end)
+    activeRequests[id] = nil
+    if context then
+        if context:isCanceled() then addLog("Cancelled " .. action .. " id=" .. tostring(id)) end
+        context.scope:done()
+    end
     if execOk then
         sendResponse({ id = id, result = resultOrErr })
     else
@@ -411,6 +438,12 @@ local function consumeMessage(message)
         return nil
     end
 
+    if request.action == "cancel" then
+        local target = request.params and request.params.request_id
+        if target and activeRequests[target] then activeRequests[target].cancelled = true end
+        return nil
+    end
+    if LONG_ACTIONS[request.action] and request.id then activeRequests[request.id] = { cancelled = false } end
     return request
 end
 
