@@ -128,4 +128,11 @@ function PreviewHandler.getPhotoPreview(args)
     }
 end
 
+function PreviewHandler.getPhotoStats(args)
+    if type(args.photo_ids) ~= "table" or #args.photo_ids ~= 1 then
+        error("The server requests one statistics preview at a time")
+    end
+    return PreviewHandler.getPhotoPreview({ photo_id = args.photo_ids[1], size = DEFAULT_SIZE })
+end
+
 return PreviewHandler

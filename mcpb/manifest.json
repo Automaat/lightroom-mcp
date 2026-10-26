@@ -52,6 +52,10 @@
       "description": "Get a JPEG preview of a photo as an image."
     },
     {
+      "name": "get_photo_stats",
+      "description": "Read histogram, clipping and sharpness from rendered previews for up to 20 photos."
+    },
+    {
       "name": "set_gps",
       "description": "Set the GPS position of photos."
     },
