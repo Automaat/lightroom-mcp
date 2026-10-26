@@ -1,4 +1,4 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { JSONObject, Tool } from "@modelcontextprotocol/server";
 
 type InputSchema = Tool["inputSchema"];
 
@@ -118,7 +118,7 @@ const gradientGeometryProperties = {
     enum: ["inside", "outside"],
     description: "Radial only: apply the effect inside (default) or outside the ellipse",
   },
-} as const;
+} satisfies JSONObject;
 
 const brushStrokeProperties = {
   strokes: {
@@ -170,7 +170,7 @@ const brushStrokeProperties = {
       required: ["points"],
     },
   },
-} as const;
+} satisfies JSONObject;
 
 export const POINT_CURVE_SETTING_KEYS = [
   "ToneCurvePV2012",
@@ -360,12 +360,12 @@ const stringArray = (description: string, maxItems?: number) => ({
  * caller piping search/selection output straight into a write tool sends
  * numbers. Accept both rather than making every caller stringify.
  */
-const photoIdSchema = (description: string) => ({
+const photoIdSchema = (description: string): JSONObject => ({
   oneOf: [{ type: "string", minLength: 1 }, { type: "number" }],
   description,
 });
 
-const photoIdArray = (description: string) => ({
+const photoIdArray = (description: string): JSONObject => ({
   type: "array",
   items: { oneOf: [{ type: "string", minLength: 1 }, { type: "number" }] },
   minItems: 1,
@@ -1209,7 +1209,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         settings: {
           type: "array",
-          items: { type: "string", enum: DEVELOP_SETTING_KEYS },
+          items: { type: "string", enum: [...DEVELOP_SETTING_KEYS] },
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
           uniqueItems: true,
@@ -1287,7 +1287,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "array",
           items: {
             type: "string",
-            enum: DEVELOP_SETTING_KEYS,
+            enum: [...DEVELOP_SETTING_KEYS],
           },
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
