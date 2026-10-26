@@ -1,4 +1,4 @@
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { Tool } from "@modelcontextprotocol/server";
 import { TOOL_CONTRACTS } from "./tool-contracts.js";
 
 export const TOOL_DEFINITIONS: Tool[] = TOOL_CONTRACTS.map(
