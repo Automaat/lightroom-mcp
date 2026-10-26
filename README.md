@@ -177,6 +177,8 @@ If you'd rather drop the plugin in by hand:
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
+| `list_folders` | Catalog folders in tree order, with full paths and direct photo counts (paginated). |
+| `get_folder_photos` | Photos by full folder path, optionally including subfolders (paginated). |
 | `list_collections` | All collections and collection sets. |
 | `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
 | `add_to_collection` | Add photos to a collection, by name or by its `list_collections` path. |

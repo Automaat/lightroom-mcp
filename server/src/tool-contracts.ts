@@ -612,6 +612,39 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "list_folders",
+    title: "List folders",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerFolders.listFolders",
+    description: "List catalog folders in tree order as a paginated flat list of full paths, names and photo_count (direct photos only, excluding subfolders). Default limit 100.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        limit: { type: "integer", minimum: 0, description: "Max folders to return (default 100)" },
+        offset: { type: "integer", minimum: 0, description: "Folders to skip (default 0)" },
+      },
+    },
+  },
+  {
+    name: "get_folder_photos",
+    title: "Get folder photos",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerFolders.getFolderPhotos",
+    description: "List photos in a catalog folder by its full path from list_folders (paginated, default limit 100). Subfolders are excluded by default.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        folder_path: { type: "string", minLength: 1, description: "Full folder path from list_folders" },
+        include_subfolders: { type: "boolean", description: "Include photos in subfolders (default false)" },
+        limit: { type: "integer", minimum: 0, description: "Max photos to return (default 100)" },
+        offset: { type: "integer", minimum: 0, description: "Photos to skip (default 0)" },
+      },
+      required: ["folder_path"],
+    },
+  },
+  {
     name: "list_collections",
     title: "List collections",
     annotations: { readOnlyHint: true, openWorldHint: false },

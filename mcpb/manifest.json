@@ -64,6 +64,14 @@
       "description": "Set title, caption, headline, creator and copyright fields of photos."
     },
     {
+      "name": "list_folders",
+      "description": "List catalog folders with full paths and direct photo counts."
+    },
+    {
+      "name": "get_folder_photos",
+      "description": "List photos in a folder, optionally including subfolders."
+    },
+    {
       "name": "list_collections",
       "description": "List all collections and collection sets."
     },
