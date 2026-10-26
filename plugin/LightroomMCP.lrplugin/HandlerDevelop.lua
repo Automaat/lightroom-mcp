@@ -1047,4 +1047,65 @@ function DevelopHandler.applyDenoise(args, context)
     }
 end
 
+function DevelopHandler.resetDevelopAdjustments(args, context)
+    args.photo_ids = requirePhotoIdArray(args.photo_ids, "photo_ids", 100)
+    if args.confirm ~= true then error("confirm must be true to reset all develop adjustments") end
+    if type(LrDevelopController.resetAllDevelopAdjustments) ~= "function" then
+        error("Lightroom does not support resetAllDevelopAdjustments")
+    end
+    local catalog = LrApplication.activeCatalog()
+    local startedAt = LrDate.currentTime()
+    return DevelopSession.run("reset_develop_adjustments", catalog, true, function(state)
+        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+        local results, remaining, seen = {}, {}, {}
+        local counts = { reset = 0, skipped = 0, failed = 0 }
+        for _, entry in ipairs(resolved) do
+            local result
+            if #remaining > 0 or (context and context:isCanceled())
+                or LrDate.currentTime() - startedAt >= 240 then
+                remaining[#remaining + 1] = tostring(entry.id)
+            elseif not entry.photo then
+                result = { status = "skipped", reason = "photo not found" }
+            elseif seen[entry.photo] then
+                result = { status = "skipped", reason = "duplicate" }
+            else
+                seen[entry.photo] = true
+                if context then context:report(#results, #resolved, tostring(entry.id)) end
+                local ok, err = LrTasks.pcall(function()
+                    DevelopSession.openPhoto(catalog, entry.photo, state)
+                    if LrDate.currentTime() - startedAt >= 240 or (context and context:isCanceled()) then
+                        return false
+                    end
+                    LrDevelopController.resetAllDevelopAdjustments()
+                    DevelopSession.flushPendingEdits()
+                    return true
+                end)
+                if ok and err == false then
+                    remaining[#remaining + 1] = tostring(entry.id)
+                else
+                    result = ok and { status = "reset" } or { status = "failed", reason = tostring(err) }
+                    result.id = tostring(entry.photo.localIdentifier)
+                end
+            end
+            if result then
+                result.id = result.id or tostring(entry.id)
+                counts[result.status] = counts[result.status] + 1
+                results[#results + 1] = result
+            end
+        end
+        if context and #results > 0 then context:report(#results, #resolved, results[#results].id) end
+        local complete = #remaining == 0
+        return {
+            success = counts.failed == 0 and complete,
+            complete = complete,
+            reset = counts.reset,
+            skipped = counts.skipped,
+            failed = counts.failed,
+            results = results,
+            remaining_ids = not complete and remaining or nil,
+            seconds = math.floor((LrDate.currentTime() - startedAt) * 10 + 0.5) / 10,
+        }
+    end)
+end
+
 return DevelopHandler

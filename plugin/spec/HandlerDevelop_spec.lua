@@ -1044,6 +1044,12 @@ local function denoiseSetup(opts)
     }
     local Handler
     local controller = {
+        resetAllDevelopAdjustments = function()
+            if opts.resetError then error(opts.resetError) end
+            calls.resets = calls.resets or {}
+            calls.resets[#calls.resets + 1] = active.localIdentifier
+            if opts.onReset then opts.onReset(clock) end
+        end,
         getEnhancePanelState = function()
             if module ~= "develop" or opts.panelUnavailable then return nil end
             if not active then return { denoiseEnabled = false } end
@@ -1132,6 +1138,60 @@ local function errorOf(fn)
     assert.is_false(ok)
     return tostring(err)
 end
+
+describe("HandlerDevelop.resetDevelopAdjustments", function()
+    it("resets unique photos and skips missing and duplicate ids", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+        local result = Handler.resetDevelopAdjustments({ photo_ids = { "1", "404", "1", "2" }, confirm = true })
+        assert.is_true(result.success)
+        assert.are.same({ "1", "2" }, calls.resets)
+        assert.are.equal(2, result.reset)
+        assert.are.equal(2, result.skipped)
+        assert.are.equal("photo not found", result.results[2].reason)
+        assert.are.equal("duplicate", result.results[3].reason)
+        assert.are.equal("library", calls.modules[#calls.modules])
+        assert.are.equal("1", calls.selections[#calls.selections])
+    end)
+
+    it("returns the unprocessed ids when the budget expires", function()
+        local Handler, calls = denoiseSetup({
+            photos = { { id = "1" }, { id = "2" }, { id = "3" } },
+            onReset = function(clock) clock.now = 240 end,
+        })
+        local result = Handler.resetDevelopAdjustments({ photo_ids = { "1", "2", "3" }, confirm = true })
+        assert.is_false(result.complete)
+        assert.are.same({ "1" }, calls.resets)
+        assert.are.same({ "2", "3" }, result.remaining_ids)
+    end)
+
+    it("reports reset failures and restores the view", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, resetError = "reset refused" })
+        local result = Handler.resetDevelopAdjustments({ photo_ids = { "1" }, confirm = true })
+        assert.is_false(result.success)
+        assert.are.equal(1, result.failed)
+        assert.matches("reset refused", result.results[1].reason)
+        assert.are.equal("library", calls.modules[#calls.modules])
+    end)
+
+    it("requires explicit confirmation before changing photos", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        for _, args in ipairs({ { photo_ids = { "1" } }, { photo_ids = { "1" }, confirm = false } }) do
+            assert.matches("confirm must be true", errorOf(function() Handler.resetDevelopAdjustments(args) end))
+        end
+        assert.is_nil(calls.resets)
+        assert.are.equal(0, calls.switched)
+    end)
+
+    it("returns all ids when canceled before opening Develop", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        local result = Handler.resetDevelopAdjustments({ photo_ids = { "1" }, confirm = true }, {
+            isCanceled = function() return true end,
+        })
+        assert.are.same({ "1" }, result.remaining_ids)
+        assert.is_nil(calls.resets)
+        assert.are.equal(0, calls.switched)
+    end)
+end)
 
 describe("HandlerDevelop.applyDenoise", function()
     it("cancel keeps completed denoise and restores the module and selection", function()
