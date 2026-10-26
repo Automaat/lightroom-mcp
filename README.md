@@ -187,6 +187,10 @@ If you'd rather drop the plugin in by hand:
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
 | `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
 | `set_develop_settings` | Write SDK setting key/values directly. |
+| `list_develop_snapshots` | List a photo’s saved develop snapshots. |
+| `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
+| `apply_develop_snapshot` | Restore a saved develop snapshot. |
+| `delete_develop_snapshot` | Delete one saved develop snapshot. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
 | `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
