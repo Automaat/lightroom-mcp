@@ -485,6 +485,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "summarize_develop_settings",
+    title: "Summarize develop settings",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerStyleSummary.summarize",
+    description:
+      "Summarize numeric Develop settings by camera model and ISO bucket (1-400, 401-1600, 1601-6400, 6401+, unknown). Select rating >= min_rating (default 4); exported_only additionally requires raw isExported true. Set min_rating 0 for all ratings. Read at most max_photos Develop settings (default and maximum 200); exported selection reads batched flags for all rating matches. Returns groups with count and SDK setting keys mapped to median/min/max, plus scanned, matched and truncated. Excludes crop, perspective, Temperature, Tint, non-numeric/non-finite and all-zero settings. Each group fits 6000 characters; settings are considered alphabetically and settings_omitted counts those excluded by the size limit. Read-only; does not apply a style.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        min_rating: { type: "integer", minimum: 0, maximum: 5, default: 4, description: "Minimum star rating, inclusive" },
+        exported_only: { type: "boolean", default: false, description: "Require an exported photo as well as the minimum rating" },
+        max_photos: { type: "integer", minimum: 1, maximum: 200, default: 200, description: "Maximum photos whose Develop settings are read" },
+      },
+    },
+  },
+  {
     name: "get_photo_metadata",
     title: "Get photo metadata",
     annotations: { readOnlyHint: true, openWorldHint: false },

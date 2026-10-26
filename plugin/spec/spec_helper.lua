@@ -57,7 +57,7 @@ for _, key in ipairs({
     -- File / catalog
     "fileName", "fileSize", "fileFormat", "path", "dimensions",
     "rating", "colorNameForLabel", "pickStatus", "keywords",
-    "uuid", "isVirtualCopy", "croppedDimensions", "dateTimeOriginalISO8601",
+    "uuid", "isVirtualCopy", "isExported", "croppedDimensions", "dateTimeOriginalISO8601",
     "masterPhoto", "virtualCopies", "orientation",
     "isInStackInFolder", "stackInFolderIsCollapsed", "stackPositionInFolder",
     "topOfStackInFolderContainingPhoto", "stackInFolderMembers",

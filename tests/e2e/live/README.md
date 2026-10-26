@@ -121,6 +121,8 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 
 ## Known traps
 
+`node tests/e2e/live/style-summary.mjs` checks the single-photo median on `arw_14bit`, restores its exposure/rating and all other five-star ratings, then times a 200-photo summary (requires `make-batch.mjs` and `import-batch.mjs` first). Issue 387's prerequisite was checked on LrC 15.6 with a fresh synthetic import: protected raw `isExported` was Boolean `false`, `export_photos` exported one JPEG, and the same raw getter returned Boolean `true`. The diagnostic action was private to the temporary probe bundle. The summary intersects exported state with rating, uses SDK numeric keys, and reports settings omitted by the per-group size limit.
+
 - `LrInitPlugin` runs only when Lightroom's window is first activated: after a relaunch that leaves another app in front, no server starts. `setup-catalog.mjs` and `ensureLightroomFrontmost()` activate it.
 - "No X detected" and "Enable address lookup?" modals block the UI and make mask creation silently do nothing. Run `dismissBlockingModals()` after every launch and after any AI mask call that finds nothing.
 - `get_photo_preview` is stale right after a photo enters Develop and can answer "error loading thumb" after a settings change until you select another photo and back. Use `measureChange` (stable twice before, 3.5 s wait, stable twice after) or a diff shows a false uniform change.
