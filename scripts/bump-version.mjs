@@ -91,6 +91,18 @@ const targets = [
     },
   },
   {
+    name: ".claude-plugin/plugin.json",
+    file: p(".claude-plugin", "plugin.json"),
+    read() {
+      return readJson(this.file).version;
+    },
+    write(v) {
+      const j = readJson(this.file);
+      j.version = v;
+      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
+    },
+  },
+  {
     name: "plugin/LightroomMCP.lrplugin/Info.lua",
     file: p("plugin", "LightroomMCP.lrplugin", "Info.lua"),
     read() {
