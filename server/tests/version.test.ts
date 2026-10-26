@@ -1,8 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { VERSION } from '../src/version.js';
 import { createMcpServer } from '../src/create-server.js';
 
