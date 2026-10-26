@@ -124,12 +124,20 @@
       "description": "Rename a keyword everywhere it is used."
     },
     {
+      "name": "undo_last_step",
+      "description": "Undo one shared Lightroom history step, including user actions, with confirm: true."
+    },
+    {
       "name": "set_rating",
       "description": "Set star rating on photos."
     },
     {
       "name": "set_flag",
       "description": "Flag photos as pick or reject, or remove the flag."
+    },
+    {
+      "name": "remove_photos_from_catalog",
+      "description": "Remove specified photos from the catalog with explicit confirmation; keep files on disk (Lightroom Classic 14.3+)"
     },
     {
       "name": "set_color_label",

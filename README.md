@@ -192,7 +192,9 @@ If you'd rather drop the plugin in by hand:
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `rename_keyword` | Rename a keyword everywhere it is used. |
+| `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
 | `set_rating` | Set 0-5 star rating on photos. |
+| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |

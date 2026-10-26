@@ -927,6 +927,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "undo_last_step",
+    title: "Undo last step",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerUndo.undoLastStep",
+    description:
+      "Undo exactly one step from Lightroom's shared history. Requires confirm: true. This can undo a user action or another plug-in's action made after your last edit; it does not identify who made the last change. Call only when you accept undoing whatever Lightroom currently considers its last history step. Returns undone and can_undo (whether another undo is available after this call).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        confirm: {
+          type: "boolean",
+          const: true,
+          description: "Accept undoing the latest step in Lightroom's shared history",
+        },
+      },
+      required: ["confirm"],
+    },
+  },
+  {
     name: "set_rating",
     title: "Set rating",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
@@ -987,6 +1007,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_ids", "label"],
+    },
+  },
+  {
+    name: "remove_photos_from_catalog",
+    title: "Remove photos from catalog",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerRemoveFromCatalog.removePhotos",
+    description:
+      "Remove exactly the given photos from the catalog, losing their catalog edits and metadata. Requires confirm: true and Lightroom Classic 14.3+. Files stay on disk. Maximum 100 IDs or paths; duplicates count once and missing IDs are reported. Include every virtual copy when removing its master. Temporarily opens Library grid and All Photographs; restores the module, sources and surviving selection. Library remains in grid view.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths to remove from the catalog"), maxItems: 100 },
+        confirm: { type: "boolean", enum: [true], description: "Explicit consent to lose these photos' catalog edits and metadata" },
+      },
+      required: ["photo_ids", "confirm"],
     },
   },
   {
