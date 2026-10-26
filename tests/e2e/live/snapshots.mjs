@@ -11,6 +11,7 @@ const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
 const metadata = await tool("get_photo_metadata", { photo_id });
 const initial = metadata.developSettings.exposure;
 const before = await tool("list_develop_snapshots", { photo_id });
+let failure;
 try {
   await tool("set_develop_settings", { photo_id, settings: { Exposure2012: 1 } });
   const first = (await tool("create_develop_snapshot", { photo_id, name: `${prefix}-a` })).snapshot;
@@ -28,8 +29,10 @@ try {
   }
   await tool("set_develop_settings", { photo_id, settings: { Exposure2012: -1 } });
   const replacement = (await tool("create_develop_snapshot", { photo_id, name: second.name, replace: true })).snapshot;
-  assert.equal(replacement.id, second.id);
-  await tool("apply_develop_snapshot", { photo_id, snapshot_id: second.id });
+  created.delete(second.id);
+  created.add(replacement.id);
+  assert.equal(replacement.name, second.name);
+  await tool("apply_develop_snapshot", { photo_id, snapshot_id: replacement.id });
   assert.equal((await tool("get_photo_metadata", { photo_id })).developSettings.exposure, -1);
   for (const action of ["apply", "delete"]) {
     for (const args of [
@@ -42,14 +45,19 @@ try {
   created.delete(first.id);
   const listed = (await tool("list_develop_snapshots", { photo_id })).snapshots;
   assert.equal(listed.some((snapshot) => snapshot.id === first.id), false);
-  assert.equal(listed.some((snapshot) => snapshot.id === second.id), true);
+  assert.equal(listed.some((snapshot) => snapshot.id === replacement.id), true);
   console.log("PASS snapshot creation, duplicate rejection, replacement, exposure restore, ownership and deletion");
+} catch (error) {
+  failure = error;
 } finally {
   try {
     for (const snapshot_id of created) await tool("delete_develop_snapshot", { photo_id, snapshot_id });
     await tool("set_develop_settings", { photo_id, settings: { Exposure2012: initial } });
     assert.deepEqual((await tool("list_develop_snapshots", { photo_id })).snapshots, before.snapshots);
+  } catch (cleanupError) {
+    failure = failure ? new AggregateError([failure, cleanupError], "Snapshot test and cleanup failed") : cleanupError;
   } finally {
     await session.stop();
   }
 }
+if (failure) throw failure;
