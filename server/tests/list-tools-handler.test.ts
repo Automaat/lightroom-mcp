@@ -89,8 +89,10 @@ describe('TOOL_DEFINITIONS', () => {
 
   it('is generated from tool contracts', () => {
     expect(TOOL_DEFINITIONS).toEqual(
-      TOOL_CONTRACTS.map(({ name, description, inputSchema }) => ({
+      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema }) => ({
         name,
+        title,
+        annotations,
         description,
         inputSchema,
       })),

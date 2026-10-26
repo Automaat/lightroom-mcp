@@ -4,6 +4,59 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createMcpServer } from '../src/create-server.js';
 import type { PluginResponse } from '../src/dispatcher.js';
 
+const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
+  search_photos: 'read-only',
+  get_selected_photos: 'read-only',
+  get_photo_metadata: 'read-only',
+  get_photo_preview: 'read-only',
+  set_gps: 'destructive',
+  set_location: 'destructive',
+  set_metadata: 'destructive',
+  list_collections: 'read-only',
+  create_collection: 'additive',
+  add_to_collection: 'additive',
+  get_collection_photos: 'read-only',
+  remove_from_collection: 'destructive',
+  delete_collection: 'destructive',
+  set_keywords: 'destructive',
+  list_keywords: 'read-only',
+  rename_keyword: 'destructive',
+  set_rating: 'destructive',
+  set_flag: 'destructive',
+  import_photos: 'additive',
+  export_photos: 'destructive',
+  export_photo_metadata: 'destructive',
+  list_develop_presets: 'read-only',
+  get_develop_preset: 'read-only',
+  compare_develop_presets: 'read-only',
+  create_develop_preset: 'additive',
+  export_develop_preset: 'additive',
+  apply_develop_preset: 'destructive',
+  copy_develop_settings: 'destructive',
+  set_develop_settings: 'destructive',
+  apply_denoise: 'destructive',
+  list_masks: 'read-only',
+  create_gradient_mask: 'additive',
+  update_gradient_mask: 'destructive',
+  create_brush_mask: 'additive',
+  add_brush_strokes: 'destructive',
+  create_range_mask: 'additive',
+  delete_masks: 'destructive',
+  delete_empty_masks: 'destructive',
+  set_mask_adjustments: 'destructive',
+  get_mask_adjustments: 'read-only',
+  invert_mask: 'destructive',
+  create_mask: 'additive',
+  create_mask_batch: 'additive',
+  create_people_mask: 'additive',
+  create_landscape_mask: 'additive',
+  set_mask_curves: 'destructive',
+  get_mask_curves: 'read-only',
+  edit_mask_point_colors: 'destructive',
+  get_mask_point_colors: 'read-only',
+  combine_mask: 'destructive',
+};
+
 interface ToolResult {
   content: Array<{ type: string; text: string }>;
   isError?: boolean;
@@ -45,6 +98,25 @@ describe('createMcpServer', () => {
   });
 
   describe('ListTools', () => {
+    it('exposes tool annotations and titles for every classified tool', async () => {
+      pair = await connect();
+      const { tools } = await pair.client.listTools();
+      expect(tools.map((tool) => tool.name).sort()).toEqual(Object.keys(TOOL_CLASSES).sort());
+      for (const tool of tools) {
+        const classification = TOOL_CLASSES[tool.name];
+        expect({ name: tool.name, title: tool.title }).toEqual({
+          name: tool.name,
+          title: expect.stringMatching(/\S/),
+        });
+        expect({ name: tool.name, annotations: tool.annotations }).toEqual({
+          name: tool.name,
+          annotations: classification === 'read-only'
+            ? { readOnlyHint: true, openWorldHint: false }
+            : { readOnlyHint: false, destructiveHint: classification === 'destructive', openWorldHint: false },
+        });
+      }
+    });
+
     it('returns all 50 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
