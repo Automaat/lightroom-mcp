@@ -151,6 +151,10 @@
       "description": "Set Develop settings directly on a photo."
     },
     {
+      "name": "set_process_version",
+      "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
+    },
+    {
       "name": "apply_denoise",
       "description": "Turn on AI Denoise at a given amount on photos."
     },

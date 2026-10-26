@@ -1357,3 +1357,95 @@ describe("HandlerDevelop.applyDenoise", function()
         assert.are.equal(0, calls.switched)
     end)
 end)
+
+
+local function processVersionSetup(opts)
+    opts = opts or {}
+    local photos = {
+        helper.fakePhoto({ id = "1", path = "/1.raw" }),
+        helper.fakePhoto({ id = "2", path = "/2.raw" }),
+    }
+    local active, selected, module, sources = photos[1], { photos[1] }, "library", { "folder" }
+    local versions, calls, now = { [photos[1]] = "Version 5", [photos[2]] = "Version 6" }, {}, 0
+    local catalog, Handler = setup({
+        photos = photos,
+        applicationView = {
+            getCurrentModuleName = function() return module end,
+            switchToModule = function(name) module = name end,
+        },
+        developController = {
+            getProcessVersion = function() return versions[active] end,
+            setProcessVersion = function(version)
+                calls[#calls + 1] = active.localIdentifier
+                if opts.fail then error("version change failed") end
+                if not opts.ignored then versions[active] = version end
+                now = now + (opts.cost or 0)
+            end,
+        },
+        date = { currentTime = function() return now end },
+        tasks = { pcall = pcall, sleep = function(seconds) now = now + seconds end },
+    })
+    catalog.getTargetPhoto = function() return active end
+    catalog.getTargetPhotos = function() return selected end
+    catalog.getActiveSources = function() return sources end
+    catalog.setActiveSources = function(_, value) sources = value end
+    catalog.setSelectedPhotos = function(_, photo, selection) active, selected = photo, selection end
+    return Handler, calls, function() return module, active.localIdentifier, sources[1] end
+end
+
+describe("HandlerDevelop.setProcessVersion", function()
+    it("rejects invalid versions and missing confirmation before opening Develop", function()
+        local Handler, calls, view = processVersionSetup()
+        for _, version in ipairs({ "Version 7", "2012" }) do
+            assert.has_error(function()
+                Handler.setProcessVersion({ photo_ids = { "1" }, version = version, confirm = true })
+            end)
+        end
+        assert.has_error(function() Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6" }) end)
+        assert.are.equal(0, #calls)
+        assert.are.equal("library", view())
+    end)
+
+    it("reports previous and actual versions and leaves unchanged photos alone", function()
+        local Handler, calls, view = processVersionSetup()
+        local result = Handler.setProcessVersion({ photo_ids = { "1", "2", "/1.raw", "missing" }, version = "Version 6", confirm = true })
+        assert.is_true(result.success)
+        assert.are.same({ "1" }, calls)
+        assert.are.equal(1, result.changed)
+        assert.are.equal(1, result.unchanged)
+        assert.are.equal(2, result.skipped)
+        assert.are.equal("Version 5", result.results[1].previous_version)
+        assert.are.equal("Version 6", result.results[1].new_version)
+        assert.are.equal("duplicate", result.results[3].reason)
+        assert.are.equal("photo not found", result.results[4].reason)
+        local module, active, source = view()
+        assert.are.equal("library", module)
+        assert.are.equal("1", active)
+        assert.are.equal("folder", source)
+    end)
+
+    it("retains completed changes and returns remaining ids at the time budget", function()
+        local Handler = processVersionSetup({ cost = 240 })
+        local result = Handler.setProcessVersion({ photo_ids = { "1", "2" }, version = "Version 6", confirm = true })
+        assert.is_false(result.complete)
+        assert.are.equal(1, result.changed)
+        assert.are.same({ "2" }, result.remaining_ids)
+    end)
+
+    it("cancellation returns all unvisited ids", function()
+        local Handler, calls = processVersionSetup()
+        local result = Handler.setProcessVersion({ photo_ids = { "1", "2" }, version = "Version 6", confirm = true }, { isCanceled = function() return true end })
+        assert.is_false(result.complete)
+        assert.are.same({ "1", "2" }, result.remaining_ids)
+        assert.are.equal(0, #calls)
+    end)
+
+    it("reports a refused change as failed and restores the view", function()
+        local Handler, _, view = processVersionSetup({ ignored = true })
+        local result = Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6", confirm = true })
+        assert.is_false(result.success)
+        assert.are.equal(1, result.failed)
+        assert.are.equal("Version 5", result.results[1].new_version)
+        assert.are.equal("library", view())
+    end)
+end)

@@ -1047,4 +1047,83 @@ function DevelopHandler.applyDenoise(args, context)
     }
 end
 
+local PROCESS_VERSIONS = {
+    ["Version 1"] = true, ["Version 2"] = true, ["Version 3"] = true,
+    ["Version 4"] = true, ["Version 5"] = true, ["Version 6"] = true,
+}
+
+local function changeProcessVersion(catalog, photo, version, state)
+    DevelopSession.openPhoto(catalog, photo, state)
+    local previous = LrDevelopController.getProcessVersion()
+    local result = { previous_version = previous, new_version = previous }
+    if not PROCESS_VERSIONS[previous] then
+        result.status, result.reason = "failed", "Lightroom returned an unknown process version"
+        return result
+    end
+    if previous == version then
+        result.status = "unchanged"
+        return result
+    end
+    if catalog:getTargetPhoto() ~= photo then
+        result.status, result.reason = "failed", "another photo became active before the version change"
+        return result
+    end
+    local ok, err = LrTasks.pcall(function() LrDevelopController.setProcessVersion(version) end)
+    local confirmed = ok and DevelopSession.waitFor(function()
+        return catalog:getTargetPhoto() == photo and LrDevelopController.getProcessVersion() == version
+    end, 5)
+    if catalog:getTargetPhoto() == photo then result.new_version = LrDevelopController.getProcessVersion() end
+    result.status = confirmed and "changed" or "failed"
+    if not confirmed then result.reason = ok and "Lightroom did not confirm the requested version" or tostring(err) end
+    return result
+end
+
+function DevelopHandler.setProcessVersion(args, context)
+    args.photo_ids = requirePhotoIdArray(args.photo_ids, "photo_ids", 100)
+    if not PROCESS_VERSIONS[args.version] then error("version must be Version 1 through Version 6") end
+    if args.confirm ~= true then error("confirm must be true; changing process versions can change a photo's look") end
+    if args.restore_selection ~= nil and type(args.restore_selection) ~= "boolean" then
+        error("restore_selection must be a boolean")
+    end
+    if type(LrDevelopController.getProcessVersion) ~= "function"
+        or type(LrDevelopController.setProcessVersion) ~= "function" then
+        error("set_process_version is unavailable in this Lightroom version")
+    end
+    local catalog = LrApplication.activeCatalog()
+    local started = LrDate.currentTime()
+    return DevelopSession.run("set_process_version", catalog, args.restore_selection ~= false, function(state)
+        local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+        local results, remaining, seen = {}, {}, {}
+        local counts = { changed = 0, unchanged = 0, skipped = 0, failed = 0 }
+        for _, entry in ipairs(resolved) do
+            local result
+            if #remaining > 0 or (context and context:isCanceled()) or LrDate.currentTime() - started >= 240 then
+                remaining[#remaining + 1] = tostring(entry.id)
+            elseif not entry.photo then
+                result = { status = "skipped", reason = "photo not found" }
+            elseif seen[entry.photo] then
+                result = { status = "skipped", reason = "duplicate" }
+            else
+                seen[entry.photo] = true
+                if context then context:report(#results, #resolved, tostring(entry.id)) end
+                local ok, value = LrTasks.pcall(changeProcessVersion, catalog, entry.photo, args.version, state)
+                result = ok and value or { status = "failed", reason = tostring(value) }
+            end
+            if result then
+                result.id = tostring(entry.id)
+                results[#results + 1] = result
+                counts[result.status] = counts[result.status] + 1
+            end
+        end
+        if context and #results > 0 then context:report(#results, #resolved, results[#results].id) end
+        local complete = #remaining == 0
+        return {
+            success = complete and counts.failed == 0, complete = complete, version = args.version,
+            changed = counts.changed, unchanged = counts.unchanged, skipped = counts.skipped, failed = counts.failed,
+            results = results, remaining_ids = not complete and remaining or nil,
+            seconds = math.floor((LrDate.currentTime() - started) * 10 + 0.5) / 10,
+        }
+    end)
+end
+
 return DevelopHandler

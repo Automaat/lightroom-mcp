@@ -229,6 +229,7 @@ local DISPATCH = {
     apply_develop_preset = HandlerDevelop.applyDevelopPreset,
     copy_develop_settings = HandlerDevelop.copyDevelopSettings,
     set_develop_settings = HandlerDevelop.setDevelopSettings,
+    set_process_version = HandlerDevelop.setProcessVersion,
     apply_denoise = HandlerDevelop.applyDenoise,
     list_masks = HandlerMasks.listMasks,
     create_gradient_mask = HandlerGradientMasks.createGradientMask,
@@ -330,7 +331,7 @@ local function sendResponse(response)
 end
 
 local activeRequests = {}
-local LONG_ACTIONS = { export_photos = true, import_photos = true, apply_denoise = true, create_mask_batch = true }
+local LONG_ACTIONS = { set_process_version = true, export_photos = true, import_photos = true, apply_denoise = true, create_mask_batch = true }
 
 local function dispatchAction(request)
     if shutdownRequested() then return end
