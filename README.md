@@ -206,7 +206,7 @@ If you'd rather drop the plugin in by hand:
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |
-| `list_develop_presets` | Discover Lightroom-visible presets and plugin checkpoints. |
+| `list_develop_presets` | Discover presets and plugin checkpoints by name (`query`) or exact `folder`, with `limit` (default 100) and `offset`. Returns `name`, `folder`, `scope`, `uuid`, total `count` and `has_more`; use `get_develop_preset` for `file`. |
 | `get_develop_preset` | Read settings and backing-file metadata for one exact preset. |
 | `compare_develop_presets` | Diff an approved historical preset against a candidate. |
 | `create_develop_preset` | Capture explicit settings from a photo as a versioned plugin checkpoint. |
