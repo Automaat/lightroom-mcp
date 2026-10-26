@@ -12,15 +12,20 @@ local LrFileUtils = import 'LrFileUtils'
 local JSON = require 'JSON'
 local HandlerSearch = require 'HandlerSearch'
 local HandlerCollections = require 'HandlerCollections'
+local HandlerFolders = require 'HandlerFolders'
 local HandlerKeywords = require 'HandlerKeywords'
 local HandlerMetadata = require 'HandlerMetadata'
+local HandlerAiMetadata = require 'HandlerAiMetadata'
 local HandlerOrganization = require 'HandlerOrganization'
+local HandlerUndo = require 'HandlerUndo'
 local HandlerImport = require 'HandlerImport'
+local HandlerRemoveFromCatalog = require 'HandlerRemoveFromCatalog'
 local HandlerExport = require 'HandlerExport'
 local HandlerSelection = require 'HandlerSelection'
 local HandlerPreview = require 'HandlerPreview'
 local HandlerDevelop = require 'HandlerDevelop'
 local HandlerSnapshots = require 'HandlerSnapshots'
+local HandlerVirtualCopies = require 'HandlerVirtualCopies'
 local HandlerMasks = require 'HandlerMasks'
 local HandlerGradientMasks = require 'HandlerGradientMasks'
 local HandlerAiMasks = require 'HandlerAiMasks'
@@ -199,8 +204,11 @@ local DISPATCH = {
     -- separate heartbeat bookkeeping needed. See STALE_RECONNECT_SECONDS.
     ping = function(_params) return { pong = true } end,
     search_photos = HandlerSearch.searchPhotos,
+    list_folders = HandlerFolders.listFolders,
+    get_folder_photos = HandlerFolders.getFolderPhotos,
     list_collections = HandlerCollections.listCollections,
     create_collection = HandlerCollections.createCollection,
+    create_smart_collection = HandlerCollections.createSmartCollection,
     add_to_collection = HandlerCollections.addToCollection,
     get_collection_photos = HandlerCollections.getCollectionPhotos,
     remove_from_collection = HandlerCollections.removeFromCollection,
@@ -210,11 +218,15 @@ local DISPATCH = {
     set_gps = HandlerMetadata.setGps,
     set_location = HandlerMetadata.setLocation,
     set_metadata = HandlerMetadata.setMetadata,
+    set_ai_metadata = HandlerAiMetadata.setAiMetadata,
+    get_ai_metadata = HandlerAiMetadata.getAiMetadata,
     set_keywords = HandlerOrganization.setKeywords,
     list_keywords = HandlerKeywords.listKeywords,
     rename_keyword = HandlerKeywords.renameKeyword,
     set_rating = HandlerOrganization.setRating,
+    undo_last_step = HandlerUndo.undoLastStep,
     set_flag = HandlerOrganization.setFlag,
+    remove_photos_from_catalog = HandlerRemoveFromCatalog.removePhotos,
     set_color_label = HandlerOrganization.setColorLabel,
     import_photos = HandlerImport.importPhotos,
     export_photos = HandlerExport.exportPhotos,
@@ -231,11 +243,14 @@ local DISPATCH = {
     apply_develop_preset = HandlerDevelop.applyDevelopPreset,
     copy_develop_settings = HandlerDevelop.copyDevelopSettings,
     set_develop_settings = HandlerDevelop.setDevelopSettings,
+    set_process_version = HandlerDevelop.setProcessVersion,
     list_develop_snapshots = HandlerSnapshots.list,
+    create_virtual_copies = HandlerVirtualCopies.create,
     create_develop_snapshot = HandlerSnapshots.create,
     apply_develop_snapshot = HandlerSnapshots.apply,
     delete_develop_snapshot = HandlerSnapshots.delete,
     apply_denoise = HandlerDevelop.applyDenoise,
+    reset_develop_adjustments = HandlerDevelop.resetDevelopAdjustments,
     apply_auto_adjustments = HandlerDevelop.applyAutoAdjustments,
     list_masks = HandlerMasks.listMasks,
     create_gradient_mask = HandlerGradientMasks.createGradientMask,
@@ -337,7 +352,10 @@ local function sendResponse(response)
 end
 
 local activeRequests = {}
-local LONG_ACTIONS = { export_photos = true, import_photos = true, apply_denoise = true, create_mask_batch = true }
+local LONG_ACTIONS = {
+    set_process_version = true, export_photos = true, import_photos = true, apply_denoise = true,
+    create_mask_batch = true, reset_develop_adjustments = true,
+}
 
 local function dispatchAction(request)
     if shutdownRequested() then return end

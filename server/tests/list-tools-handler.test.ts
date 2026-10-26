@@ -19,8 +19,13 @@ const EXPECTED_TOOL_NAMES = [
   'set_gps',
   'set_location',
   'set_metadata',
+  'set_ai_metadata',
+  'get_ai_metadata',
+  'list_folders',
+  'get_folder_photos',
   'list_collections',
   'create_collection',
+  'create_smart_collection',
   'add_to_collection',
   'get_collection_photos',
   'remove_from_collection',
@@ -29,7 +34,9 @@ const EXPECTED_TOOL_NAMES = [
   'list_keywords',
   'rename_keyword',
   'set_rating',
+  'undo_last_step',
   'set_flag',
+  'remove_photos_from_catalog',
   'set_color_label',
   'import_photos',
   'export_photos',
@@ -42,10 +49,13 @@ const EXPECTED_TOOL_NAMES = [
   'apply_develop_preset',
   'copy_develop_settings',
   'set_develop_settings',
+  'set_process_version',
   'list_develop_snapshots',
+  'create_virtual_copies',
   'create_develop_snapshot',
   'apply_develop_snapshot',
   'delete_develop_snapshot',
+  'reset_develop_adjustments',
   'apply_denoise',
   'apply_auto_adjustments',
   'list_masks',
@@ -71,8 +81,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 56 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(56);
+  it('contains exactly 66 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(66);
   });
 
   it('tool names are unique', () => {
@@ -137,6 +147,7 @@ describe('tool required fields', () => {
     ['delete_collection', ['collection_name']],
     ['set_keywords', ['photo_ids']],
     ['set_rating', ['photo_ids', 'rating']],
+    ['undo_last_step', ['confirm']],
     ['set_flag', ['photo_ids', 'flag']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
@@ -149,10 +160,13 @@ describe('tool required fields', () => {
     ['apply_develop_preset', ['photo_ids']],
     ['copy_develop_settings', ['source_id', 'target_ids']],
     ['set_develop_settings', ['photo_id', 'settings']],
+    ['set_process_version', ['photo_ids', 'version', 'confirm']],
     ['list_develop_snapshots', ['photo_id']],
     ['create_develop_snapshot', ['photo_id', 'name']],
+    ['create_virtual_copies', ['photo_ids']],
     ['apply_develop_snapshot', ['photo_id', 'snapshot_id']],
     ['delete_develop_snapshot', ['photo_id', 'snapshot_id']],
+    ['reset_develop_adjustments', ['photo_ids', 'confirm']],
     ['apply_denoise', ['photo_ids', 'amount']],
     ['apply_auto_adjustments', ['photo_ids']],
     ['list_masks', ['photo_id']],
@@ -321,6 +335,15 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
     expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
+  });
+
+  it('undo_last_step requires literal confirm true', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'undo_last_step');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    expect(validate({ confirm: true })).toBe(true);
+    for (const args of [{}, { confirm: false }, { confirm: 'true' }, { confirm: 1 }]) {
+      expect(validate(args)).toBe(false);
+    }
   });
 
   it('accepts the numeric photo ids the catalog hands back', () => {
@@ -510,5 +533,36 @@ describe('set_color_label schema', () => {
 
   it('rejects pink in set_color_label', () => {
     expect(validate({ photo_ids: ['1'], label: 'pink' })).toBe(false);
+  });
+});
+
+
+describe('create_smart_collection schema', () => {
+  const smart = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_smart_collection')!;
+  const search = TOOL_DEFINITIONS.find((tool) => tool.name === 'search_photos')!;
+  const validate = new Ajv({ strict: false }).compile(smart.inputSchema);
+
+  it('create_smart_collection rejects a name without a filter', () => {
+    expect(validate({ name: 'x' })).toBe(false);
+    expect(validate({ name: 'x', parent: 'Trips / 2026' })).toBe(false);
+  });
+
+  it('shares every search filter definition without pagination', () => {
+    const { limit, offset, ...filters } = search.inputSchema.properties!;
+    const { name, parent, ...savedFilters } = smart.inputSchema.properties!;
+    expect(limit).toBeDefined();
+    expect(offset).toBeDefined();
+    expect(name).toBeDefined();
+    expect(parent).toBeDefined();
+    expect(savedFilters).toEqual(filters);
+  });
+
+  it.each([
+    [{ rating: 0 }, true], [{ edited: false }, true], [{ focal_length: 35 }, true],
+    [{ iso: 0 }, false], [{ focal_length: -1 }, false], [{ camera: ' ' }, false],
+    [{ flag: 'invalid' }, false], [{ keywords: [] }, false], [{ rating: 6 }, false],
+    [{ limit: 10 }, false],
+  ])('validates filter %j', (filter, valid) => {
+    expect(validate({ name: 'Review', ...filter })).toBe(valid);
   });
 });

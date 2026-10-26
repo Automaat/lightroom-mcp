@@ -5,8 +5,8 @@ local helper = require 'spec_helper'
 -- module body + resetForReload + PluginInit wiring; none of it binds a
 -- socket at load time (binding happens only inside startServer).
 local HANDLER_MODULES = {
-    'JSON', 'HandlerSearch', 'HandlerCollections', 'HandlerKeywords', 'HandlerMetadata',
-    'HandlerOrganization', 'HandlerImport', 'HandlerExport',
+    'JSON', 'HandlerSearch', 'HandlerCollections', 'HandlerFolders', 'HandlerKeywords', 'HandlerMetadata', 'HandlerAiMetadata',
+    'HandlerOrganization', 'HandlerUndo', 'HandlerImport', 'HandlerRemoveFromCatalog', 'HandlerExport', 'HandlerVirtualCopies',
     'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview',
 }
 

@@ -3,6 +3,47 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('remove_photos_from_catalog requires confirm true and at most 100 photo_ids', () => {
+    for (const confirm of [undefined, false, 'true', 1, null]) {
+      expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: [1], confirm })).not.toBeNull();
+    }
+    expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: [1], confirm: true })).toBeNull();
+    expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: Array.from({ length: 100 }, (_, i) => i + 1), confirm: true })).toBeNull();
+    expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: Array.from({ length: 101 }, (_, i) => i + 1), confirm: true })).not.toBeNull();
+  });
+
+  it('set_ai_metadata bounds scores and reasons and requires a change', () => {
+    for (const score of [0, 72, 100, '']) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1, 2], score })).toBeNull();
+    }
+    for (const score of [-1, 101, 1.5, '72', null, false, NaN, Infinity]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], score })).not.toBeNull();
+    }
+    for (const reason of ['', 'eyes closed', 'é'.repeat(1024)]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], reason })).toBeNull();
+    }
+    for (const reason of [42, null, 'a'.repeat(1025), 'é'.repeat(1025)]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], reason })).not.toBeNull();
+    }
+    expect(validateToolArgs('set_ai_metadata', { photo_ids: [1] })).not.toBeNull();
+    expect(validateToolArgs('set_ai_metadata', { photo_ids: [] , score: 72 })).not.toBeNull();
+  });
+
+  it('get_ai_metadata accepts 200 photos and rejects malformed batches', () => {
+    expect(validateToolArgs('get_ai_metadata', { photo_ids: Array.from({ length: 200 }, (_, i) => i + 1) })).toBeNull();
+    for (const photo_ids of [[], [null], Array.from({ length: 1001 }, () => 1)]) {
+      expect(validateToolArgs('get_ai_metadata', { photo_ids })).not.toBeNull();
+    }
+  });
+
+  it('bounds virtual-copy batches and accepts an optional nonblank copy name', () => {
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914, '/a.jpg'] })).toBeNull();
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: 'Experiment' })).toBeNull();
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [] })).toContain('photo_ids');
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: Array.from({ length: 26 }, () => 914) })).toContain('photo_ids');
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: ' ' })).toContain('copy_name');
+  });
+
   it('apply_auto_adjustments requires tone or white_balance to be true', () => {
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914] })).not.toBeNull();
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: false, white_balance: false })).not.toBeNull();
@@ -39,6 +80,18 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
     expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 3 })).toBeNull();
     expect(validateToolArgs('search_photos', {})).toBeNull();
+  });
+
+  it('set_process_version accepts only named versions and explicit confirmation', () => {
+    const args = { photo_ids: [914], version: 'Version 6', confirm: true };
+    for (let version = 1; version <= 6; version++) {
+      expect(validateToolArgs('set_process_version', { ...args, version: `Version ${version}` })).toBeNull();
+    }
+    for (const version of ['Version 7', '2012']) {
+      expect(validateToolArgs('set_process_version', { ...args, version })).toContain('version');
+    }
+    expect(validateToolArgs('set_process_version', { ...args, confirm: false })).toContain('confirm');
+    expect(validateToolArgs('set_process_version', { ...args, photo_ids: Array.from({ length: 101 }, () => '1') })).toContain('photo_ids');
   });
 
   it('bounds apply_denoise amount and batch size', () => {
@@ -588,13 +641,16 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: '1024' })).toContain('size');
   });
 
-  it('accepts metadata strings and rejects other types or unknown fields', () => {
+  it('set_metadata accepts text and rejects other types or unknown fields', () => {
     const base = { photo_ids: [914] };
 
     expect(validateToolArgs('set_metadata', { ...base, title: 'Dunluce Castle', caption: '' })).toBeNull();
     expect(validateToolArgs('set_metadata', { ...base, copyright_info_url: 'https://example.com', creator_url: '' })).toBeNull();
     expect(validateToolArgs('set_metadata', { ...base, copyright_status: 'copyrighted' })).toContain('copyright_status');
     expect(validateToolArgs('set_metadata', { ...base, title: 7 })).toContain('title');
+    expect(validateToolArgs('set_metadata', { ...base, alt_text: 'A red barn', extended_description: '' })).toBeNull();
+    expect(validateToolArgs('set_metadata', { ...base, alt_text: 5 })).toContain('alt_text');
+    expect(validateToolArgs('set_metadata', { ...base, extended_description: false })).toContain('extended_description');
     expect(validateToolArgs('set_metadata', { ...base, artist: 'Jane' })).toContain('artist');
   });
 

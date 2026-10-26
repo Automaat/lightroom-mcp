@@ -1,10 +1,17 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
 local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 
 local MetadataHandler = {}
+
+local function accessibilityText(photo, key)
+    local ok, value = LrTasks.pcall(function() return photo:getRawMetadata(key) end)
+    if ok and value ~= "" then return value end
+    return nil
+end
 
 -- Return the group only when it carries at least one value, so empty IPTC
 -- sections are omitted from the response (consistent with the gps group)
@@ -104,6 +111,34 @@ local function addSdkDevelopGroups(target, developSettings)
     return target
 end
 
+local function photoIds(photos)
+    if not photos or #photos == 0 then return nil end
+    local ids = {}
+    for i, photo in ipairs(photos) do
+        ids[i] = photo.localIdentifier
+    end
+    return ids
+end
+
+local function virtualCopyMetadata(photo, isVirtualCopy)
+    if isVirtualCopy then
+        local master = photo:getRawMetadata('masterPhoto')
+        return nonEmptyGroup({ masterPhotoId = master and master.localIdentifier })
+    end
+    return nonEmptyGroup({ copyIds = photoIds(photo:getRawMetadata('virtualCopies')) })
+end
+
+local function stackMetadata(photo)
+    if not photo:getRawMetadata('isInStackInFolder') then return nil end
+    local top = photo:getRawMetadata('topOfStackInFolderContainingPhoto')
+    return nonEmptyGroup({
+        position = photo:getRawMetadata('stackPositionInFolder'),
+        isCollapsed = photo:getRawMetadata('stackInFolderIsCollapsed'),
+        topPhotoId = top and top.localIdentifier,
+        memberIds = photoIds(photo:getRawMetadata('stackInFolderMembers')),
+    })
+end
+
 function MetadataHandler.getPhotoMetadata(args)
     if not args.photo_id then
         error("photo_id is required")
@@ -148,8 +183,12 @@ function MetadataHandler.getPhotoMetadata(args)
             })
         end
 
+        local isVirtualCopy = photo:getRawMetadata('isVirtualCopy') == true
         photoData = {
             id = photo.localIdentifier,
+            isVirtualCopy = isVirtualCopy,
+            virtualCopy = virtualCopyMetadata(photo, isVirtualCopy),
+            stack = stackMetadata(photo),
             path = photo:getRawMetadata('path'),
             filename = photo:getFormattedMetadata('fileName'),
             rating = photo:getRawMetadata('rating'),
@@ -161,6 +200,10 @@ function MetadataHandler.getPhotoMetadata(args)
             title = photo:getFormattedMetadata('title'),
             caption = photo:getFormattedMetadata('caption'),
             headline = photo:getFormattedMetadata('headline'),
+            accessibility = nonEmptyGroup({
+                alt_text = accessibilityText(photo, 'altTextAccessibility'),
+                extended_description = accessibilityText(photo, 'extDescrAccessibility'),
+            }),
             -- EXIF capture data.
             dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
             dateTimeDigitized = photo:getFormattedMetadata('dateTimeDigitized'),
@@ -390,6 +433,8 @@ local TEXT_FIELDS = {
     { arg = "rights_usage_terms", key = "rightsUsageTerms" },
     { arg = "copyright_info_url", key = "copyrightInfoUrl" },
     { arg = "creator_url", key = "creatorUrl" },
+    { arg = "alt_text", key = "altTextAccessibility", accessibility = true },
+    { arg = "extended_description", key = "extDescrAccessibility", accessibility = true },
 }
 
 -- Writes IPTC description and rights fields of photos. Fields left out are
@@ -411,14 +456,14 @@ function MetadataHandler.setMetadata(args)
             end
             -- An empty string is passed through: it is what clears the
             -- field. Lightroom stores nil on these fields as the text "nil".
-            changes[#changes + 1] = { key = field.key, value = value }
+            changes[#changes + 1] = { key = field.key, value = value, accessibility = field.accessibility }
             fields[#fields + 1] = field.arg
         end
     end
 
     if #changes == 0 then
         error("give at least one of title, caption, headline, creator, copyright, rights_usage_terms, "
-            .. "copyright_info_url, creator_url")
+            .. "copyright_info_url, creator_url, alt_text, extended_description")
     end
 
     local catalog = LrApplication.activeCatalog()
@@ -428,11 +473,34 @@ function MetadataHandler.setMetadata(args)
 
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
+    for _, entry in ipairs(resolved) do
+        if entry.photo then
+            for _, change in ipairs(changes) do
+                if change.accessibility then
+                    local ok, err = LrTasks.pcall(function() return entry.photo:getRawMetadata(change.key) end)
+                    if not ok then
+                        Log.warn("Accessibility metadata preflight failed: " .. tostring(err))
+                        error("Accessibility text requires Lightroom Classic 13.2 or later")
+                    end
+                end
+            end
+        end
+    end
+
     catalog:withWriteAccessDo("Set Metadata", function()
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 for _, change in ipairs(changes) do
-                    entry.photo:setRawMetadata(change.key, change.value)
+                    if change.accessibility then
+                        local ok, err = LrTasks.pcall(function()
+                            entry.photo:setRawMetadata(change.key, change.value)
+                        end)
+                        if not ok then
+                            error("Accessibility text requires Lightroom Classic 13.2 or later: " .. tostring(err))
+                        end
+                    else
+                        entry.photo:setRawMetadata(change.key, change.value)
+                    end
                 end
                 updatedCount = updatedCount + 1
             else
