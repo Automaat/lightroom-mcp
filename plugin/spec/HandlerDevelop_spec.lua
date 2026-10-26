@@ -75,6 +75,7 @@ local function setup(opts)
         LrDate = opts.date or { currentTime = function() return 0 end },
         LrDevelopController = opts.developController or {},
         LrSelection = opts.selection or { selectNone = function() end },
+        LrStringUtils = opts.stringUtils or { lower = string.lower },
         LrTasks = opts.tasks or { sleep = function() end, pcall = pcall },
         LrLogger = helper.defaultLrLogger(),
     })
@@ -188,6 +189,17 @@ describe("HandlerDevelop.listDevelopPresets", function()
         assert.are.equal(1, #page.presets)
         assert.are.equal("Two", page.presets[1].name)
         assert.is_false(page.has_more)
+    end)
+
+    it("uses Lightroom case folding for non-ASCII preset names", function()
+        local function lower(value)
+            return (value:gsub("É", "é")):lower()
+        end
+        local _, Handler = setup({
+            folders = { fakeFolder("A", { fakePreset("Éclat") }) },
+            stringUtils = { lower = lower },
+        })
+        assert.are.equal(1, Handler.listDevelopPresets({ query = "éCLAT" }).count)
     end)
 end)
 

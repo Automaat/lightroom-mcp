@@ -3,6 +3,7 @@ local LrDate = import 'LrDate'
 local LrDevelopController = import 'LrDevelopController'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrStringUtils = import 'LrStringUtils'
 local LrTasks = import 'LrTasks'
 
 local AIMaskData = require 'AIMaskData'
@@ -500,12 +501,12 @@ function DevelopHandler.listDevelopPresets(args)
     local offset = math.max(0, math.floor(tonumber(args.offset) or 0))
     if args.query ~= nil then requireString(args.query, "query") end
     if args.folder ~= nil then requireString(args.folder, "folder") end
-    local query = args.query and args.query:lower()
+    local query = args.query and LrStringUtils.lower(args.query)
     local out = {}
     local count = 0
     for _, entry in ipairs(allDevelopPresetEntries()) do
         if (not args.folder or entry.folder == args.folder)
-            and (not query or (entry.name or ""):lower():find(query, 1, true)) then
+            and (not query or LrStringUtils.lower(entry.name or ""):find(query, 1, true)) then
             count = count + 1
             if count > offset and #out < limit then
                 table.insert(out, {
