@@ -3,6 +3,30 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('set_ai_metadata bounds scores and reasons and requires a change', () => {
+    for (const score of [0, 72, 100, '']) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1, 2], score })).toBeNull();
+    }
+    for (const score of [-1, 101, 1.5, '72', null, false, NaN, Infinity]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], score })).not.toBeNull();
+    }
+    for (const reason of ['', 'eyes closed', 'é'.repeat(1024)]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], reason })).toBeNull();
+    }
+    for (const reason of [42, null, 'a'.repeat(1025), 'é'.repeat(1025)]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], reason })).not.toBeNull();
+    }
+    expect(validateToolArgs('set_ai_metadata', { photo_ids: [1] })).not.toBeNull();
+    expect(validateToolArgs('set_ai_metadata', { photo_ids: [] , score: 72 })).not.toBeNull();
+  });
+
+  it('get_ai_metadata accepts 200 photos and rejects malformed batches', () => {
+    expect(validateToolArgs('get_ai_metadata', { photo_ids: Array.from({ length: 200 }, (_, i) => i + 1) })).toBeNull();
+    for (const photo_ids of [[], [null], Array.from({ length: 1001 }, () => 1)]) {
+      expect(validateToolArgs('get_ai_metadata', { photo_ids })).not.toBeNull();
+    }
+  });
+
   it('bounds virtual-copy batches and accepts an optional nonblank copy name', () => {
     expect(validateToolArgs('create_virtual_copies', { photo_ids: [914, '/a.jpg'] })).toBeNull();
     expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: 'Experiment' })).toBeNull();
@@ -608,13 +632,16 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: '1024' })).toContain('size');
   });
 
-  it('accepts metadata strings and rejects other types or unknown fields', () => {
+  it('set_metadata accepts text and rejects other types or unknown fields', () => {
     const base = { photo_ids: [914] };
 
     expect(validateToolArgs('set_metadata', { ...base, title: 'Dunluce Castle', caption: '' })).toBeNull();
     expect(validateToolArgs('set_metadata', { ...base, copyright_info_url: 'https://example.com', creator_url: '' })).toBeNull();
     expect(validateToolArgs('set_metadata', { ...base, copyright_status: 'copyrighted' })).toContain('copyright_status');
     expect(validateToolArgs('set_metadata', { ...base, title: 7 })).toContain('title');
+    expect(validateToolArgs('set_metadata', { ...base, alt_text: 'A red barn', extended_description: '' })).toBeNull();
+    expect(validateToolArgs('set_metadata', { ...base, alt_text: 5 })).toContain('alt_text');
+    expect(validateToolArgs('set_metadata', { ...base, extended_description: false })).toContain('extended_description');
     expect(validateToolArgs('set_metadata', { ...base, artist: 'Jane' })).toContain('artist');
   });
 

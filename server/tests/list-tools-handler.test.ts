@@ -19,6 +19,8 @@ const EXPECTED_TOOL_NAMES = [
   'set_gps',
   'set_location',
   'set_metadata',
+  'set_ai_metadata',
+  'get_ai_metadata',
   'list_collections',
   'create_collection',
   'create_smart_collection',
@@ -75,8 +77,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 60 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(60);
+  it('contains exactly 62 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(62);
   });
 
   it('tool names are unique', () => {
