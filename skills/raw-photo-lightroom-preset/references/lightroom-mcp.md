@@ -11,7 +11,7 @@ Detect available tools at runtime because main can differ from the installed rel
 The integration adds the missing feedback loop:
 
 - `get_selected_photos`: identify representatives selected in Lightroom.
-- `get_photo_metadata`: read EXIF and every Develop key supported by `set_develop_settings`.
+- `get_photo_metadata`: read EXIF; pass `sections: ["developSettings"]` to read every Develop key supported by `set_develop_settings`.
 - `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.
 - `set_develop_settings`: apply bounded global/HSL/detail settings.
 - `create_develop_snapshot`, `list_develop_snapshots`, `apply_develop_snapshot`, and `delete_develop_snapshot`: save and restore a photo's Develop state and manage its snapshots.
