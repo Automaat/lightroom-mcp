@@ -208,6 +208,7 @@ If you'd rather drop the plugin in by hand:
 | `export_develop_preset` | Copy a custom/checkpoint preset backing file without overwriting. |
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
 | `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
+| `match_photo_style` | Match global style after a confirmed snapshot per target; preserves framing, white balance, lens corrections and local masks. Returns snapshot IDs for restoration. |
 | `set_develop_settings` | Write SDK setting key/values directly. |
 | `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |

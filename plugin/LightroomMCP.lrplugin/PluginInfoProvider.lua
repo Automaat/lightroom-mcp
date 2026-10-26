@@ -244,6 +244,7 @@ local DISPATCH = {
     export_develop_preset = HandlerDevelop.exportDevelopPreset,
     apply_develop_preset = HandlerDevelop.applyDevelopPreset,
     copy_develop_settings = HandlerDevelop.copyDevelopSettings,
+    match_photo_style = HandlerDevelop.matchPhotoStyle,
     set_develop_settings = HandlerDevelop.setDevelopSettings,
     set_process_version = HandlerDevelop.setProcessVersion,
     list_develop_snapshots = HandlerSnapshots.list,
