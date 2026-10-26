@@ -140,6 +140,24 @@ describe('listToolsHandler', () => {
   });
 });
 
+describe('photo list schemas', () => {
+  it.each([
+    ['search_photos', {}],
+    ['get_selected_photos', {}],
+    ['get_collection_photos', { collection_name: 'Trips / 2026 / Paris' }],
+  ])('%s accepts an optional path opt-in and rejects unknown arguments', (name, args) => {
+    const tool = TOOL_DEFINITIONS.find((entry) => entry.name === name)!;
+    const validate = new Ajv({ strict: false }).compile(tool.inputSchema);
+
+    expect(validate(args)).toBe(true);
+    expect(validate({ ...args, include_path: true })).toBe(true);
+    expect(validate({ ...args, include_path: false })).toBe(true);
+    expect(validate({ ...args, include_path: 'true' })).toBe(false);
+    expect(validate({ ...args, include_path: 1 })).toBe(false);
+    expect(validate({ ...args, unknown_field: true })).toBe(false);
+  });
+});
+
 describe('tool required fields', () => {
   function toolRequired(name: string): string[] | undefined {
     return TOOL_DEFINITIONS.find((t) => t.name === name)?.inputSchema.required as string[] | undefined;
@@ -563,10 +581,11 @@ describe('create_smart_collection schema', () => {
   });
 
   it('shares every search filter definition without pagination', () => {
-    const { limit, offset, ...filters } = search.inputSchema.properties!;
+    const { limit, offset, include_path, ...filters } = search.inputSchema.properties!;
     const { name, parent, ...savedFilters } = smart.inputSchema.properties!;
     expect(limit).toBeDefined();
     expect(offset).toBeDefined();
+    expect(include_path).toBeDefined();
     expect(name).toBeDefined();
     expect(parent).toBeDefined();
     expect(savedFilters).toEqual(filters);
