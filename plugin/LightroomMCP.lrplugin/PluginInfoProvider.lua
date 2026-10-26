@@ -12,6 +12,7 @@ local LrFileUtils = import 'LrFileUtils'
 local JSON = require 'JSON'
 local HandlerSearch = require 'HandlerSearch'
 local HandlerCollections = require 'HandlerCollections'
+local HandlerFolders = require 'HandlerFolders'
 local HandlerKeywords = require 'HandlerKeywords'
 local HandlerMetadata = require 'HandlerMetadata'
 local HandlerAiMetadata = require 'HandlerAiMetadata'
@@ -201,6 +202,8 @@ local DISPATCH = {
     -- separate heartbeat bookkeeping needed. See STALE_RECONNECT_SECONDS.
     ping = function(_params) return { pong = true } end,
     search_photos = HandlerSearch.searchPhotos,
+    list_folders = HandlerFolders.listFolders,
+    get_folder_photos = HandlerFolders.getFolderPhotos,
     list_collections = HandlerCollections.listCollections,
     create_collection = HandlerCollections.createCollection,
     create_smart_collection = HandlerCollections.createSmartCollection,

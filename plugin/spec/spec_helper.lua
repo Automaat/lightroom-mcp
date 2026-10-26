@@ -186,6 +186,24 @@ end
 
 -- Build a fake collection.
 -- opts (optional): smart = true for a smart collection.
+function M.fakeFolder(path, photos, children)
+    return {
+        getPath = function() return path end,
+        getName = function() return path:match("[^/]+$") end,
+        getChildren = function() return children or {} end,
+        getPhotos = function(_, includeChildren)
+            local result = {}
+            for _, photo in ipairs(photos or {}) do table.insert(result, photo) end
+            if includeChildren then
+                for _, child in ipairs(children or {}) do
+                    for _, photo in ipairs(child:getPhotos(true)) do table.insert(result, photo) end
+                end
+            end
+            return result
+        end,
+    }
+end
+
 function M.fakeCollection(name, photos, opts)
     photos = photos or {}
     opts = opts or {}
@@ -396,6 +414,7 @@ function M.fakeCatalog(opts)
             end
             return out
         end,
+        getFolders = function() return opts.folders or {} end,
         getChildCollections = function() return collections end,
         getChildCollectionSets = function() return collectionSets end,
         withReadAccessDo = function(_, fn)

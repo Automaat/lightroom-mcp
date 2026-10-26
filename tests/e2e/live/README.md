@@ -119,6 +119,8 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `edit_mask_point_colors`, `get_mask_point_colors` | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask_point_colors`. |
 | `delete_masks`, `delete_empty_masks` | any, `batch.ids` | Remaining count matches, the photos stay in the catalog. `delete_empty_masks` is catalog-only: it does not open Develop and keeps the selection. |
 
+Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
+
 ## Known traps
 
 - `LrInitPlugin` runs only when Lightroom's window is first activated: after a relaunch that leaves another app in front, no server starts. `setup-catalog.mjs` and `ensureLightroomFrontmost()` activate it.
