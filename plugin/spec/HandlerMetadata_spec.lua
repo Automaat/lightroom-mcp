@@ -11,6 +11,32 @@ local function setup(photos)
 end
 
 describe("HandlerMetadata.getPhotoMetadata", function()
+    it("returns nonempty accessibility text and omits empty fields", function()
+        local photo = helper.fakePhoto({ id = "1", altTextAccessibility = "A red barn", extDescrAccessibility = "" })
+        local _, Handler = setup({ photo })
+        assert.are.same({ alt_text = "A red barn" }, Handler.getPhotoMetadata({ photo_id = "1" }).accessibility)
+        photo:setRawMetadata("extDescrAccessibility", "A barn beside a field")
+        assert.are.equal("A barn beside a field",
+            Handler.getPhotoMetadata({ photo_id = "1" }).accessibility.extended_description)
+        photo:setRawMetadata("altTextAccessibility", "")
+        photo:setRawMetadata("extDescrAccessibility", "")
+        assert.is_nil(Handler.getPhotoMetadata({ photo_id = "1" }).accessibility)
+    end)
+
+    it("preserves metadata when older Lightroom rejects accessibility reads", function()
+        local photo = helper.fakePhoto({ id = "1", title = "Keep", rating = 5 })
+        local getRawMetadata = photo.getRawMetadata
+        photo.getRawMetadata = function(self, key)
+            if key == "altTextAccessibility" or key == "extDescrAccessibility" then error("unknown key") end
+            return getRawMetadata(self, key)
+        end
+        local _, Handler = setup({ photo })
+        local r = Handler.getPhotoMetadata({ photo_id = "1" })
+        assert.are.equal("Keep", r.title)
+        assert.are.equal(5, r.rating)
+        assert.is_nil(r.accessibility)
+    end)
+
     it("returns full metadata for a found photo", function()
         local photo = helper.fakePhoto({
             id = "42",
@@ -500,6 +526,52 @@ describe("HandlerMetadata.setLocation", function()
 end)
 
 describe("HandlerMetadata.setMetadata", function()
+    it("writes and clears accessibility text on multiple photos", function()
+        local photos = { helper.fakePhoto({ id = "1" }), helper.fakePhoto({ id = "2" }) }
+        local _, Handler = setup(photos)
+        local r = Handler.setMetadata({ photo_ids = { "1", "2" }, alt_text = "A red barn",
+            extended_description = "A barn beside a field" })
+        assert.are.equal(2, r.updated)
+        assert.are.same({ "alt_text", "extended_description" }, r.fields)
+        for _, photo in ipairs(photos) do
+            assert.are.equal("A red barn", photo:getRawMetadata("altTextAccessibility"))
+            assert.are.equal("A barn beside a field", photo:getRawMetadata("extDescrAccessibility"))
+        end
+        Handler.setMetadata({ photo_ids = { "1", "2" }, title = "New" })
+        for _, photo in ipairs(photos) do
+            assert.are.equal("A red barn", photo:getRawMetadata("altTextAccessibility"))
+        end
+        Handler.setMetadata({ photo_ids = { "1", "2" }, alt_text = "", extended_description = "" })
+        for _, photo in ipairs(photos) do
+            assert.are.equal("", photo:getRawMetadata("altTextAccessibility"))
+            assert.are.equal("", photo:getRawMetadata("extDescrAccessibility"))
+        end
+    end)
+
+    it("rejects unsupported accessibility fields before changing ordinary fields", function()
+        local photo = helper.fakePhoto({ id = "1", title = "Keep" })
+        local getRawMetadata = photo.getRawMetadata
+        photo.getRawMetadata = function(self, key)
+            if key == "altTextAccessibility" or key == "extDescrAccessibility" then error("unknown key") end
+            return getRawMetadata(self, key)
+        end
+        photo.setRawMetadata = function() error("unexpected write") end
+        local _, Handler = setup({ photo })
+        assert.has_error(function()
+            Handler.setMetadata({ photo_ids = { "1" }, title = "New", alt_text = "A red barn" })
+        end, "Accessibility text requires Lightroom Classic 13.2 or later")
+        assert.are.equal("Keep", photo:getRawMetadata("title"))
+    end)
+
+    it("explains the Lightroom requirement when an accessibility write fails", function()
+        local photo = helper.fakePhoto({ id = "1" })
+        photo.setRawMetadata = function() error("unknown key", 0) end
+        local _, Handler = setup({ photo })
+        assert.has_error(function()
+            Handler.setMetadata({ photo_ids = { "1" }, extended_description = "A barn" })
+        end, "Accessibility text requires Lightroom Classic 13.2 or later: unknown key")
+    end)
+
     it("writes every given field to found photos", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", title = "Old" })
@@ -581,7 +653,7 @@ describe("HandlerMetadata.setMetadata", function()
         assert.has_error(function() Handler.setMetadata({ title = "T" }) end, "photo_ids is required")
         assert.has_error(function() Handler.setMetadata({ photo_ids = { "1" } }) end,
             "give at least one of title, caption, headline, creator, copyright, rights_usage_terms, "
-            .. "copyright_info_url, creator_url")
+            .. "copyright_info_url, creator_url, alt_text, extended_description")
         assert.has_error(function() Handler.setMetadata({ photo_ids = { "1" }, title = 7 }) end,
             "title must be a string")
 

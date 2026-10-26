@@ -6,6 +6,12 @@ local Log = require 'Log'
 
 local MetadataHandler = {}
 
+local function accessibilityText(photo, key)
+    local ok, value = pcall(photo.getRawMetadata, photo, key)
+    if ok and value ~= "" then return value end
+    return nil
+end
+
 -- Return the group only when it carries at least one value, so empty IPTC
 -- sections are omitted from the response (consistent with the gps group)
 -- instead of surfacing a table full of empty strings.
@@ -161,6 +167,10 @@ function MetadataHandler.getPhotoMetadata(args)
             title = photo:getFormattedMetadata('title'),
             caption = photo:getFormattedMetadata('caption'),
             headline = photo:getFormattedMetadata('headline'),
+            accessibility = nonEmptyGroup({
+                alt_text = accessibilityText(photo, 'altTextAccessibility'),
+                extended_description = accessibilityText(photo, 'extDescrAccessibility'),
+            }),
             -- EXIF capture data.
             dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
             dateTimeDigitized = photo:getFormattedMetadata('dateTimeDigitized'),
@@ -390,6 +400,8 @@ local TEXT_FIELDS = {
     { arg = "rights_usage_terms", key = "rightsUsageTerms" },
     { arg = "copyright_info_url", key = "copyrightInfoUrl" },
     { arg = "creator_url", key = "creatorUrl" },
+    { arg = "alt_text", key = "altTextAccessibility", accessibility = true },
+    { arg = "extended_description", key = "extDescrAccessibility", accessibility = true },
 }
 
 -- Writes IPTC description and rights fields of photos. Fields left out are
@@ -411,14 +423,14 @@ function MetadataHandler.setMetadata(args)
             end
             -- An empty string is passed through: it is what clears the
             -- field. Lightroom stores nil on these fields as the text "nil".
-            changes[#changes + 1] = { key = field.key, value = value }
+            changes[#changes + 1] = { key = field.key, value = value, accessibility = field.accessibility }
             fields[#fields + 1] = field.arg
         end
     end
 
     if #changes == 0 then
         error("give at least one of title, caption, headline, creator, copyright, rights_usage_terms, "
-            .. "copyright_info_url, creator_url")
+            .. "copyright_info_url, creator_url, alt_text, extended_description")
     end
 
     local catalog = LrApplication.activeCatalog()
@@ -428,11 +440,31 @@ function MetadataHandler.setMetadata(args)
 
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
 
+    for _, entry in ipairs(resolved) do
+        if entry.photo then
+            for _, change in ipairs(changes) do
+                if change.accessibility then
+                    local ok = pcall(entry.photo.getRawMetadata, entry.photo, change.key)
+                    if not ok then
+                        error("Accessibility text requires Lightroom Classic 13.2 or later")
+                    end
+                end
+            end
+        end
+    end
+
     catalog:withWriteAccessDo("Set Metadata", function()
         for _, entry in ipairs(resolved) do
             if entry.photo then
                 for _, change in ipairs(changes) do
-                    entry.photo:setRawMetadata(change.key, change.value)
+                    if change.accessibility then
+                        local ok, err = pcall(entry.photo.setRawMetadata, entry.photo, change.key, change.value)
+                        if not ok then
+                            error("Accessibility text requires Lightroom Classic 13.2 or later: " .. tostring(err))
+                        end
+                    else
+                        entry.photo:setRawMetadata(change.key, change.value)
+                    end
                 end
                 updatedCount = updatedCount + 1
             else

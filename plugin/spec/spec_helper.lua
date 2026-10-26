@@ -69,6 +69,7 @@ for _, key in ipairs({
     "title", "caption", "headline", "location", "city", "stateProvince",
     "country", "isoCountryCode", "creator", "copyright", "copyrightState",
     "rightsUsageTerms", "copyrightInfoUrl", "creatorUrl",
+    "altTextAccessibility", "extDescrAccessibility",
 }) do
     VALID_METADATA_KEYS[key] = true
 end

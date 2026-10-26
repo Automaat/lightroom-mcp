@@ -588,13 +588,16 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_photo_preview', { photo_id: 914, size: '1024' })).toContain('size');
   });
 
-  it('accepts metadata strings and rejects other types or unknown fields', () => {
+  it('set_metadata accepts text and rejects other types or unknown fields', () => {
     const base = { photo_ids: [914] };
 
     expect(validateToolArgs('set_metadata', { ...base, title: 'Dunluce Castle', caption: '' })).toBeNull();
     expect(validateToolArgs('set_metadata', { ...base, copyright_info_url: 'https://example.com', creator_url: '' })).toBeNull();
     expect(validateToolArgs('set_metadata', { ...base, copyright_status: 'copyrighted' })).toContain('copyright_status');
     expect(validateToolArgs('set_metadata', { ...base, title: 7 })).toContain('title');
+    expect(validateToolArgs('set_metadata', { ...base, alt_text: 'A red barn', extended_description: '' })).toBeNull();
+    expect(validateToolArgs('set_metadata', { ...base, alt_text: 5 })).toContain('alt_text');
+    expect(validateToolArgs('set_metadata', { ...base, extended_description: false })).toContain('extended_description');
     expect(validateToolArgs('set_metadata', { ...base, artist: 'Jane' })).toContain('artist');
   });
 
