@@ -1416,8 +1416,8 @@ end)
 local function processVersionSetup(opts)
     opts = opts or {}
     local photos = {
-        helper.fakePhoto({ id = "1", path = "/1.raw" }),
-        helper.fakePhoto({ id = "2", path = "/2.raw" }),
+        helper.fakePhoto({ id = "1", path = "/1.raw", developSettings = opts.settings1 }),
+        helper.fakePhoto({ id = "2", path = "/2.raw", developSettings = opts.settings2 }),
     }
     local active, selected, module, sources = photos[1], { photos[1] }, "library", { "folder" }
     local versions, calls, now = { [photos[1]] = "Version 5", [photos[2]] = "Version 6" }, {}, 0
@@ -1476,6 +1476,43 @@ describe("HandlerDevelop.setProcessVersion", function()
         assert.are.equal("library", module)
         assert.are.equal("1", active)
         assert.are.equal("folder", source)
+    end)
+
+    it("refuses masked-photo downgrades before any setter call", function()
+        local Handler, calls, view = processVersionSetup({ settings2 = { MaskGroupBasedCorrections = { { CorrectionMasks = {} } } } })
+        local result = Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 5", confirm = true })
+        assert.is_true(result.success)
+        assert.are.equal(1, result.skipped)
+        assert.are.equal("Version 6", result.results[1].previous_version)
+        assert.are.equal("Version 6", result.results[1].new_version)
+        assert.truthy(result.results[1].reason:find("downgrades are refused", 1, true))
+        assert.are.equal(0, #calls)
+        assert.are.equal("library", view())
+    end)
+
+    it("still upgrades masked photos and downgrades photos without masks", function()
+        local Handler, calls = processVersionSetup({ settings1 = { MaskGroupBasedCorrections = { {} } } })
+        assert.are.equal(1, Handler.setProcessVersion({ photo_ids = { "1" }, version = "Version 6", confirm = true }).changed)
+        assert.are.equal(1, Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 4", confirm = true }).changed)
+        assert.are.same({ "1", "2" }, calls)
+    end)
+
+    it("continues an unmasked batch after refusing a masked downgrade", function()
+        local Handler, calls = processVersionSetup({ settings2 = { MaskGroupBasedCorrections = { {} } } })
+        local result = Handler.setProcessVersion({ photo_ids = { "2", "1" }, version = "Version 4", confirm = true })
+        assert.are.equal(1, result.skipped)
+        assert.are.equal(1, result.changed)
+        assert.are.same({ "1" }, calls)
+    end)
+
+    it("fails closed when mask settings cannot be read", function()
+        local Handler, calls = processVersionSetup({ settings2 = { MaskGroupBasedCorrections = "unreadable" } })
+        local result = Handler.setProcessVersion({ photo_ids = { "2" }, version = "Version 5", confirm = true })
+        assert.is_false(result.success)
+        assert.are.equal(1, result.failed)
+        assert.are.equal("Version 6", result.results[1].previous_version)
+        assert.are.equal("Version 6", result.results[1].new_version)
+        assert.are.equal(0, #calls)
     end)
 
     it("retains completed changes and returns remaining ids at the time budget", function()

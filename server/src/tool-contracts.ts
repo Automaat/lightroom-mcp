@@ -1137,7 +1137,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.setProcessVersion",
     description:
-      "Change photos to Lightroom's Version 1 through Version 6 process versions. Requires confirm: true because changing versions can change a photo's look. Drives Develop photo by photo and restores the module, view source and selection by default. Returns previous_version, new_version and changed, unchanged, skipped or failed status per photo. Missing and duplicate photos are skipped. Up to 100 photos; stops after about 240 seconds and returns remaining_ids for another call.",
+      "Change photos to Lightroom's Version 1 through Version 6 process versions. Requires confirm: true because changing versions can change a photo's look. Downgrades on photos with masks are refused and reported as skipped to preserve guarded mask editing. Drives Develop photo by photo and restores the module, view source and selection by default. Returns previous_version, new_version and changed, unchanged, skipped or failed status per photo. Missing and duplicate photos are skipped. Up to 100 photos; stops after about 240 seconds and returns remaining_ids for another call.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

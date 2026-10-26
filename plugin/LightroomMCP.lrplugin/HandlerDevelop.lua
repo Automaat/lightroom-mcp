@@ -1048,8 +1048,8 @@ function DevelopHandler.applyDenoise(args, context)
 end
 
 local PROCESS_VERSIONS = {
-    ["Version 1"] = true, ["Version 2"] = true, ["Version 3"] = true,
-    ["Version 4"] = true, ["Version 5"] = true, ["Version 6"] = true,
+    ["Version 1"] = 1, ["Version 2"] = 2, ["Version 3"] = 3,
+    ["Version 4"] = 4, ["Version 5"] = 5, ["Version 6"] = 6,
 }
 
 local function changeProcessVersion(catalog, photo, version, state)
@@ -1063,6 +1063,24 @@ local function changeProcessVersion(catalog, photo, version, state)
     if previous == version then
         result.status = "unchanged"
         return result
+    end
+    if PROCESS_VERSIONS[version] < PROCESS_VERSIONS[previous] then
+        local settings
+        catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+        if type(settings) ~= "table" then
+            result.status, result.reason = "failed", "Could not check the photo's masks before downgrading"
+            return result
+        end
+        local masks = settings.MaskGroupBasedCorrections
+        if masks ~= nil and type(masks) ~= "table" then
+            result.status, result.reason = "failed", "Could not read the photo's masks before downgrading"
+            return result
+        end
+        if masks and next(masks) ~= nil then
+            result.status = "skipped"
+            result.reason = "Process-version downgrades are refused on photos with masks; keep the current version to preserve mask editing"
+            return result
+        end
     end
     if catalog:getTargetPhoto() ~= photo then
         result.status, result.reason = "failed", "another photo became active before the version change"
