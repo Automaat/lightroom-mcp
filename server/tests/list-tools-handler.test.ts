@@ -347,7 +347,7 @@ describe('develop setting schema', () => {
     const metadataPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'HandlerMetadata.lua');
     const source = fs
       .readFileSync(metadataPath, 'utf8')
-      .split('\n')
+      .split(/\r?\n/)
       .filter((line) => !line.trim().startsWith('--'))
       .join('\n');
     const groupTable = source.match(/local SDK_DEVELOP_GROUPS = \{([\s\S]*?)\n\}\n/);
