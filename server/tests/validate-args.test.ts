@@ -13,6 +13,27 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: Array.from({ length: 101 }, () => '1'), tone: true })).not.toBeNull();
   });
 
+  it('search_photos accepts intersecting Library filters', () => {
+    expect(validateToolArgs('search_photos', {
+      camera: 'Sony ILCE-7M3', lens: '24-70mm', iso: 100, focal_length: 32, flag: 'reject',
+      color_label: 'red', edited: false, file_type: 'RAW', folder: 'Photos Travel', rating: 5,
+    })).toBeNull();
+    for (const flag of ['pick', 'reject', 'none']) {
+      expect(validateToolArgs('search_photos', { flag })).toBeNull();
+    }
+    for (const color_label of ['red', 'yellow', 'green', 'blue', 'purple', 'none']) {
+      expect(validateToolArgs('search_photos', { color_label })).toBeNull();
+    }
+  });
+
+  it.each([
+    ['flag', 'maybe'], ['file_type', 'GIF'], ['color_label', 'pink'],
+    ['camera', ''], ['lens', 42], ['folder', '  '], ['iso', 0], ['iso', Infinity], ['edited', 'false'],
+    ['focal_length', 0], ['focal_length', -32], ['focal_length', Infinity], ['focal_length', NaN], ['focal_length', '32 mm'],
+  ])('search_photos rejects invalid %s filter %s', (key, value) => {
+    expect(validateToolArgs('search_photos', { [key]: value })).toContain(key);
+  });
+
   it('accepts arguments that satisfy the published schema', () => {
     expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
