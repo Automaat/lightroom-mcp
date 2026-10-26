@@ -3,6 +3,30 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('set_ai_metadata bounds scores and reasons and requires a change', () => {
+    for (const score of [0, 72, 100, '']) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1, 2], score })).toBeNull();
+    }
+    for (const score of [-1, 101, 1.5, '72', null, false, NaN, Infinity]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], score })).not.toBeNull();
+    }
+    for (const reason of ['', 'eyes closed', 'é'.repeat(1024)]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], reason })).toBeNull();
+    }
+    for (const reason of [42, null, 'a'.repeat(1025), 'é'.repeat(1025)]) {
+      expect(validateToolArgs('set_ai_metadata', { photo_ids: [1], reason })).not.toBeNull();
+    }
+    expect(validateToolArgs('set_ai_metadata', { photo_ids: [1] })).not.toBeNull();
+    expect(validateToolArgs('set_ai_metadata', { photo_ids: [] , score: 72 })).not.toBeNull();
+  });
+
+  it('get_ai_metadata accepts 200 photos and rejects malformed batches', () => {
+    expect(validateToolArgs('get_ai_metadata', { photo_ids: Array.from({ length: 200 }, (_, i) => i + 1) })).toBeNull();
+    for (const photo_ids of [[], [null], Array.from({ length: 1001 }, () => 1)]) {
+      expect(validateToolArgs('get_ai_metadata', { photo_ids })).not.toBeNull();
+    }
+  });
+
   it('apply_auto_adjustments requires tone or white_balance to be true', () => {
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914] })).not.toBeNull();
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: false, white_balance: false })).not.toBeNull();
