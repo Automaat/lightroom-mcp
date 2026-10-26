@@ -1043,7 +1043,7 @@ local function denoiseSetup(opts)
         selections = {}, enhance = {}, amounts = {}, switched = 0, modules = {}, sources = {}, selectNone = 0,
     }
     local Handler
-    local pendingAuto
+    local pendingAuto, pendingAutoWhiteBalance
     local controller = {
         getEnhancePanelState = function()
             if module ~= "develop" or opts.panelUnavailable then return nil end
@@ -1078,7 +1078,9 @@ local function denoiseSetup(opts)
         calls.autoTone = (calls.autoTone or 0) + 1
     end
     controller.setAutoWhiteBalance = function()
-        if not opts.autoUnchanged then
+        if opts.autoWhiteBalanceDelay then
+            pendingAutoWhiteBalance = { photo = active, at = clock.now + opts.autoWhiteBalanceDelay }
+        elseif not opts.autoUnchanged then
             settingsOf[active].Temperature = 5200
             settingsOf[active].Tint = 12
         end
@@ -1100,6 +1102,11 @@ local function denoiseSetup(opts)
             if pendingAuto and clock.now >= pendingAuto.at then
                 settingsOf[pendingAuto.photo].Exposure2012 = 1.25
                 pendingAuto = nil
+            end
+            if pendingAutoWhiteBalance and clock.now >= pendingAutoWhiteBalance.at then
+                settingsOf[pendingAutoWhiteBalance.photo].Temperature = 5200
+                settingsOf[pendingAutoWhiteBalance.photo].Tint = 12
+                pendingAutoWhiteBalance = nil
             end
             if autoSelectPending then
                 autoSelectPending = false
@@ -1146,7 +1153,7 @@ local function denoiseSetup(opts)
         dropNextSelection = opts.dropSelectionAfterSourceSwitch or false
         autoSelectPending = opts.autoSelectAfterSourceSwitch or false
     end
-    return Handler, calls
+    return Handler, calls, photos, clock
 end
 
 local function errorOf(fn)
@@ -1396,6 +1403,21 @@ describe("HandlerDevelop.applyAutoAdjustments", function()
         local result = Handler.applyAutoAdjustments({ photo_ids = { "1", "2" }, tone = true })
         assert.are.equal(2, result.applied)
     end)
+
+    for _, delay in ipairs({ "autoDelay", "autoWhiteBalanceDelay" }) do
+        it("settles both operations before moving on with " .. delay, function()
+            local opts = { photos = { { id = "1" }, { id = "2" } } }
+            opts[delay] = 3
+            local Handler, _, photos = denoiseSetup(opts)
+            local result = Handler.applyAutoAdjustments({ photo_ids = { "1", "2" }, tone = true, white_balance = true })
+            assert.are.equal(2, result.applied)
+            for _, photo in ipairs(photos) do
+                local settings = photo:getDevelopSettings()
+                assert.are.equal(1.25, settings.Exposure2012)
+                assert.are.equal(5200, settings.Temperature)
+            end
+        end)
+    end
 
     it("reports unchanged, missing and duplicate photos with reasons", function()
         local Handler = denoiseSetup({ photos = { { id = "1" } }, autoUnchanged = true })

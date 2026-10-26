@@ -1068,17 +1068,9 @@ local function sameAutoValues(first, second, keys)
     return true
 end
 
-local function autoPhoto(catalog, photo, args)
-    local keys = {}
-    if args.tone then
-        for _, key in ipairs(AUTO_TONE_KEYS) do keys[#keys + 1] = key end
-    end
-    if args.white_balance then
-        for _, key in ipairs(AUTO_WHITE_BALANCE_KEYS) do keys[#keys + 1] = key end
-    end
+local function autoOperation(catalog, photo, keys, apply)
     local before = autoValues(catalog, photo, keys)
-    if args.tone then LrDevelopController.setAutoTone() end
-    if args.white_balance then LrDevelopController.setAutoWhiteBalance() end
+    apply()
     DevelopSession.flushPendingEdits()
     local previous, stable, elapsed = before, 0, 0
     local settled = waitFor(function()
@@ -1098,6 +1090,22 @@ local function autoPhoto(catalog, photo, args)
         return { status = "unchanged", reason = "Auto returned the current settings" }
     end
     return { status = "applied" }
+end
+
+local function autoPhoto(catalog, photo, args)
+    local changed = false
+    if args.tone then
+        local result = autoOperation(catalog, photo, AUTO_TONE_KEYS, LrDevelopController.setAutoTone)
+        if result.status == "failed" then return result end
+        changed = result.status == "applied"
+    end
+    if args.white_balance then
+        local result = autoOperation(catalog, photo, AUTO_WHITE_BALANCE_KEYS, LrDevelopController.setAutoWhiteBalance)
+        if result.status == "failed" then return result end
+        changed = changed or result.status == "applied"
+    end
+    return changed and { status = "applied" }
+        or { status = "unchanged", reason = "Auto returned the current settings" }
 end
 
 function DevelopHandler.applyAutoAdjustments(args)
