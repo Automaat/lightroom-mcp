@@ -1102,6 +1102,70 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "list_develop_snapshots",
+    title: "List develop snapshots",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerSnapshots.list",
+    description: "List a photo develop snapshots with their ids and names.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+      },
+      required: ["photo_id"],
+    },
+  },
+  {
+    name: "create_develop_snapshot",
+    title: "Create develop snapshot",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerSnapshots.create",
+    description: "Save the current develop settings as a named snapshot. Duplicate names are rejected unless replace is true.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        name: { type: "string", minLength: 1, pattern: "\\S", description: "Snapshot name" },
+        replace: { type: "boolean", description: "Replace the existing snapshot with this name (default false)" },
+      },
+      required: ["photo_id", "name"],
+    },
+  },
+  {
+    name: "apply_develop_snapshot",
+    title: "Apply develop snapshot",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerSnapshots.apply",
+    description: "Restore a photo develop settings from one of its snapshots.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        snapshot_id: { type: "string", minLength: 1, description: "Snapshot id returned for this photo" },
+      },
+      required: ["photo_id", "snapshot_id"],
+    },
+  },
+  {
+    name: "delete_develop_snapshot",
+    title: "Delete develop snapshot",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerSnapshots.delete",
+    description: "Delete one snapshot belonging to the photo.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        snapshot_id: { type: "string", minLength: 1, description: "Snapshot id returned for this photo" },
+      },
+      required: ["photo_id", "snapshot_id"],
+    },
+  },
+  {
     name: "apply_auto_adjustments",
     title: "Apply auto adjustments",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
