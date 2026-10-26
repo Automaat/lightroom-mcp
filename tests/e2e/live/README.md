@@ -148,3 +148,11 @@ Stop without retrying if removal opens a blocking dialog, affects only the activ
 - A Color Range with two PointModels crashes Lightroom and crash-loops the catalog. If it happens, quit Lightroom normally and `restore` a snapshot.
 - Take a snapshot (`catalog-snapshot.mjs snapshot <label>`) before any test that writes masks you cannot delete again.
 - klaudiush rejects comments in new code, also in JS. Put the reasoning in names and in this README.
+
+## Remove spots (Lightroom Classic 15.6)
+
+`list_spots`, `update_spot` and `delete_spot` use the documented SDK spot calls. Make two Heal spots manually on an owned virtual copy in the marked catalog. List them, set `params: { Opacity: 0.6 }` on index 1, switch photos and list again: both `Opacity` and `opacity` must match, and spot 2 must be unchanged. Delete index 1 with `confirm: true`; use `measureChange` on a spot that heals a visible feature, then verify count 1. An index outside the listed range must change nothing. Compare module, source, selection and active tool before and after success and failure, including a call that opens Remove from Loupe. Remove only the owned copy afterwards.
+
+Live SDK probe: `getAllSpots` works with Remove closed. `getSelectedTool` calls Remove `dust`. A Heal spot reports `HealVersion`, `Masks`, `Method`, `Feather`, `Opacity`, `SourceX`, `OffsetY`, `SourceState`, `SpotType`, `Seed`, and aliases `centerX`, `centerY`, `radius`, `sourceX`, `sourceY`, `opacity`, `sourceState`, `spotType`, `seed`. Nested `Masks` fields are returned verbatim. These fields are SDK output, not a writable schema.
+
+Send the complete fresh `getSelectedSpotParams` table and change only uppercase `Opacity`. A partial `{ opacity: 0.5 }` raised an assertion and cleared both spots on a disposable copy. A complete table changing lowercase `opacity` read back temporarily but reverted after switching photos. Changing only uppercase `Opacity` from 0.5 to 0.6 persisted after switching photos, left the second spot unchanged, and refreshed both aliases to 0.6. Only Heal spot `Opacity` is exposed for editing; other spot parameters remain read-only.
