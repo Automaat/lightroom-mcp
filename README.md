@@ -176,10 +176,13 @@ If you'd rather drop the plugin in by hand:
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
+| `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
+| `get_ai_metadata` | Read private AI scores and reasons for up to 1000 photos in one batch. |
 | `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
 | `list_folders` | Catalog folders in tree order, with full paths and direct photo counts (paginated). |
 | `get_folder_photos` | Photos by full folder path, optionally including subfolders (paginated). |
 | `list_collections` | All collections and collection sets. |
+| `create_smart_collection` | Save `search_photos` filters as a smart collection; requires a filter and supports parent collection set paths. |
 | `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
 | `add_to_collection` | Add photos to a collection, by name or by its `list_collections` path. |
 | `get_collection_photos` | Photos in a collection, regular or smart (paginated). |
@@ -202,11 +205,14 @@ If you'd rather drop the plugin in by hand:
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
 | `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
 | `set_develop_settings` | Write SDK setting key/values directly. |
+| `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |
 | `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
+| `create_virtual_copies` | Create named virtual copies of up to 25 photos; return master and copy IDs and restore selection. |
 | `apply_develop_snapshot` | Restore a saved develop snapshot. |
 | `delete_develop_snapshot` | Delete one saved develop snapshot. |
 | `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
+| `reset_develop_adjustments` | Reset all develop adjustments on up to 100 photos; requires `confirm: true`. Recover edits through Lightroom History. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
 | `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
@@ -230,6 +236,15 @@ If you'd rather drop the plugin in by hand:
 | `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id and get the component's id (LrC 11+); briefly opens the photo in Develop. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
+
+AI scores and reasons stay in the catalog's private plug-in metadata. They do
+not appear in the Metadata panel, searches, keywords, IPTC, XMP, or exports.
+`set_ai_metadata` leaves omitted fields unchanged; pass `""` to clear a score
+or reason. `get_ai_metadata` omits unset fields and reports missing photo IDs.
+The initial provider schema is version 1: `aiScore` and `aiReason` are strings
+(the tools convert the score to and from an integer). Changes to these
+persistent field definitions require a schema version bump and migration;
+incompatible field changes also require a field version bump.
 
 ### Iterative preset workflow
 
