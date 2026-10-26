@@ -1195,11 +1195,16 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "List develop presets",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.listDevelopPresets",
-    description: "List Lightroom-visible Develop presets and plugin-managed preset checkpoints",
+    description: "List Lightroom-visible Develop presets and plugin-managed checkpoints (paginated, default limit 100). Filter by name or folder before paging. Returns name, folder, scope and uuid; use get_develop_preset for backing-file metadata. count is the total matches; has_more indicates another page.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      properties: {},
+      properties: {
+        limit: { type: "number", minimum: 0, description: "Max presets to return (default 100; floored)" },
+        offset: { type: "number", minimum: 0, description: "Number of matching presets to skip (default 0; floored)" },
+        query: { type: "string", minLength: 1, description: "Keep presets whose name contains this text, ignoring case" },
+        folder: { type: "string", minLength: 1, description: "Exact, case-sensitive folder name, including Plugin Develop Presets for checkpoints" },
+      },
     },
   },
   {

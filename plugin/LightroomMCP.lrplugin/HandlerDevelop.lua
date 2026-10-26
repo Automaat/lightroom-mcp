@@ -495,10 +495,27 @@ local function sortedSettingKeys(settings)
     return keys
 end
 
-function DevelopHandler.listDevelopPresets(_)
+function DevelopHandler.listDevelopPresets(args)
+    local limit = math.max(0, math.floor(tonumber(args.limit) or 100))
+    local offset = math.max(0, math.floor(tonumber(args.offset) or 0))
+    if args.query ~= nil then requireString(args.query, "query") end
+    if args.folder ~= nil then requireString(args.folder, "folder") end
+    local query = args.query and args.query:lower()
     local out = {}
+    local count = 0
     for _, entry in ipairs(allDevelopPresetEntries()) do
-        table.insert(out, presetSummary(entry))
+        if (not args.folder or entry.folder == args.folder)
+            and (not query or (entry.name or ""):lower():find(query, 1, true)) then
+            count = count + 1
+            if count > offset and #out < limit then
+                table.insert(out, {
+                    name = entry.name,
+                    folder = entry.folder,
+                    scope = entry.scope,
+                    uuid = entry.uuid,
+                })
+            end
+        end
     end
 
     Log.info(string.format("Listed %d develop presets", #out))
@@ -506,7 +523,8 @@ function DevelopHandler.listDevelopPresets(_)
     return {
         success = true,
         presets = out,
-        count = #out,
+        count = count,
+        has_more = offset + #out < count,
     }
 end
 
