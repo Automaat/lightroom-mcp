@@ -49,6 +49,14 @@ local function target(args)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.resolveOne(catalog, id)
     if not photo then error('Photo not found: ' .. tostring(id)) end
+    local settings
+    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    local legacy = { [5.0] = 'Version 1', [5.7] = 'Version 2' }
+    local version = legacy[tonumber(settings and settings.ProcessVersion)]
+    -- Opening legacy photos in Develop can materialize defaults before rejection.
+    if version then
+        error('Lens Blur needs Process Version 3 or later; this photo uses ' .. version)
+    end
     return catalog, photo
 end
 

@@ -67,6 +67,9 @@ const EXPECTED_TOOL_NAMES = [
   'apply_denoise',
   'apply_auto_adjustments',
   'list_masks',
+  'list_spots',
+  'update_spot',
+  'delete_spot',
   'create_gradient_mask',
   'update_gradient_mask',
   'create_brush_mask',
@@ -89,8 +92,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 74 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(74);
+  it('contains exactly 77 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(77);
   });
 
   it('tool names are unique', () => {
@@ -587,5 +590,17 @@ describe('keyword subtree description', () => {
     expect(tool?.description).toContain('Keyword nodes stay in the catalog');
     expect(tool?.description).toContain('list_keywords');
     expect(tool?.inputSchema.required).toEqual(['parent']);
+  });
+});
+
+
+describe('Remove spot contracts', () => {
+  it('accepts only the proven uppercase Opacity field', () => {
+    const schema = TOOL_CONTRACTS.find((tool) => tool.name === 'update_spot')!.inputSchema;
+    const validate = new Ajv().compile(schema);
+    expect(validate({ photo_id: '1', index: 1, params: { Opacity: 0.6 } })).toBe(true);
+    expect(validate({ photo_id: '1', index: 1, params: { opacity: 0.6 } })).toBe(false);
+    expect(validate({ photo_id: '1', index: 1, params: { Opacity: 2 } })).toBe(false);
+    expect(validate({ photo_id: '1', index: 1.5, params: { Opacity: 0.6 } })).toBe(false);
   });
 });

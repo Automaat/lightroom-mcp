@@ -14,12 +14,15 @@ local function setup(opts)
     local bokeh = 'Circle'
     local writes = 0
     local pendingActive, activationWait, prematureFlush = nil, 0, false
+    local colorGradeBlending
     catalog.getTargetPhoto = function() return active end
     catalog.getTargetPhotos = function() return selection end
     catalog.setSelectedPhotos = function(_, photo, selected) active, selection = photo, selected end
     catalog.getActiveSources = function() return sources end
     catalog.setActiveSources = function(_, nextSources) sources = nextSources end
-    photos[1].getDevelopSettings = function() return { LensBlur = saved } end
+    photos[1].getDevelopSettings = function()
+        return { LensBlur = saved, ProcessVersion = opts.storedProcess, ColorGradeBlending = colorGradeBlending }
+    end
     local controller = {
         getProcessVersion = function() return opts.process or 'Version 6' end,
         getValue = function(name) return values[name] end,
@@ -58,7 +61,10 @@ local function setup(opts)
         LrDevelopController = controller,
         LrApplicationView = {
             getCurrentModuleName = function() return module end,
-            switchToModule = function(value) module = value end,
+            switchToModule = function(value)
+                module = value
+                if value == 'develop' and opts.normalizeDevelop then colorGradeBlending = 50 end
+            end,
         },
         LrSelection = { selectNone = function() active, selection = nil, {} end },
         LrTasks = { pcall = pcall, sleep = function(seconds)
@@ -77,6 +83,7 @@ local function setup(opts)
     return {
         Handler = require 'HandlerLensBlur', values = values,
         saved = function() return saved end, writes = function() return writes end,
+        settings = function() return photos[1]:getDevelopSettings() end,
         view = function() return { active = active.localIdentifier, module = module, sources = sources } end,
     }
 end
@@ -166,6 +173,27 @@ describe('HandlerLensBlur', function()
         assert.are.equal(0, ctx.writes())
         assert.is_false(ctx.values.LensBlurActive)
     end)
+
+    for _, case in ipairs({ { '5.0', 'Version 1' }, { '5.7', 'Version 2' },
+        { 5.0, 'Version 1' }, { 5.7, 'Version 2' } }) do
+        local storedProcess = case[1]
+        for _, operation in ipairs({ 'get', 'set' }) do
+            it(operation .. ' rejects stored legacy process ' .. tostring(storedProcess) .. ' without normalizing settings', function()
+                local ctx = setup({ storedProcess = storedProcess, process = case[2], normalizeDevelop = true })
+                local before = ctx.settings()
+
+                local err = failure(function()
+                    ctx.Handler[operation]({ photo_id = '1', amount = 50 })
+                end)
+
+                assert.matches('Process Version 3 or later', err, 1, true)
+                assert.are.same(before, ctx.settings())
+                assert.is_nil(ctx.settings().ColorGradeBlending)
+                assert.are.equal(0, ctx.writes())
+                assert.are.same({ active = '2', module = 'library', sources = { 'collection' } }, ctx.view())
+            end)
+        end
+    end
 
     for _, version in ipairs({ 'Version 1', 'Version 2' }) do
         it('rejects ' .. version .. ' without writing', function()
