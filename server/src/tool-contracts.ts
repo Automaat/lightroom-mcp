@@ -1132,6 +1132,22 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "create_virtual_copies",
+    title: "Create virtual copies",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    luaHandler: "HandlerVirtualCopies.create",
+    description: "Create one virtual copy per distinct photo, up to 25 photos per call. Optional copy_name names each copy. Returns copies with photo_id, master_id and copy_id, plus missing IDs. Use copy_id for subsequent edits. Restores the previous photo selection and view source. Repeating the call creates additional copies; an error can leave copies created before the failure.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 25 },
+        copy_name: { type: "string", minLength: 1, pattern: "\\S", description: "Name for each new virtual copy" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "list_develop_snapshots",
     title: "List develop snapshots",
     annotations: { readOnlyHint: true, openWorldHint: false },

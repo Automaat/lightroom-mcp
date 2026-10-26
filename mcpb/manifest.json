@@ -248,6 +248,10 @@
       "description": "List saved develop snapshots for a photo"
     },
     {
+      "name": "create_virtual_copies",
+      "description": "Create virtual copies and restore the previous selection"
+    },
+    {
       "name": "create_develop_snapshot",
       "description": "Save current develop settings as a named snapshot"
     },
