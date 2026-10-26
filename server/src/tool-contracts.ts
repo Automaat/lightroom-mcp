@@ -614,6 +614,39 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_ai_metadata",
+    title: "Set AI metadata",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerAiMetadata.setAiMetadata",
+    description:
+      "Store an AI score and reason in private per-photo plug-in metadata in this catalog. Score is an integer from 0 to 100; reason is at most 1024 characters. Omitted fields stay unchanged; an empty string clears a field. Does not change IPTC, XMP, keywords, or export metadata.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        score: { oneOf: [{ type: "integer", minimum: 0, maximum: 100 }, { const: "" }] },
+        reason: { type: "string", maxLength: 1024 },
+      },
+      required: ["photo_ids"],
+      anyOf: [{ required: ["score"] }, { required: ["reason"] }],
+    },
+  },
+  {
+    name: "get_ai_metadata",
+    title: "Get AI metadata",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerAiMetadata.getAiMetadata",
+    description:
+      "Read private per-photo AI scores and reasons in one batch (up to 1000 IDs or paths). Returns photos with photo_id, numeric score and reason; unset fields are omitted. Missing IDs are reported separately.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { photo_ids: photoIdArray("Array of photo IDs or file paths") },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "list_collections",
     title: "List collections",
     annotations: { readOnlyHint: true, openWorldHint: false },

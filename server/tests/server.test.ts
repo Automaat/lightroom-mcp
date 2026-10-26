@@ -12,6 +12,8 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   set_gps: 'destructive',
   set_location: 'destructive',
   set_metadata: 'destructive',
+  set_ai_metadata: 'destructive',
+  get_ai_metadata: 'read-only',
   list_collections: 'read-only',
   create_collection: 'additive',
   add_to_collection: 'additive',
@@ -186,10 +188,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 59 tools', async () => {
+    it('returns all 61 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(59);
+      expect(tools).toHaveLength(61);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
