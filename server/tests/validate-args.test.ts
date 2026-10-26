@@ -3,6 +3,25 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it.each(['Circle', 'SoapBubble', 'Blade', 'Ring', 'Anamorphic'])('set_lens_blur accepts %s bokeh', (bokeh) => {
+    expect(validateToolArgs('set_lens_blur', { photo_id: 914, bokeh })).toBeNull();
+  });
+
+  it.each([
+    { bokeh: 'Square' }, { amount: -1 }, { amount: 101 }, { amount: '50' },
+    { cat_eye: Infinity }, { highlights_boost: NaN }, { active: 1 },
+    { focal_range: { near: 0, far: 101 } }, { focal_range: { near: 0 } },
+  ])('set_lens_blur rejects invalid controls %p', (controls) => {
+    expect(validateToolArgs('set_lens_blur', { photo_id: 914, ...controls })).not.toBeNull();
+  });
+
+  it('set_lens_blur requires a change and accepts combined controls', () => {
+    expect(validateToolArgs('set_lens_blur', { photo_id: 914 })).not.toBeNull();
+    expect(validateToolArgs('set_lens_blur', { photo_id: 914, active: false, amount: 50,
+      cat_eye: 0, highlights_boost: 100, focal_range: { near: 10, far: 30 }, bokeh: 'Ring' })).toBeNull();
+    expect(validateToolArgs('get_lens_blur', { photo_id: 914 })).toBeNull();
+  });
+
   it.each([
     ['copy_develop_settings', { source_id: 1, target_ids: [2] }],
     ['apply_develop_preset', { preset_name: 'Heavy', photo_ids: [2] }],

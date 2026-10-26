@@ -55,6 +55,8 @@ const EXPECTED_TOOL_NAMES = [
   'copy_develop_settings',
   'match_photo_style',
   'set_develop_settings',
+  'get_lens_blur',
+  'set_lens_blur',
   'set_process_version',
   'list_develop_snapshots',
   'create_virtual_copies',
@@ -90,8 +92,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 75 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(75);
+  it('contains exactly 77 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(77);
   });
 
   it('tool names are unique', () => {
@@ -170,6 +172,8 @@ describe('tool required fields', () => {
     ['copy_develop_settings', ['source_id', 'target_ids']],
     ['match_photo_style', ['reference_id', 'target_ids']],
     ['set_develop_settings', ['photo_id', 'settings']],
+    ['get_lens_blur', ['photo_id']],
+    ['set_lens_blur', ['photo_id']],
     ['set_process_version', ['photo_ids', 'version', 'confirm']],
     ['list_develop_snapshots', ['photo_id']],
     ['create_develop_snapshot', ['photo_id', 'name']],
