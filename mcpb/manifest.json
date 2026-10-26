@@ -132,6 +132,10 @@
       "description": "Flag photos as pick or reject, or remove the flag."
     },
     {
+      "name": "remove_photos_from_catalog",
+      "description": "Remove specified photos from the catalog with explicit confirmation; keep files on disk (Lightroom Classic 14.3+)"
+    },
+    {
       "name": "set_color_label",
       "description": "Set or clear color labels on photos."
     },

@@ -988,6 +988,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "remove_photos_from_catalog",
+    title: "Remove photos from catalog",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerRemoveFromCatalog.removePhotos",
+    description:
+      "Remove exactly the given photos from the catalog, losing their catalog edits and metadata. Requires confirm: true and Lightroom Classic 14.3+. Files stay on disk. Maximum 100 IDs or paths; duplicates count once and missing IDs are reported. Include every virtual copy when removing its master. Temporarily opens Library grid and All Photographs; restores the module, sources and surviving selection. Library remains in grid view.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths to remove from the catalog"), maxItems: 100 },
+        confirm: { type: "boolean", enum: [true], description: "Explicit consent to lose these photos' catalog edits and metadata" },
+      },
+      required: ["photo_ids", "confirm"],
+    },
+  },
+  {
     name: "import_photos",
     title: "Import photos",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },

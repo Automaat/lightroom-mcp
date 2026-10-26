@@ -6,7 +6,7 @@ local helper = require 'spec_helper'
 -- socket at load time (binding happens only inside startServer).
 local HANDLER_MODULES = {
     'JSON', 'HandlerSearch', 'HandlerCollections', 'HandlerFolders', 'HandlerKeywords', 'HandlerMetadata', 'HandlerAiMetadata',
-    'HandlerOrganization', 'HandlerUndo', 'HandlerImport', 'HandlerExport', 'HandlerVirtualCopies',
+    'HandlerOrganization', 'HandlerUndo', 'HandlerImport', 'HandlerRemoveFromCatalog', 'HandlerExport', 'HandlerVirtualCopies',
     'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview',
 }
 

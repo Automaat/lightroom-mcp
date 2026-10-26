@@ -36,6 +36,7 @@ const EXPECTED_TOOL_NAMES = [
   'set_rating',
   'undo_last_step',
   'set_flag',
+  'remove_photos_from_catalog',
   'set_color_label',
   'import_photos',
   'export_photos',
@@ -80,8 +81,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 65 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(65);
+  it('contains exactly 66 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(66);
   });
 
   it('tool names are unique', () => {
