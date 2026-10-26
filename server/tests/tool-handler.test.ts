@@ -17,6 +17,48 @@ function makeHandler(opts: {
 }
 
 describe('createCallToolHandler', () => {
+  it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
+    const args = { photo_id: 914, size };
+    let captured: unknown;
+    const handler = makeHandler({ call: async (_action, params) => {
+      captured = params;
+      return { id: '1', result: { requested_size: edge, width: 855, height: 570,
+        image: { mime_type: 'image/jpeg', data: 'QUJD' } } };
+    } });
+    const result = await handler('get_photo_preview', args);
+    expect(captured).toEqual({ photo_id: 914, size: edge });
+    expect(args.size).toBe(size);
+    expect(JSON.parse(result.content[0].text)).toEqual({ requested_size: edge, width: 855, height: 570 });
+    expect(result.content[1]).toEqual({ type: 'image', mimeType: 'image/jpeg', data: 'QUJD' });
+  });
+
+  it.each([undefined, 64, 512.5, 1024, 2048])('get_photo_preview preserves numeric or omitted size %s', async size => {
+    const args = size === undefined ? { photo_id: 914 } : { photo_id: 914, size };
+    let captured: unknown;
+    await makeHandler({ call: async (_action, params) => {
+      captured = params;
+      return { id: '1', result: null };
+    } })('get_photo_preview', args);
+    expect(captured).toEqual(args);
+  });
+
+  it.each(['huge', '512', '', 63, 5000, null, true, {}, NaN, Infinity])('get_photo_preview rejects invalid size %s before dispatch', async size => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => { calls++; return { id: '1', result: null }; } })
+      ('get_photo_preview', { photo_id: 914, size });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/cull.*detail.*64.*2048/);
+    expect(calls).toBe(0);
+  });
+
+  it('get_photo_previews keeps numeric-only sizes', async () => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => { calls++; return { id: '1', result: null }; } })
+      ('get_photo_previews', { photo_ids: [914], size: 'cull' });
+    expect(result.isError).toBe(true);
+    expect(calls).toBe(0);
+  });
+
   it('returns isError when plugin not connected', async () => {
     const handler = makeHandler({ ready: false });
     const result = await handler('list_collections', {});

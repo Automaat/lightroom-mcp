@@ -1,4 +1,5 @@
 import type { JSONObject, Tool } from "@modelcontextprotocol/server";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 type InputSchema = Tool["inputSchema"];
 
@@ -527,17 +528,18 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreview",
     description:
-      "Get a JPEG preview of a photo, returned as an image, so you can see what it shows. Lightroom renders it with the photo's current develop settings, so raw files work. size is the smallest longest edge you will accept: Lightroom returns the smallest preview it has at least that big, so the image is often larger. An image over 3.5 MB or 2000px is replaced by the next smaller preview. width and height report what came back.",
+      "Get a JPEG preview with current develop settings, including raw files. size: cull for culling (512 request, about 900px on the tested raw, about 650 tokens); detail for inspecting details (1024 request, about 1800px, about 2.5k tokens). Token costs are earlier Claude estimates, vary by image and model, and repeat each turn the image stays in history. Numbers 64-2048 still work; default 512. size is a minimum longest edge: Lightroom returns its smallest cached preview at least that big. An image over 3.5 MB or 2000px is replaced by the next smaller preview. width and height report what came back.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         size: {
-          type: "number",
-          description: "Minimum longest edge in pixels (64-2048, default 512)",
-          minimum: 64,
-          maximum: 2048,
+          description: "Minimum longest edge: cull (512), detail (1024), or a number from 64 to 2048; default 512",
+          oneOf: [
+            { type: "number", minimum: 64, maximum: 2048 },
+            { type: "string", enum: Object.keys(PREVIEW_SIZES) },
+          ],
         },
       },
       required: ["photo_id"],

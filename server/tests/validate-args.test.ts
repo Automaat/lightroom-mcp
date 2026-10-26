@@ -3,6 +3,13 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it.each(['cull', 'detail', 64, 512.5, 1024, 2048])('get_photo_preview accepts size %s', size => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toBeNull();
+  });
+
+  it.each(['huge', 5000])('get_photo_preview explains accepted sizes for %s', size => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toMatch(/cull.*detail.*64.*2048/);
+  });
   it.each(['Circle', 'SoapBubble', 'Blade', 'Ring', 'Anamorphic'])('set_lens_blur accepts %s bokeh', (bokeh) => {
     expect(validateToolArgs('set_lens_blur', { photo_id: 914, bokeh })).toBeNull();
   });
