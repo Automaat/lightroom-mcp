@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 local PhotoLookup = require 'PhotoLookup'
+local DevelopSession = require 'DevelopSession'
 
 local Handler = {}
 
@@ -29,8 +30,8 @@ local function snapshots(photo)
 end
 
 local function find(photo, id)
-    for _, snapshot in ipairs(snapshots(photo)) do
-        if snapshot.id == id then return snapshot end
+    for _, snapshot in ipairs(photo:getDevelopSnapshots() or {}) do
+        if tostring(snapshot.snapshotID) == id then return snapshot end
     end
     error('Snapshot not found on this photo: ' .. id)
 end
@@ -51,20 +52,24 @@ function Handler.create(args)
         if not photo:createDevelopSnapshot(args.name, args.replace == true) then
             error('Snapshot name already exists: ' .. args.name)
         end
-        for _, snapshot in ipairs(snapshots(photo)) do
-            if snapshot.name == args.name then created = snapshot break end
-        end
-        if not created then error('Created snapshot could not be read back') end
     end)
+    -- Lightroom publishes the new snapshot only after the write gate returns.
+    for _, snapshot in ipairs(snapshots(photo)) do
+        if snapshot.name == args.name then created = snapshot break end
+    end
+    if not created then error('Created snapshot could not be read back') end
     return { success = true, photo_id = args.photo_id, snapshot = created }
 end
 
 function Handler.apply(args)
     nonempty(args.snapshot_id, 'snapshot_id')
     local catalog, photo = resolve(args)
-    catalog:withWriteAccessDo('Apply Develop Snapshot', function()
-        find(photo, args.snapshot_id)
-        photo:applyDevelopSnapshot(args.snapshot_id)
+    find(photo, args.snapshot_id)
+    DevelopSession.withPhoto('apply_develop_snapshot', catalog, photo, function()
+        catalog:withWriteAccessDo('Apply Develop Snapshot', function()
+            local snapshot = find(photo, args.snapshot_id)
+            photo:applyDevelopSnapshot(snapshot.snapshotID)
+        end)
     end)
     return { success = true, photo_id = args.photo_id, snapshot_id = args.snapshot_id }
 end
@@ -72,9 +77,19 @@ end
 function Handler.delete(args)
     nonempty(args.snapshot_id, 'snapshot_id')
     local catalog, photo = resolve(args)
-    catalog:withWriteAccessDo('Delete Develop Snapshot', function()
-        find(photo, args.snapshot_id)
-        photo:deleteDevelopSnapshot(args.snapshot_id)
+    find(photo, args.snapshot_id)
+    DevelopSession.withPhoto('delete_develop_snapshot', catalog, photo, function()
+        catalog:withWriteAccessDo('Delete Develop Snapshot', function()
+            local snapshot = find(photo, args.snapshot_id)
+            photo:deleteDevelopSnapshot(nonempty(snapshot.id_global, 'snapshot id_global'))
+        end)
+        local deleted = DevelopSession.waitFor(function()
+            for _, snapshot in ipairs(snapshots(photo)) do
+                if snapshot.id == args.snapshot_id then return false end
+            end
+            return true
+        end, 5)
+        if not deleted then error('Lightroom did not delete snapshot: ' .. args.snapshot_id) end
     end)
     return { success = true, photo_id = args.photo_id, snapshot_id = args.snapshot_id }
 end

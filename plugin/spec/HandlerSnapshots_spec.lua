@@ -1,15 +1,32 @@
 local helper = require 'spec_helper'
 
 describe('develop snapshots', function()
-    local handler, photo, other, state, calls
+    local handler, photo, other, state, calls, originalSession
     before_each(function()
         state, calls = {}, {}
+        originalSession = package.loaded.DevelopSession
+        local inDevelop = false
+        package.loaded.DevelopSession = {
+            withPhoto = function(_, _, target, fn)
+                assert.equals(photo, target)
+                inDevelop = true
+                local result = fn()
+                inDevelop = false
+                return result
+            end,
+            waitFor = function(predicate) return predicate() end,
+        }
         photo = helper.fakePhoto({ localIdentifier = '1' })
         other = helper.fakePhoto({ localIdentifier = '2' })
         local serial = 0
-        photo.getDevelopSnapshots = function() return state end
+        local writing, createdInGate = false, false
+        photo.getDevelopSnapshots = function()
+            if writing and createdInGate then return {} end
+            return state
+        end
         other.getDevelopSnapshots = function() return {} end
         photo.createDevelopSnapshot = function(_, name, replace)
+            createdInGate = true
             for _, item in ipairs(state) do
                 if item.name == name then
                     if not replace then return false end
@@ -21,18 +38,31 @@ describe('develop snapshots', function()
             state[#state + 1] = { snapshotID = 'snapshot-' .. serial, id_global = 'global-' .. serial, name = name }
             return true
         end
-        photo.applyDevelopSnapshot = function(_, id) calls.applied = id end
+        photo.applyDevelopSnapshot = function(_, id)
+            assert.is_true(inDevelop)
+            calls.applied = id
+        end
         photo.deleteDevelopSnapshot = function(_, id)
+            assert.is_true(inDevelop)
             calls.deleted = id
             for i, item in ipairs(state) do
-                if item.snapshotID == id then table.remove(state, i) return end
+                if item.id_global == id then table.remove(state, i) return end
             end
         end
         local catalog = helper.fakeCatalog({ photos = { photo, other } })
+        local writeAccess = catalog.withWriteAccessDo
+        catalog.withWriteAccessDo = function(self, name, fn)
+            writing, createdInGate = true, false
+            local ok, result = pcall(writeAccess, self, name, fn)
+            writing = false
+            if not ok then error(result) end
+            return result
+        end
         helper.installImport({ LrApplication = { activeCatalog = function() return catalog end } })
         package.loaded.HandlerSnapshots = nil
         handler = require 'HandlerSnapshots'
     end)
+    after_each(function() package.loaded.DevelopSession = originalSession end)
 
     it('lists an empty photo and returns created ids and names', function()
         assert.same({}, handler.list({ photo_id = '1' }).snapshots)
@@ -56,8 +86,15 @@ describe('develop snapshots', function()
         handler.apply({ photo_id = '1', snapshot_id = first.id })
         assert.equals(first.id, calls.applied)
         handler.delete({ photo_id = '1', snapshot_id = first.id })
-        assert.equals(first.id, calls.deleted)
+        assert.equals('global-1', calls.deleted)
         assert.same({ second }, handler.list({ photo_id = '1' }).snapshots)
+    end)
+
+    it('reports a deletion that Lightroom silently ignores', function()
+        local first = handler.create({ photo_id = '1', name = 'a' }).snapshot
+        photo.deleteDevelopSnapshot = function() end
+        assert.has_error(function() handler.delete({ photo_id = '1', snapshot_id = first.id }) end)
+        assert.same({ first }, handler.list({ photo_id = '1' }).snapshots)
     end)
 
     for _, action in ipairs({ 'apply', 'delete' }) do
