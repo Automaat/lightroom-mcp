@@ -146,7 +146,6 @@ describe('tool required fields', () => {
   }
 
   it.each<[string, string[]]>([
-    ['get_photo_metadata', ['photo_id']],
     ['get_photo_preview', ['photo_id']],
     ['set_gps', ['photo_ids', 'latitude', 'longitude']],
     ['set_location', ['photo_ids']],

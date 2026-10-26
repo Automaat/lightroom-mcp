@@ -3,6 +3,29 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  describe('get_photo_metadata batches', () => {
+    it('accepts mixed selectors, repeats and the cap with shared sections', () => {
+      for (const photo_ids of [[914, '/a.jpg', 914], Array.from({ length: 100 }, (_, i) => i + 1)]) {
+        expect(validateToolArgs('get_photo_metadata', { photo_ids })).toBeNull();
+        expect(validateToolArgs('get_photo_metadata', { photo_ids, sections: ['developSettings'] })).toBeNull();
+      }
+    });
+
+    it.each([
+      {}, { photo_id: 1, photo_ids: [1] }, { photo_ids: [] },
+      { photo_ids: Array.from({ length: 101 }, () => 1) },
+      { photo_ids: [null] }, { photo_ids: [''] }, { photo_ids: [true] },
+      { photo_ids: [1], sections: ['unknown'] }, { photo_ids: [1], extra: true },
+    ])('rejects invalid selectors before dispatch: %p', async (args) => {
+      const call = jest.fn((_action: string, _params: unknown) => Promise.resolve({ id: 'test', result: {} }));
+      const handler = createCallToolHandler({ dispatcher: { call }, isReady: () => true });
+      const result = await handler('get_photo_metadata', args);
+      expect(result.isError).toBe(true);
+      expect(call).not.toHaveBeenCalled();
+      expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('Invalid arguments for get_photo_metadata') });
+    });
+  });
+
   it.each(['Circle', 'SoapBubble', 'Blade', 'Ring', 'Anamorphic'])('set_lens_blur accepts %s bokeh', (bokeh) => {
     expect(validateToolArgs('set_lens_blur', { photo_id: 914, bokeh })).toBeNull();
   });

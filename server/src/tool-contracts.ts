@@ -16,6 +16,7 @@ export interface ToolContract {
 }
 
 const MAX_BULK_PHOTO_IDS = 1000;
+const MAX_METADATA_PHOTO_IDS = 100;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
@@ -511,19 +512,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, accessibility (alt_text/extended_description, Lightroom Classic 13.2+, omitted when empty or unsupported), and optional develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
+      "Get detailed metadata for one photo_id, or up to 100 photo_ids inline. Batch results contain photos in request order and missing identifiers separately; sections applies to every photo. A single-photo result is unchanged. Metadata includes: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, accessibility (alt_text/extended_description, Lightroom Classic 13.2+, omitted when empty or unsupported), and optional develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: {
+          ...photoIdArray("1 to 100 photo IDs or file paths; returns photos in request order and missing identifiers separately. Repeated identifiers produce repeated entries."),
+          maxItems: MAX_METADATA_PHOTO_IDS,
+        },
         sections: {
           type: "array",
           items: { type: "string", enum: ["developSettings"] },
           description: "Optional metadata sections to include. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
         },
       },
-      required: ["photo_id"],
+      oneOf: [{ required: ["photo_id"] }, { required: ["photo_ids"] }],
     },
   },
   {
