@@ -104,7 +104,7 @@ async function main() {
     lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
   });
 
-  const server = createMcpServer({ callTool: (name, args) => bridge.callTool(name, args) });
+  const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) });
   server.oninitialized = () => void bridge.start();
 
   const transport = new StdioServerTransport();
