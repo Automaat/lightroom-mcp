@@ -1589,6 +1589,21 @@ describe("HandlerDevelop batch dry runs", function()
         end
     end)
 
+    it("bounds missing paths while retaining every missing input index", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5 } })
+        local _, Handler = setup({ photos = { source } })
+        local ids = {}
+        for i = 1, 200 do ids[i] = "/missing/" .. string.rep("a", 200) .. tostring(i) .. ".jpg" end
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = ids, dry_run = true })
+        assert.is_true(#require('JSON'):encode(r) <= 20000)
+        assert.are.equal(200, r.missing_count)
+        assert.are.equal(200, #r.missing_indices)
+        assert.is_true(r.missing_truncated)
+        assert.is_true(#r.missing < 200)
+        for i, id in ipairs(r.missing) do assert.are.equal(ids[i], id) end
+        for i, index in ipairs(r.missing_indices) do assert.are.equal(i, index) end
+    end)
+
     it("bounds 200-target detail and totals every target", function()
         local settings = { Exposure2012 = 0.5, ToneCurvePV2012 = { 0, 0, 255, 255 } }
         local source = helper.fakePhoto({ id = "1001", developSettings = settings })

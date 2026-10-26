@@ -708,6 +708,7 @@ end
 
 local DRY_RUN_DETAIL_LIMIT = 5
 local DRY_RUN_DETAIL_BUDGET = 12000
+local DRY_RUN_MISSING_BUDGET = 4000
 
 local function requireDryRun(args)
     if args.dry_run ~= nil and type(args.dry_run) ~= "boolean" then
@@ -734,6 +735,9 @@ local function previewDevelopSettings(catalog, resolved, settings)
         targets = 0,
         changed_targets = 0,
         missing = {},
+        missing_count = 0,
+        missing_indices = {},
+        missing_truncated = false,
         details = {},
         detail_limit = DRY_RUN_DETAIL_LIMIT,
         detail_truncated = false,
@@ -743,10 +747,19 @@ local function previewDevelopSettings(catalog, resolved, settings)
     }
     local keys = sortedSettingKeys(settings)
     local normalized = withoutVolatileIds(withoutComputedAIMaskData(settings))
-    local detailBytes = 0
-    for _, entry in ipairs(resolved) do
+    local detailBytes, missingBytes = 0, 0
+    for index, entry in ipairs(resolved) do
         if not entry.photo then
-            result.missing[#result.missing + 1] = tostring(entry.id)
+            result.missing_count = result.missing_count + 1
+            result.missing_indices[#result.missing_indices + 1] = index
+            local id = tostring(entry.id)
+            local bytes = #JSON:encode(id)
+            if not result.missing_truncated and missingBytes + bytes <= DRY_RUN_MISSING_BUDGET then
+                result.missing[#result.missing + 1] = id
+                missingBytes = missingBytes + bytes
+            else
+                result.missing_truncated = true
+            end
         else
             result.targets = result.targets + 1
             local current
@@ -784,6 +797,10 @@ local function previewDevelopSettings(catalog, resolved, settings)
     while #result.details > 0 and #JSON:encode(result) > 20000 do
         table.remove(result.details)
         result.detail_truncated = true
+    end
+    while #result.missing > 0 and #JSON:encode(result) > 20000 do
+        table.remove(result.missing)
+        result.missing_truncated = true
     end
     return result
 end
