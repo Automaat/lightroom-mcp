@@ -2,6 +2,7 @@
   "manifest_version": "0.3",
   "name": "lightroom-mcp",
   "display_name": "Lightroom Classic",
+  "icon": "icon.png",
   "version": "0.25.0",
   "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
   "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
@@ -107,6 +108,10 @@
       "description": "Flag photos as pick or reject, or remove the flag."
     },
     {
+      "name": "set_color_label",
+      "description": "Set or clear color labels on photos."
+    },
+    {
       "name": "import_photos",
       "description": "Import photos into the catalog."
     },
@@ -149,6 +154,10 @@
     {
       "name": "set_develop_settings",
       "description": "Set Develop settings directly on a photo."
+    },
+    {
+      "name": "apply_auto_adjustments",
+      "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
     },
     {
       "name": "apply_denoise",

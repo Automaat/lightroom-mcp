@@ -30,6 +30,7 @@ const EXPECTED_TOOL_NAMES = [
   'rename_keyword',
   'set_rating',
   'set_flag',
+  'set_color_label',
   'import_photos',
   'export_photos',
   'export_photo_metadata',
@@ -47,6 +48,7 @@ const EXPECTED_TOOL_NAMES = [
   'apply_develop_snapshot',
   'delete_develop_snapshot',
   'apply_denoise',
+  'apply_auto_adjustments',
   'list_masks',
   'create_gradient_mask',
   'update_gradient_mask',
@@ -70,8 +72,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 55 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(55);
+  it('contains exactly 57 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(57);
   });
 
   it('tool names are unique', () => {
@@ -137,6 +139,7 @@ describe('tool required fields', () => {
     ['set_keywords', ['photo_ids']],
     ['set_rating', ['photo_ids', 'rating']],
     ['set_flag', ['photo_ids', 'flag']],
+    ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
     ['import_photos', ['source_path']],
     ['export_photos', ['photo_ids', 'destination']],
@@ -153,6 +156,7 @@ describe('tool required fields', () => {
     ['apply_develop_snapshot', ['photo_id', 'snapshot_id']],
     ['delete_develop_snapshot', ['photo_id', 'snapshot_id']],
     ['apply_denoise', ['photo_ids', 'amount']],
+    ['apply_auto_adjustments', ['photo_ids']],
     ['list_masks', ['photo_id']],
     ['create_gradient_mask', ['photo_id', 'shape']],
     ['update_gradient_mask', ['photo_id', 'tool_id']],
@@ -220,6 +224,7 @@ describe('photo array schema', () => {
     ['set_keywords', 'photo_ids'],
     ['set_rating', 'photo_ids'],
     ['set_flag', 'photo_ids'],
+    ['set_color_label', 'photo_ids'],
     ['export_photos', 'photo_ids'],
     ['export_photo_metadata', 'photo_ids'],
     ['apply_develop_preset', 'photo_ids'],
@@ -493,5 +498,19 @@ describe('tool contracts vs Lua dispatch', () => {
       expect(dispatch[action]).toBe(luaHandler);
       expect(TOOL_CONTRACTS.some((contract) => contract.name === action)).toBe(false);
     }
+  });
+});
+
+
+describe('set_color_label schema', () => {
+  const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_color_label')!;
+  const validate = new Ajv({ strict: false }).compile(tool.inputSchema);
+
+  it.each(['red', 'yellow', 'green', 'blue', 'purple', 'none'])('accepts %s', (label) => {
+    expect(validate({ photo_ids: ['1'], label })).toBe(true);
+  });
+
+  it('rejects pink in set_color_label', () => {
+    expect(validate({ photo_ids: ['1'], label: 'pink' })).toBe(false);
   });
 });
