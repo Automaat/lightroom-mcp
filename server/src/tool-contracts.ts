@@ -415,6 +415,18 @@ const developSettingsProperties = Object.fromEntries(
   ]),
 );
 
+export const developSettingsValidationSchema = {
+  type: "object",
+  properties: developSettingsProperties,
+  additionalProperties: false,
+  minProperties: 1,
+};
+
+export const developSettingKeysValidationSchema = {
+  type: "array",
+  items: { type: "string", enum: [...DEVELOP_SETTING_KEYS] },
+};
+
 const presetSelectorProperties = {
   preset_name: { type: "string", minLength: 1, description: "Develop preset name" },
   preset_uuid: { type: "string", minLength: 1, description: "Develop preset UUID (preferred)" },
@@ -1257,11 +1269,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         settings: {
           type: "array",
-          items: { type: "string", enum: [...DEVELOP_SETTING_KEYS] },
+          items: { type: "string" },
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
           uniqueItems: true,
-          description: "Explicit Lightroom SDK setting keys to capture from the source photo",
+          description: "Explicit SDK setting keys from set_develop_settings to capture from the source photo",
         },
       },
       required: ["photo_id", "preset_name", "settings"],
@@ -1345,12 +1357,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "array",
           items: {
             type: "string",
-            enum: [...DEVELOP_SETTING_KEYS],
           },
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
           description:
-            "Optional whitelist of SDK setting keys (e.g., Exposure2012, Contrast2012, HueAdjustmentOrange). Omit to copy all.",
+            "Optional whitelist of SDK setting keys from set_develop_settings. Omit to copy all.",
         },
       },
       required: ["source_id", "target_ids"],
@@ -1387,8 +1398,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
         settings: {
           type: "object",
-          properties: developSettingsProperties,
-          additionalProperties: false,
+          propertyNames: { enum: [...DEVELOP_SETTING_KEYS] },
+          additionalProperties: {
+            oneOf: [...scalarDevelopSettingValueSchema.oneOf, pointCurveDevelopSettingValueSchema],
+          },
           minProperties: 1,
           description:
             "Allowlisted SDK setting key/value pairs (e.g., {\"Exposure2012\": 0.5, \"SaturationAdjustmentOrange\": -10})",
