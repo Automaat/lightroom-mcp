@@ -631,6 +631,21 @@ describe("HandlerDevelop numeric photo ids", function()
 end)
 
 describe("HandlerDevelop.copyDevelopSettings", function()
+    it("names the history step on every target", function()
+        local source = helper.fakePhoto({ id = "10", developSettings = { Exposure2012 = 1 } })
+        local first = helper.fakePhoto({ id = "11" })
+        local second = helper.fakePhoto({ id = "12" })
+        local _, Handler = setup({ photos = { source, first, second } })
+
+        Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11", "12" } })
+
+        for _, photo in ipairs({ first, second }) do
+            assert.are.equal("Copy Develop Settings", photo:getRawMetadata("__appliedHistoryName"))
+            assert.is_nil(photo:getRawMetadata("__appliedFlattenAutoNow"))
+        end
+        assert.is_nil(source:getRawMetadata("__appliedHistoryName"))
+    end)
+
     it("resolves targets OUTSIDE the write-access gate", function()
         local source = helper.fakePhoto({
             id = "10", path = "/s.jpg",
@@ -870,6 +885,16 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 end)
 
 describe("HandlerDevelop.setDevelopSettings", function()
+    it("names the history step", function()
+        local photo = helper.fakePhoto({ id = "1" })
+        local _, Handler = setup({ photos = { photo } })
+
+        Handler.setDevelopSettings({ photo_id = "1", settings = { Exposure2012 = 0.5 } })
+
+        assert.are.equal("Set Develop Settings", photo:getRawMetadata("__appliedHistoryName"))
+        assert.is_nil(photo:getRawMetadata("__appliedFlattenAutoNow"))
+    end)
+
     it("resolves the photo OUTSIDE the write-access gate", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local catalog, Handler = setup({ photos = { p } })

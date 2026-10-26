@@ -797,7 +797,7 @@ function DevelopHandler.copyDevelopSettings(args)
     catalog:withWriteAccessDo("Copy Develop Settings", function()
         for _, entry in ipairs(resolved) do
             if entry.photo then
-                entry.photo:applyDevelopSettings(toApply)
+                entry.photo:applyDevelopSettings(toApply, "Copy Develop Settings")
                 copiedCount = copiedCount + 1
                 applied[copiedCount] = entry
             else
@@ -840,7 +840,7 @@ function DevelopHandler.setDevelopSettings(args)
     end
 
     catalog:withWriteAccessDo("Set Develop Settings", function()
-        photo:applyDevelopSettings(args.settings)
+        photo:applyDevelopSettings(args.settings, "Set Develop Settings")
         applied = true
     end)
 
