@@ -836,7 +836,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       additionalProperties: false,
       properties: {
         photo_ids: photoIdArray("Array of photo IDs or file paths to export"),
-        destination: { type: "string", description: "Export destination folder" },
+        destination: { type: "string", description: "Absolute path of the export folder, created if missing; ~/ is expanded" },
         format: {
           type: "string",
           description: "Export format (jpeg, png, tiff, original)",
