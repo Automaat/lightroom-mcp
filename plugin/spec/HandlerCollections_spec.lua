@@ -64,7 +64,7 @@ describe("HandlerCollections.listCollections", function()
 
         assert.are.equal(10, r.count)
         assert.are.same({ { name = "c5", gated = false }, { name = "c6", gated = false } }, reads)
-        assert.are.same({ name = "c6", type = "LrCollection", photoCount = 1 }, r.collections[2])
+        assert.are.same({ name = "c6", type = "LrCollection", isSmartCollection = true, photoCount = 1 }, r.collections[2])
     end)
 
     it("descends into collection sets and prefixes names", function()
@@ -313,6 +313,82 @@ describe("HandlerCollections.createCollection", function()
             end)
         end, "Can't get collection information after creating collection"
             .. " inside the same withWriteAccessDo function")
+    end)
+end)
+
+describe("HandlerCollections.createSmartCollection", function()
+    it("saves the same intersecting search description as searchPhotos", function()
+        local catalog, Handler = setup()
+        local args = { name = "Review", rating = 5, edited = false, focal_length = 35,
+            camera = "Test", keywords = { "Trip" }, start_date = "2026-01-01" }
+        local r = Handler.createSmartCollection(args)
+        local created = catalog:getCreatedCollections()[1]
+        assert.is_true(r.success)
+        assert.are.equal("Review", r.path)
+        assert.is_true(created:isSmartCollection())
+        assert.are.same(require('HandlerSearch').buildSearchDesc(args), created:getSearchDescription())
+        assert.is_true(Handler.listCollections({}).collections[1].isSmartCollection)
+    end)
+
+    it("makes the smart collection readable only after its creating gate returns", function()
+        local catalog = helper.fakeCatalog()
+        local created
+        catalog:withWriteAccessDo("Create", function()
+            created = catalog:createSmartCollection("Review", { combine = "intersect",
+                { criteria = "rating", operation = "==", value = 5 } }, nil, false)
+            assert.has_error(function() created:getName() end,
+                "Smart collection is unavailable until its write gate returns")
+        end)
+        assert.are.equal("Review", created:getName())
+    end)
+
+    it("creates missing parent sets while reusing existing sets", function()
+        local trips = helper.fakeCollectionSet("Trips")
+        local catalog, Handler = setup({ collectionSets = { trips } })
+        local r = Handler.createSmartCollection({ name = "Review", parent = "Trips / 2026", rating = 5 })
+        assert.are.equal("Trips / 2026 / Review", r.path)
+        assert.are.equal(1, #catalog:getCreatedCollectionSets())
+        assert.is_true(trips:getChildCollectionSets()[1]:getChildCollections()[1]:isSmartCollection())
+    end)
+
+    it("rejects a duplicate name without creating anything", function()
+        local catalog, Handler = setup({ collections = { helper.fakeCollection("Review") } })
+        assert.has_error(function()
+            Handler.createSmartCollection({ name = "review", rating = 5 })
+        end, "Collection already exists: review")
+        assert.are.equal(0, #catalog:getCreatedCollections())
+        assert.are.equal(0, #catalog:getCreatedCollectionSets())
+    end)
+
+    it("rejects missing and invalid filters before creating parent sets", function()
+        local catalog, Handler = setup()
+        for _, args in ipairs({
+            { name = "Review", parent = "Trips / 2026" },
+            { name = "Review", parent = "Trips / 2026", keywords = {} },
+            { name = "Review", parent = "Trips / 2026", focal_length = 0 },
+            { name = "Review", parent = "Trips / 2026", edited = "false" },
+            { name = "Review", parent = "Trips / 2026", start_date = "2026-02-30" },
+        }) do
+            assert.has_error(function() Handler.createSmartCollection(args) end)
+        end
+        assert.are.equal(0, #catalog:getCreatedCollections())
+        assert.are.equal(0, #catalog:getCreatedCollectionSets())
+        assert.are.equal(0, catalog:getWriteAccessCount())
+    end)
+
+    it("accepts false and zero valued filters", function()
+        local catalog, Handler = setup()
+        Handler.createSmartCollection({ name = "Unedited", edited = false })
+        Handler.createSmartCollection({ name = "Unrated", rating = 0 })
+        assert.are.equal(2, #catalog:getCreatedCollections())
+    end)
+
+    it("reports an SDK creation failure", function()
+        local _, Handler = setup()
+        local catalog = import('LrApplication').activeCatalog()
+        catalog.createSmartCollection = function() return nil end
+        assert.has_error(function() Handler.createSmartCollection({ name = "Review", rating = 5 }) end,
+            "Lightroom did not create collection: Review")
     end)
 end)
 
