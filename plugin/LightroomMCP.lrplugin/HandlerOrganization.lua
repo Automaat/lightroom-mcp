@@ -380,4 +380,47 @@ function OrganizationHandler.setFlag(args)
     }
 end
 
+local COLOR_LABELS = { red = true, yellow = true, green = true, blue = true, purple = true, none = true }
+
+function OrganizationHandler.setColorLabel(args)
+    if not args.photo_ids or #args.photo_ids == 0 then
+        error("photo_ids is required")
+    end
+
+    local validLabel = type(args.label) == "string" and COLOR_LABELS[args.label]
+    if not validLabel then
+        error("label must be one of: red, yellow, green, blue, purple, none")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local updatedCount = 0
+    local missingIds = {}
+    local missingCount = 0
+
+    local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+
+    catalog:withWriteAccessDo("Set Color Label", function()
+        for _, entry in ipairs(resolved) do
+            if entry.photo then
+                entry.photo:setRawMetadata('colorNameForLabel', args.label)
+                updatedCount = updatedCount + 1
+            else
+                missingCount = missingCount + 1
+                missingIds[missingCount] = tostring(entry.id)
+            end
+        end
+    end)
+
+    Log.info(string.format("Set color label to %s for %d photos", args.label, updatedCount))
+
+    return {
+        success = true,
+        updated = updatedCount,
+        label = args.label,
+        missing = missingIds,
+        message = string.format("Set color label to %s for %d photos (%d ids not found)",
+            args.label, updatedCount, missingCount)
+    }
+end
+
 return OrganizationHandler
