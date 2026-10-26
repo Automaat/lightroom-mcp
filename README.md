@@ -178,6 +178,7 @@ If you'd rather drop the plugin in by hand:
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
 | `list_collections` | All collections and collection sets. |
+| `create_smart_collection` | Save `search_photos` filters as a smart collection; requires a filter and supports parent collection set paths. |
 | `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
 | `add_to_collection` | Add photos to a collection, by name or by its `list_collections` path. |
 | `get_collection_photos` | Photos in a collection, regular or smart (paginated). |

@@ -479,6 +479,24 @@ function M.fakeCatalog(opts)
             end)
             return c
         end,
+        createSmartCollection = function(self, name, searchDesc, parent, canReturnPrior)
+            local collection = self:createCollection(name, parent, canReturnPrior)
+            if collection then
+                collection.isSmartCollection = function() return true end
+                collection.getSearchDescription = function() return searchDesc end
+                setsCreatedInWrite[collection] = true
+                for _, method in ipairs({ "getName", "isSmartCollection", "getPhotos", "getSearchDescription" }) do
+                    local original = collection[method]
+                    collection[method] = function(...)
+                        if setsCreatedInWrite[collection] then
+                            error("Smart collection is unavailable until its write gate returns")
+                        end
+                        return original(...)
+                    end
+                end
+            end
+            return collection
+        end,
         -- Models the SDK restriction the handler has to work around: a set
         -- created in a write transaction cannot be read (name, children) until
         -- that transaction ends; Lightroom raises the error below. It can still

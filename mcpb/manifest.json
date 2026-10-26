@@ -68,6 +68,10 @@
       "description": "List all collections and collection sets."
     },
     {
+      "name": "create_smart_collection",
+      "description": "Save search filters as a smart collection"
+    },
+    {
       "name": "create_collection",
       "description": "Create a new collection."
     },
