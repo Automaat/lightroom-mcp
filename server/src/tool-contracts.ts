@@ -1317,6 +1317,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "match_photo_style",
+    title: "Match reference photo style",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.matchPhotoStyle",
+    description:
+      "Apply a reference photo's allowlisted global tone, color, curves, detail, noise, grain and vignette settings after creating and confirming a Develop snapshot on each target. Excludes crop, perspective, white balance (WhiteBalance, Temperature, Tint), lens corrections and all local adjustments including AI masks. Returns results with photo_id, snapshot (id and name) and settings_changed (keys whose values differ before applying), plus failures with reasons and missing IDs. Restore a target with apply_develop_snapshot. The reference cannot be a target, including via a file path alias. No pixel-based adaptation is performed.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        reference_id: photoIdSchema("Reference photo ID or file path"),
+        target_ids: photoIdArray("Target photo IDs or file paths"),
+      },
+      required: ["reference_id", "target_ids"],
+    },
+  },
+  {
     name: "set_develop_settings",
     title: "Set develop settings",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },

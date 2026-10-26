@@ -192,6 +192,10 @@
       "description": "Copy Develop settings from one photo to others."
     },
     {
+      "name": "match_photo_style",
+      "description": "Match a reference photo's global style after a confirmed snapshot, preserving framing, white balance, lens corrections and masks."
+    },
+    {
       "name": "set_develop_settings",
       "description": "Set Develop settings directly on a photo."
     },
