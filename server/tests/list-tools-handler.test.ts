@@ -342,6 +342,16 @@ describe('develop setting schema', () => {
   it('matches Lua develop setting allowlist', () => {
     expect(parseLuaDevelopSettingKeys()).toEqual(DEVELOP_SETTING_KEYS);
   });
+
+  it('reads back every settable key in get_photo_metadata', () => {
+    const metadataPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'HandlerMetadata.lua');
+    const source = fs.readFileSync(metadataPath, 'utf8');
+    const unread = DEVELOP_SETTING_KEYS.filter(
+      (key) => !source.includes(`"${key}"`) && !new RegExp(`developSettings\\.${key}\\b`).test(source),
+    );
+
+    expect(unread).toEqual([]);
+  });
 });
 
 /**
