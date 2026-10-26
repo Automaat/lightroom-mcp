@@ -3,6 +3,15 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('remove_photos_from_catalog requires confirm true and at most 100 photo_ids', () => {
+    for (const confirm of [undefined, false, 'true', 1, null]) {
+      expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: [1], confirm })).not.toBeNull();
+    }
+    expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: [1], confirm: true })).toBeNull();
+    expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: Array.from({ length: 100 }, (_, i) => i + 1), confirm: true })).toBeNull();
+    expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: Array.from({ length: 101 }, (_, i) => i + 1), confirm: true })).not.toBeNull();
+  });
+
   it('set_ai_metadata bounds scores and reasons and requires a change', () => {
     for (const score of [0, 72, 100, '']) {
       expect(validateToolArgs('set_ai_metadata', { photo_ids: [1, 2], score })).toBeNull();

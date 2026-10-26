@@ -10,11 +10,14 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   get_photo_metadata: 'read-only',
   summarize_develop_settings: 'read-only',
   get_photo_preview: 'read-only',
+  get_photo_stats: 'read-only',
   set_gps: 'destructive',
   set_location: 'destructive',
   set_metadata: 'destructive',
   set_ai_metadata: 'destructive',
   get_ai_metadata: 'read-only',
+  list_folders: 'read-only',
+  get_folder_photos: 'read-only',
   list_collections: 'read-only',
   create_collection: 'additive',
   create_smart_collection: 'additive',
@@ -23,10 +26,13 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   remove_from_collection: 'destructive',
   delete_collection: 'destructive',
   set_keywords: 'destructive',
+  remove_keyword_subtree: 'destructive',
   list_keywords: 'read-only',
   rename_keyword: 'destructive',
   set_rating: 'destructive',
+  undo_last_step: 'destructive',
   set_flag: 'destructive',
+  remove_photos_from_catalog: 'destructive',
   set_color_label: 'destructive',
   import_photos: 'additive',
   export_photos: 'destructive',
@@ -190,10 +196,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 63 tools', async () => {
+    it('returns all 69 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(63);
+      expect(tools).toHaveLength(69);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

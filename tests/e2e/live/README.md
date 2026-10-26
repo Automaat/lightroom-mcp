@@ -86,6 +86,10 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 ## Verification matrix
 
+`node tests/e2e/live/photo-stats.mjs` checks `get_photo_stats` on untouched `ramp256` and `wide_plain`: each ramp quarter holds 25 percent of the histogram mass within 5 points; plain gray has mean luminance 110 within 4 and no clipping. The script only reads the marked throwaway catalog.
+
+For a catalog whose shared fixtures already have develop edits, import your own gray ramp and gray-110 images and pass their IDs as `node tests/e2e/live/photo-stats.mjs RAMP_ID PLAIN_ID`. Preserve the shared fixtures and their edits.
+
 For AI metadata, run `node tests/e2e/live/ai-metadata.mjs write`, then `verify`
 after Reload Plug-in and again after quitting and reopening Lightroom. Run
 `clear` to check clearing and restore the fixtures' original plug-in values.
@@ -118,6 +122,14 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `set_mask_curves`, `get_mask_curves` | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask_curves`. |
 | `edit_mask_point_colors`, `get_mask_point_colors` | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask_point_colors`. |
 | `delete_masks`, `delete_empty_masks` | any, `batch.ids` | Remaining count matches, the photos stay in the catalog. `delete_empty_masks` is catalog-only: it does not open Develop and keeps the selection. |
+
+Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
+
+## Catalog removal check
+
+After installing the candidate bundle and restarting into the marked throwaway catalog, run `node tests/e2e/live/remove-from-catalog.mjs`. It imports three uniquely named JPEG copies, verifies confirmation guards, removes two in one call, checks the catalog count and every original fixture, verifies surviving selection, and checks all three files still exist after cleanup. The copied files remain in the throwaway catalog folder for inspection. Run with exclusive app and bridge ownership: the script briefly closes MCP to stage selection through the test-only TCP action.
+
+Stop without retrying if removal opens a blocking dialog, affects only the active photo, or removes unrequested virtual copies or stack members. Check master/virtual-copy and stacked-photo behavior manually on additional disposable imports before accepting a new Lightroom version. The tool refuses a master unless all its virtual copies are explicitly included. It restores module, sources and selection; Library remains in grid view because the documented SDK has no primary-view getter.
 
 ## Known traps
 

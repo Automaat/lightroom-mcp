@@ -175,11 +175,14 @@ If you'd rather drop the plugin in by hand:
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
 | `get_ai_metadata` | Read private AI scores and reasons for up to 1000 photos in one batch. |
 | `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
+| `list_folders` | Catalog folders in tree order, with full paths and direct photo counts (paginated). |
+| `get_folder_photos` | Photos by full folder path, optionally including subfolders (paginated). |
 | `list_collections` | All collections and collection sets. |
 | `create_smart_collection` | Save `search_photos` filters as a smart collection; requires a filter and supports parent collection set paths. |
 | `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
@@ -188,9 +191,12 @@ If you'd rather drop the plugin in by hand:
 | `remove_from_collection` | Remove photos from a collection (they stay in the catalog). |
 | `delete_collection` | Delete a collection (its photos stay in the catalog). |
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
+| `remove_keyword_subtree` | Detach a parent keyword and its descendants from selected photos, or explicitly from the whole catalog. Keyword nodes stay in the catalog. |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `rename_keyword` | Rename a keyword everywhere it is used. |
+| `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
 | `set_rating` | Set 0-5 star rating on photos. |
+| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |
@@ -292,7 +298,7 @@ This server works with the catalog open in Lightroom Classic on your computer th
 
 The SDK is Adobe's interface for plug-ins. Its [reference](https://lrc.mcor.dev/) provides no documented calls for these operations:
 
-- Reading histogram values, individual pixel data or detected face regions. `get_photo_preview` returns a rendered image for visual inspection.
+- Reading raw sensor histograms, individual pixel data or detected face regions. `get_photo_stats` measures the rendered JPEG preview; `get_photo_preview` returns that image for visual inspection.
 - Running an HDR or panorama merge; producing a print or book; creating or editing a slideshow. The SDK does support [slideshow playback](https://lrc.mcor.dev/modules/LrSlideshow.html), but this server has no playback tool.
 - Running Super Resolution or Raw Details through a documented call.
 - Stack create or unstack operations on photos already in the catalog, or auto-stacking. The SDK's import operation can add a new photo to a stack.

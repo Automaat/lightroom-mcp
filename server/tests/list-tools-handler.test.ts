@@ -17,11 +17,14 @@ const EXPECTED_TOOL_NAMES = [
   'get_photo_metadata',
   'summarize_develop_settings',
   'get_photo_preview',
+  'get_photo_stats',
   'set_gps',
   'set_location',
   'set_metadata',
   'set_ai_metadata',
   'get_ai_metadata',
+  'list_folders',
+  'get_folder_photos',
   'list_collections',
   'create_collection',
   'create_smart_collection',
@@ -30,10 +33,13 @@ const EXPECTED_TOOL_NAMES = [
   'remove_from_collection',
   'delete_collection',
   'set_keywords',
+  'remove_keyword_subtree',
   'list_keywords',
   'rename_keyword',
   'set_rating',
+  'undo_last_step',
   'set_flag',
+  'remove_photos_from_catalog',
   'set_color_label',
   'import_photos',
   'export_photos',
@@ -78,8 +84,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 63 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(63);
+  it('contains exactly 69 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(69);
   });
 
   it('tool names are unique', () => {
@@ -144,6 +150,7 @@ describe('tool required fields', () => {
     ['delete_collection', ['collection_name']],
     ['set_keywords', ['photo_ids']],
     ['set_rating', ['photo_ids', 'rating']],
+    ['undo_last_step', ['confirm']],
     ['set_flag', ['photo_ids', 'flag']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
@@ -331,6 +338,15 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
     expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
+  });
+
+  it('undo_last_step requires literal confirm true', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'undo_last_step');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    expect(validate({ confirm: true })).toBe(true);
+    for (const args of [{}, { confirm: false }, { confirm: 'true' }, { confirm: 1 }]) {
+      expect(validate(args)).toBe(false);
+    }
   });
 
   it('accepts the numeric photo ids the catalog hands back', () => {
@@ -551,5 +567,16 @@ describe('create_smart_collection schema', () => {
     [{ limit: 10 }, false],
   ])('validates filter %j', (filter, valid) => {
     expect(validate({ name: 'Review', ...filter })).toBe(valid);
+  });
+});
+
+describe('keyword subtree description', () => {
+  it('explains explicit scope, parent inclusion and retained catalog keywords', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'remove_keyword_subtree');
+    expect(tool?.description).toMatch(/parent keyword and every descendant/);
+    expect(tool?.description).toContain('catalog_wide=true');
+    expect(tool?.description).toContain('Keyword nodes stay in the catalog');
+    expect(tool?.description).toContain('list_keywords');
+    expect(tool?.inputSchema.required).toEqual(['parent']);
   });
 });

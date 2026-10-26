@@ -544,6 +544,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_photo_stats",
+    title: "Get photo statistics",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerPreview.getPhotoStats",
+    description:
+      "Read rendered-preview statistics for up to 20 photos with current develop settings. Returns one result or error per input id. histogram has 64 normalized bins of Rec.709 luma (0-255, four levels per bin); mean_luminance uses that same scale. shadow_fraction counts luma <=1 and highlight_fraction counts luma >=254. sharpness is four-neighbor Laplacian variance after area resampling to a fixed 512-pixel long edge; higher means sharper. These are JPEG preview measures, not raw sensor clipping or full-resolution focus measurements. Small previews are enlarged. Catalog contents are unchanged.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: {
+          type: "array",
+          items: photoIdSchema("Photo ID or file path"),
+          minItems: 1,
+          maxItems: 20,
+          description: "Between 1 and 20 photo IDs or file paths, in result order",
+        },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "set_gps",
     title: "Set GPS",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
@@ -665,6 +687,39 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       additionalProperties: false,
       properties: { photo_ids: photoIdArray("Array of photo IDs or file paths") },
       required: ["photo_ids"],
+    },
+  },
+  {
+    name: "list_folders",
+    title: "List folders",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerFolders.listFolders",
+    description: "List catalog folders in tree order as a paginated flat list of full paths, names and photo_count (direct photos only, excluding subfolders). Default limit 100.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        limit: { type: "integer", minimum: 0, description: "Max folders to return (default 100)" },
+        offset: { type: "integer", minimum: 0, description: "Folders to skip (default 0)" },
+      },
+    },
+  },
+  {
+    name: "get_folder_photos",
+    title: "Get folder photos",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerFolders.getFolderPhotos",
+    description: "List photos in a catalog folder by its full path from list_folders (paginated, default limit 100). Subfolders are excluded by default.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        folder_path: { type: "string", minLength: 1, description: "Full folder path from list_folders" },
+        include_subfolders: { type: "boolean", description: "Include photos in subfolders (default false)" },
+        limit: { type: "integer", minimum: 0, description: "Max photos to return (default 100)" },
+        offset: { type: "integer", minimum: 0, description: "Photos to skip (default 0)" },
+      },
+      required: ["folder_path"],
     },
   },
   {
@@ -834,6 +889,31 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "remove_keyword_subtree",
+    title: "Remove keyword subtree",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerOrganization.removeKeywordSubtree",
+    description:
+      "Detach a parent keyword and every descendant from photos, preserving unrelated keywords, including same-named keywords elsewhere. Use a dedicated parent such as 'AI Keywords' with set_keywords to undo a tagging batch. The parent path matches ignoring case; an unknown parent fails without changes. Specify photo_ids or explicitly request catalog_wide=true to affect every photo carrying the subtree. Keyword nodes stay in the catalog and remain visible in list_keywords; this tool does not delete keywords. Returns updated (photos changed), removed (assignments detached), and missing photo IDs.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        parent: {
+          type: "string",
+          minLength: 1,
+          description: "Parent-first keyword path, for example 'AI Keywords' or 'Tags|AI Keywords'",
+        },
+        photo_ids: photoIdArray("Photos to detach the subtree from; omit when catalog_wide is true"),
+        catalog_wide: {
+          type: "boolean",
+          description: "Explicitly detach the subtree from every photo in the catalog; cannot accompany photo_ids",
+        },
+      },
+      required: ["parent"],
+    },
+  },
+  {
     name: "list_keywords",
     title: "List keywords",
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -886,6 +966,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["keyword", "new_name"],
+    },
+  },
+  {
+    name: "undo_last_step",
+    title: "Undo last step",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerUndo.undoLastStep",
+    description:
+      "Undo exactly one step from Lightroom's shared history. Requires confirm: true. This can undo a user action or another plug-in's action made after your last edit; it does not identify who made the last change. Call only when you accept undoing whatever Lightroom currently considers its last history step. Returns undone and can_undo (whether another undo is available after this call).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        confirm: {
+          type: "boolean",
+          const: true,
+          description: "Accept undoing the latest step in Lightroom's shared history",
+        },
+      },
+      required: ["confirm"],
     },
   },
   {
@@ -949,6 +1049,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_ids", "label"],
+    },
+  },
+  {
+    name: "remove_photos_from_catalog",
+    title: "Remove photos from catalog",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerRemoveFromCatalog.removePhotos",
+    description:
+      "Remove exactly the given photos from the catalog, losing their catalog edits and metadata. Requires confirm: true and Lightroom Classic 14.3+. Files stay on disk. Maximum 100 IDs or paths; duplicates count once and missing IDs are reported. Include every virtual copy when removing its master. Temporarily opens Library grid and All Photographs; restores the module, sources and surviving selection. Library remains in grid view.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths to remove from the catalog"), maxItems: 100 },
+        confirm: { type: "boolean", enum: [true], description: "Explicit consent to lose these photos' catalog edits and metadata" },
+      },
+      required: ["photo_ids", "confirm"],
     },
   },
   {
