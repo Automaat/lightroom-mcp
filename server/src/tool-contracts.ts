@@ -440,7 +440,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerSearch.searchPhotos",
     description:
-      "Search photos using intersecting Library filters (paginated, default limit 100): filename, keywords, rating, capture date, camera, lens, ISO, flag, color label, edited status, file type and folder. Provide at least one filter to improve performance on large catalogs.",
+      "Search photos using intersecting Library filters (paginated, default limit 100): filename, keywords, rating, capture date, camera, lens, ISO, focal length, flag, color label, edited status, file type and folder. Provide at least one filter to improve performance on large catalogs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -458,6 +458,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
         lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
         iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
+        focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
         flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
         color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
         edited: { type: "boolean", description: "Whether the photo has develop adjustments" },

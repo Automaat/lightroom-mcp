@@ -97,6 +97,7 @@ describe("HandlerSearch.searchPhotos", function()
         { args = { camera = "Sony ILCE-7M3" }, criterion = { criteria = "camera", operation = "==", value = "Sony ILCE-7M3" } },
         { args = { lens = "24-70mm" }, criterion = { criteria = "lens", operation = "==", value = "24-70mm" } },
         { args = { iso = 100 }, criterion = { criteria = "isoSpeedRating", operation = "==", value = 100 } },
+        { args = { focal_length = 32 }, criterion = { criteria = "focalLength", operation = "==", value = 32 } },
         { args = { flag = "pick" }, criterion = { criteria = "pick", operation = "==", value = 1 } },
         { args = { flag = "reject" }, criterion = { criteria = "pick", operation = "==", value = -1 } },
         { args = { flag = "none" }, criterion = { criteria = "pick", operation = "==", value = 0 } },
@@ -141,12 +142,26 @@ describe("HandlerSearch.searchPhotos", function()
         { flag = "maybe" }, { file_type = "GIF" }, { color_label = "pink" },
         { camera = "" }, { lens = 42 }, { folder = "  " }, { iso = -1 }, { iso = math.huge },
         { iso = 0/0 }, { edited = "false" },
+        { focal_length = 0 }, { focal_length = -32 }, { focal_length = math.huge },
+        { focal_length = 0/0 }, { focal_length = "32 mm" },
     }) do
         it("rejects invalid Library filters before a catalog query", function()
             assert.has_error(function() Handler.searchPhotos(args) end)
             assert.are.equal(0, catalog.getQueryCount())
         end)
     end
+
+    it("intersects native focal length with other filters", function()
+        catalog = helper.fakeCatalog({ photos = {
+            helper.fakePhoto({ id = "1", focalLength = 32, rating = 5 }),
+            helper.fakePhoto({ id = "2", focalLength = 32, rating = 3 }),
+            helper.fakePhoto({ id = "3", focalLength = 24, rating = 5 }),
+        } })
+        local result = Handler.searchPhotos({ focal_length = 32, rating = 5 })
+        assert.are.equal(1, result.count)
+        assert.are.equal("1", result.photos[1].id)
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
 
     it("preserves existing criterion tables", function()
         assert.are.same({ combine = "intersect",

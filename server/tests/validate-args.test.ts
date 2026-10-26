@@ -5,7 +5,7 @@ import { createCallToolHandler } from '../src/tool-handler.js';
 describe('validateToolArgs', () => {
   it('search_photos accepts intersecting Library filters', () => {
     expect(validateToolArgs('search_photos', {
-      camera: 'Sony ILCE-7M3', lens: '24-70mm', iso: 100, flag: 'reject',
+      camera: 'Sony ILCE-7M3', lens: '24-70mm', iso: 100, focal_length: 32, flag: 'reject',
       color_label: 'red', edited: false, file_type: 'RAW', folder: 'Photos Travel', rating: 5,
     })).toBeNull();
     for (const flag of ['pick', 'reject', 'none']) {
@@ -19,6 +19,7 @@ describe('validateToolArgs', () => {
   it.each([
     ['flag', 'maybe'], ['file_type', 'GIF'], ['color_label', 'pink'],
     ['camera', ''], ['lens', 42], ['folder', '  '], ['iso', 0], ['iso', Infinity], ['edited', 'false'],
+    ['focal_length', 0], ['focal_length', -32], ['focal_length', Infinity], ['focal_length', NaN], ['focal_length', '32 mm'],
   ])('search_photos rejects invalid %s filter %s', (key, value) => {
     expect(validateToolArgs('search_photos', { [key]: value })).toContain(key);
   });

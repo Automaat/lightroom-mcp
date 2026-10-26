@@ -308,7 +308,7 @@ function M.fakeCatalog(opts)
                 if kw:getName():lower() == target then return true end
             end
             return false
-        elseif (crit == "camera" or crit == "lens" or crit == "isoSpeedRating"
+        elseif (crit == "camera" or crit == "lens" or crit == "isoSpeedRating" or crit == "focalLength"
             or crit == "pick" or crit == "labelColor" or crit == "fileFormat") and op == "==" then
             local keys = { camera = "cameraModel", pick = "pickStatus", labelColor = "colorNameForLabel" }
             local value = photo:getRawMetadata(keys[crit] or crit)

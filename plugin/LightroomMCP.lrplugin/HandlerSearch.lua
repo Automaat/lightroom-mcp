@@ -98,6 +98,13 @@ local function buildSearchDesc(args)
         end
         table.insert(desc, { criteria = "isoSpeedRating", operation = "==", value = args.iso })
     end
+    if args.focal_length ~= nil then
+        if type(args.focal_length) ~= "number" or args.focal_length ~= args.focal_length
+            or args.focal_length <= 0 or args.focal_length == math.huge then
+            error("focal_length must be a positive finite number", 0)
+        end
+        table.insert(desc, { criteria = "focalLength", operation = "==", value = args.focal_length })
+    end
     if args.flag ~= nil then
         table.insert(desc, { criteria = "pick", operation = "==", value = enumValue(args.flag, FLAGS, "flag") })
     end
