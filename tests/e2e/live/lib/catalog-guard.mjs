@@ -59,11 +59,14 @@ export function assertThrowawayCatalog(openCatalogs, options = {}) {
   return catalogPath;
 }
 
-export function lightroomPid() {
+export function lightroomPid(runCommand = execFileSync) {
   try {
-    const out = execFileSync("pgrep", ["-f", `Contents/MacOS/${LIGHTROOM_PROCESS_NAME}$`], { encoding: "utf8" });
-    const pid = Number(out.split("\n").find(Boolean));
-    return Number.isInteger(pid) ? pid : null;
+    const output = runCommand("ps", ["-axo", "pid=,comm="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const processes = output.split("\n").map((line) => line.trim().match(/^(\d+)\s+(.+)$/));
+    const lightroom = processes.filter((entry) => entry?.[2].endsWith(`/Contents/MacOS/${LIGHTROOM_PROCESS_NAME}`));
+    if (lightroom.length !== 1) return null;
+    const pid = Number(lightroom[0][1]);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
   }

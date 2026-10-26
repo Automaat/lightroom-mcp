@@ -27,7 +27,7 @@ local function describeSkipped(skipped)
     return table.concat(parts, ", ")
 end
 
-function ImportHandler.importPhotos(args)
+function ImportHandler.importPhotos(args, context)
     if not args.source_path then
         error("source_path is required")
     end
@@ -89,7 +89,14 @@ function ImportHandler.importPhotos(args)
     -- equivalent: the lock is released between photos, letting queued
     -- handlers interleave.
     local addedPhotos = {}
-    for _, filePath in ipairs(photosToImport) do
+    local remainingPaths = {}
+    local processed = 0
+    for index, filePath in ipairs(photosToImport) do
+        if context and context:isCanceled() then
+            for nextIndex = index, #photosToImport do remainingPaths[#remainingPaths + 1] = photosToImport[nextIndex] end
+            break
+        end
+        if context then context:report(processed, #photosToImport, filePath) end
         catalog:withWriteAccessDo("Import Photo", function()
             local photo = catalog:addPhoto(filePath)
             if photo then
@@ -97,7 +104,9 @@ function ImportHandler.importPhotos(args)
                 importedCount = importedCount + 1
             end
         end)
+        processed = processed + 1
     end
+    if context and processed > 0 then context:report(processed, #photosToImport, photosToImport[processed]) end
 
     -- Add to collection if specified, in its own short write transaction.
     if args.collection_name and #addedPhotos > 0 then
@@ -132,6 +141,8 @@ function ImportHandler.importPhotos(args)
     return {
         success = true,
         imported = importedCount,
+        complete = #remainingPaths == 0,
+        remaining_paths = #remainingPaths > 0 and remainingPaths or nil,
         skipped = skippedCount,
         skipped_by_extension = skippedCount > 0 and skippedByExtension or nil,
         message = message,

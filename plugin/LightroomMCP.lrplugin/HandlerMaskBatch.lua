@@ -91,11 +91,12 @@ local function pendingItems(items)
     return pending
 end
 
-local function createTemplateInDevelop(catalog, candidates, request, hasTimeLeft)
+local function createTemplateInDevelop(catalog, candidates, request, hasTimeLeft, report)
     local outcome = { alertPossible = false }
     DevelopSession.run(TOOL_NAME, catalog, true, function(state)
         for _, item in ipairs(candidates) do
             if not hasTimeLeft() then return end
+            report(item)
             local ok, result = LrTasks.pcall(function()
                 DevelopSession.openPhoto(catalog, item.photo, state)
                 return MaskCreate.createInDevelop(
@@ -195,9 +196,10 @@ local function computedMaskOnTarget(catalog, photo, template, request)
     return computed
 end
 
-local function addMasksToTargets(catalog, targets, template, request, hasTimeLeft)
+local function addMasksToTargets(catalog, targets, template, request, hasTimeLeft, report)
     for _, item in ipairs(targets) do
         if hasTimeLeft() then
+            report(item)
             local ok, result = LrTasks.pcall(computedMaskOnTarget, catalog, item.photo, template, request)
             if ok then
                 item.status = STATUS_CREATED
@@ -254,7 +256,7 @@ local function summarize(items, outcome, request, startedAt, missing)
     return response, counts
 end
 
-local function runBatch(args)
+local function runBatch(args, context)
     local photoIds = requirePhotoIdArray(args.photo_ids)
     local typeName, spec = MaskCreate.requireMaskType(args.type)
     local values = MaskCreate.validateAdjustments(args.adjustments)
@@ -263,16 +265,27 @@ local function runBatch(args)
 
     local catalog = LrApplication.activeCatalog()
     local startedAt = LrDate.currentTime()
-    local function hasTimeLeft() return LrDate.currentTime() - startedAt < TIME_BUDGET_SECONDS end
+    local function hasTimeLeft()
+        return not (context and context:isCanceled()) and LrDate.currentTime() - startedAt < TIME_BUDGET_SECONDS
+    end
 
     local items, missing = collectItems(catalog, photoIds)
     if #items > 0 then requireRecomputeApi(items[1].photo) end
     failUnsafePhotos(catalog, items)
+    local lastReportedItem
+    local function report(item)
+        lastReportedItem = item
+        if context then
+            local done = 0
+            for _, entry in ipairs(items) do if entry.status ~= STATUS_PENDING then done = done + 1 end end
+            context:report(done, #items, item.photo:getFormattedMetadata("fileName") or item.id)
+        end
+    end
 
     local outcome = { alertPossible = false }
     local candidates = pendingItems(items)
     if #candidates > 0 then
-        outcome = createTemplateInDevelop(catalog, candidates, request, hasTimeLeft)
+        outcome = createTemplateInDevelop(catalog, candidates, request, hasTimeLeft, report)
     end
 
     if outcome.template then
@@ -281,7 +294,7 @@ local function runBatch(args)
         local correction = readSavedCorrection(catalog, outcome.template.photo, outcome.maskId)
         local targets = pendingItems(items)
         if correction then
-            addMasksToTargets(catalog, targets, recomputableCopyOf(correction), request, hasTimeLeft)
+            addMasksToTargets(catalog, targets, recomputableCopyOf(correction), request, hasTimeLeft, report)
         else
             for _, item in ipairs(targets) do
                 fail(item, "Lightroom did not save the new mask on photo " .. outcome.template.id
@@ -290,18 +303,19 @@ local function runBatch(args)
         end
     end
 
+    if context and lastReportedItem then report(lastReportedItem) end
     local response, counts = summarize(items, outcome, request, startedAt, missing)
     Log.info(string.format("create_mask_batch %s: %d created, %d failed, %d not attempted (%d ids not found)",
         typeName, counts[STATUS_CREATED], counts[STATUS_FAILED], counts[STATUS_NOT_ATTEMPTED], #missing))
     return response
 end
 
-function MaskBatchHandler.createMaskBatch(args)
+function MaskBatchHandler.createMaskBatch(args, context)
     if running then
         error(TOOL_NAME .. " is already running; wait for it to finish, then call again")
     end
     running = true
-    local ok, result = LrTasks.pcall(runBatch, args)
+    local ok, result = LrTasks.pcall(runBatch, args, context)
     running = false
     if not ok then error(result, 0) end
     return result
