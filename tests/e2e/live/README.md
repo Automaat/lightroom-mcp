@@ -86,6 +86,8 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 ## Verification matrix
 
+`node tests/e2e/live/photo-stats.mjs` checks `get_photo_stats` on untouched `ramp256` and `wide_plain`: each ramp quarter holds 25 percent of the histogram mass within 5 points; plain gray has mean luminance 110 within 4 and no clipping. The script only reads the marked throwaway catalog.
+
 Positions are always in the displayed frame of the uncropped photo; Lightroom stores masks in the unrotated frame (`ImageFrame.lua`).
 
 | Tool | Fixtures | Key checks |

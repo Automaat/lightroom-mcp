@@ -44,6 +44,17 @@ local function setup(photos, onSleep)
 end
 
 describe("HandlerPreview.getPhotoPreview", function()
+    it("supplies a statistics preview without changing the catalog", function()
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, _, _, cb) cb("JPEGDATA") end)
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoStats({ photo_ids = { "1" } })
+
+        assert.are.equal("1", r.photo_id)
+        assert.are.equal(512, r.requested_size)
+        assert.are.same({ mime_type = "image/jpeg", data = "b64(JPEGDATA)" }, r.image)
+    end)
+
     it("returns the rendered JPEG base64-encoded with its mime type", function()
         local meta = { id = "1", path = "/a.nef" }
         local photo = previewPhoto(meta, function(_, _, _, cb) cb("JPEGDATA") end)
