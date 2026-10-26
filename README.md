@@ -247,6 +247,32 @@ curve must start at input 0 and end at input 255.
 }
 ```
 
+## Scope, write safety and limits
+
+### Your local Classic catalog
+
+This server works with the catalog open in Lightroom Classic on your computer through a Lightroom plug-in. Use it to organize photos, adjust edits and masks, and export Lightroom-rendered images. Lightroom Classic must be running. See [How it works](#how-it-works) for the connection and [Security](#security) for local access and authentication.
+
+### Safeguards when changing photos
+
+- Deleting a collection with `delete_collection` keeps its photos in the catalog ([collection handler](plugin/LightroomMCP.lrplugin/HandlerCollections.lua)).
+- Mask tools that write Lightroom's undocumented mask format check the Lightroom version, the photo's process version and the format of existing masks before writing. They read the result back and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit.
+- Connections require the local token described in [Security](#security), checked by [PluginInfoProvider.lua](plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua).
+
+### What Lightroom's plug-in SDK does not expose
+
+The SDK is Adobe's interface for plug-ins. Its [reference](https://lrc.mcor.dev/) provides no documented calls for these operations:
+
+- Reading histogram values, individual pixel data or detected face regions. `get_photo_preview` returns a rendered image for visual inspection.
+- Running an HDR or panorama merge; producing a print or book; creating or editing a slideshow. The SDK does support [slideshow playback](https://lrc.mcor.dev/modules/LrSlideshow.html), but this server has no playback tool.
+- Running Super Resolution or Raw Details through a documented call.
+- Stack create or unstack operations on photos already in the catalog, or auto-stacking. The SDK's import operation can add a new photo to a stack.
+- Folder create, move or delete operations in the catalog, or catalog open or close operations. Importing photos and managing collections are separate operations.
+- Spot creation with the healing tools; Assisted Culling; Dust Removal; or Render to DNG.
+- Running an HTTP server inside the plug-in. The connection uses the SDK's sockets instead; see [How it works](#how-it-works).
+
+Pixel-based AI edits have another limit: copying a table of develop settings does not copy their generated image data. Since Lightroom Classic 15.0, Lightroom stores heavy edits, including AI edits, in [`.acr` sidecars when saving metadata to files](https://helpx.adobe.com/lightroom-classic/help/create-xmp-acr-files.html). Copying develop-settings tables alone does not transfer those sidecar contents.
+
 ## How it works
 
 ```
