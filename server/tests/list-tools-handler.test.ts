@@ -15,6 +15,7 @@ const EXPECTED_TOOL_NAMES = [
   'search_photos',
   'get_selected_photos',
   'get_photo_metadata',
+  'summarize_develop_settings',
   'get_photo_preview',
   'get_photo_stats',
   'find_duplicate_groups',
