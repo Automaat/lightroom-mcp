@@ -42,6 +42,19 @@ const targets = [
     },
   },
   {
+    name: "server.json",
+    file: p("server.json"),
+    read() {
+      return readJson(this.file).version;
+    },
+    write(v) {
+      const j = readJson(this.file);
+      j.version = v;
+      for (const pkg of j.packages) pkg.version = v;
+      fs.writeFileSync(this.file, JSON.stringify(j, null, 2) + "\n");
+    },
+  },
+  {
     name: "server/package-lock.json",
     file: p("server", "package-lock.json"),
     read() {
@@ -107,6 +120,16 @@ function check() {
   const canonical = targets[0].read();
   if (!SEMVER.test(canonical ?? "")) {
     fail(`canonical version in ${targets[0].name} is not semver: ${canonical}`);
+  }
+  const manifest = readJson(p("server", "package.json"));
+  const registry = readJson(p("server.json"));
+  if (!manifest.mcpName || registry.name !== manifest.mcpName) {
+    fail("server.json name must match server/package.json mcpName");
+  }
+  for (const pkg of registry.packages) {
+    if (pkg.version !== canonical) {
+      fail(`server.json package version drift vs ${canonical}: ${pkg.version}`);
+    }
   }
   const mismatches = [];
   for (const t of targets) {

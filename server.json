@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Automaat/lightroom-mcp",
+  "description": "MCP server bridging Claude/Codex/ChatGPT to Adobe Lightroom Classic via a Lua plugin.",
+  "repository": {
+    "url": "https://github.com/Automaat/lightroom-mcp",
+    "source": "github"
+  },
+  "version": "0.25.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@mskalski/lightroom-mcp",
+      "version": "0.25.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "LIGHTROOM_MCP_REQUEST_PORT",
+          "description": "Lightroom plugin request socket port.",
+          "isRequired": false,
+          "format": "number",
+          "default": "58763"
+        },
+        {
+          "name": "LIGHTROOM_MCP_RESPONSE_PORT",
+          "description": "Lightroom plugin response socket port.",
+          "isRequired": false,
+          "format": "number",
+          "default": "58764"
+        }
+      ]
+    }
+  ]
+}
