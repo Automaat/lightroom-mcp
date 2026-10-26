@@ -4,6 +4,17 @@ local Log = require 'Log'
 local PhotoSummary = require 'PhotoSummary'
 
 local SearchHandler = {}
+local FLAGS = { pick = 1, reject = -1, none = 0 }
+local LABELS = { red = 1, yellow = 2, green = 3, blue = 4, purple = 5, none = "none" }
+local FILE_TYPES = { DNG = true, RAW = true, JPG = true, TIFF = true, PNG = true,
+    PSD = true, VIDEO = true, PSB = true, AVIF = true, JXL = true }
+
+local function enumValue(value, values, name)
+    if type(value) ~= "string" or values[value] == nil then
+        error(name .. " has an unsupported value", 0)
+    end
+    return values[value]
+end
 
 local function parseDate(value, name)
     if type(value) ~= "string" then
@@ -73,8 +84,39 @@ local function buildSearchDesc(args)
         table.insert(desc, { criteria = "captureTime", operation = "<", value = addDays(endTimestamp, 1) })
     end
 
+    for _, field in ipairs({ "camera", "lens", "folder" }) do
+        if args[field] ~= nil then
+            if type(args[field]) ~= "string" or not args[field]:find("%S") then
+                error(field .. " must be a non-empty string", 0)
+            end
+            table.insert(desc, { criteria = field, operation = field == "folder" and "all" or "==", value = args[field] })
+        end
+    end
+    if args.iso ~= nil then
+        if type(args.iso) ~= "number" or args.iso ~= args.iso or args.iso <= 0 or args.iso == math.huge then
+            error("iso must be a positive finite number", 0)
+        end
+        table.insert(desc, { criteria = "isoSpeedRating", operation = "==", value = args.iso })
+    end
+    if args.flag ~= nil then
+        table.insert(desc, { criteria = "pick", operation = "==", value = enumValue(args.flag, FLAGS, "flag") })
+    end
+    if args.color_label ~= nil then
+        table.insert(desc, { criteria = "labelColor", operation = "==", value = enumValue(args.color_label, LABELS, "color_label") })
+    end
+    if args.edited ~= nil then
+        if type(args.edited) ~= "boolean" then error("edited must be a boolean", 0) end
+        table.insert(desc, { criteria = "hasAdjustments", operation = args.edited and "isTrue" or "isFalse", value = args.edited })
+    end
+    if args.file_type ~= nil then
+        enumValue(args.file_type, FILE_TYPES, "file_type")
+        table.insert(desc, { criteria = "fileFormat", operation = "==", value = args.file_type })
+    end
+
     return desc
 end
+
+SearchHandler.buildSearchDesc = buildSearchDesc
 
 function SearchHandler.searchPhotos(args)
     local catalog = LrApplication.activeCatalog()
