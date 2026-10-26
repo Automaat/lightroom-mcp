@@ -175,6 +175,7 @@ If you'd rather drop the plugin in by hand:
 | `rename_keyword` | Rename a keyword everywhere it is used. |
 | `set_rating` | Set 0-5 star rating on photos. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
+| `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |

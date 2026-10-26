@@ -127,6 +127,64 @@ describe("HandlerOrganization.setFlag", function()
     end)
 end)
 
+describe("HandlerOrganization.setColorLabel", function()
+    it("resolves photos OUTSIDE the write-access gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", colorNameForLabel = "none" })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        Handler.setColorLabel({ photo_ids = { "1" }, label = "red" })
+
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("sets and clears SDK color labels", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", colorNameForLabel = "none" })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", colorNameForLabel = "red" })
+        local _, Handler = setup({ photos = { p1, p2 } })
+
+        local r = Handler.setColorLabel({ photo_ids = { "1", "2" }, label = "red" })
+        assert.is_true(r.success)
+        assert.are.equal(2, r.updated)
+        assert.are.equal("red", r.label)
+        assert.are.equal("red", p1:getRawMetadata("colorNameForLabel"))
+        assert.are.equal("red", p2:getRawMetadata("colorNameForLabel"))
+
+        Handler.setColorLabel({ photo_ids = { "1" }, label = "red" })
+        assert.are.equal("red", p1:getRawMetadata("colorNameForLabel"))
+
+        Handler.setColorLabel({ photo_ids = { "1" }, label = "none" })
+        assert.are.equal("none", p1:getRawMetadata("colorNameForLabel"))
+    end)
+
+    it("requires photo_ids and a known label before scanning", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", colorNameForLabel = "red" })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        assert.has_error(function() Handler.setColorLabel({ label = "red" }) end, "photo_ids is required")
+        assert.has_error(function() Handler.setColorLabel({ photo_ids = { "1" } }) end,
+            "label must be one of: red, yellow, green, blue, purple, none")
+        assert.has_error(function() Handler.setColorLabel({ photo_ids = { "1" }, label = "pink" }) end,
+            "label must be one of: red, yellow, green, blue, purple, none")
+        assert.has_error(function() Handler.setColorLabel({ photo_ids = { "1" }, label = 1 }) end,
+            "label must be one of: red, yellow, green, blue, purple, none")
+
+        assert.are.equal(0, catalog.getQueryCount())
+        assert.are.equal("red", p1:getRawMetadata("colorNameForLabel"))
+    end)
+
+    it("reports unknown photos instead of claiming a silent success", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", colorNameForLabel = "none" })
+        local catalog, Handler = setup({ photos = { p1 } })
+
+        local r = Handler.setColorLabel({ photo_ids = { "1", "missing" }, label = "red" })
+
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "missing" }, r.missing)
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+        assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+    end)
+end)
+
 describe("HandlerOrganization.setKeywords", function()
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })

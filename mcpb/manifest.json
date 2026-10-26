@@ -107,6 +107,10 @@
       "description": "Flag photos as pick or reject, or remove the flag."
     },
     {
+      "name": "set_color_label",
+      "description": "Set or clear color labels on photos."
+    },
+    {
       "name": "import_photos",
       "description": "Import photos into the catalog."
     },

@@ -848,6 +848,27 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_color_label",
+    title: "Set color label",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerOrganization.setColorLabel",
+    description:
+      "Set the color label of photos to red, yellow, green, blue, purple, or none to clear it. get_photo_metadata reports it as colorLabel.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        label: {
+          type: "string",
+          enum: ["red", "yellow", "green", "blue", "purple", "none"],
+          description: "Color name, or none to clear the label",
+        },
+      },
+      required: ["photo_ids", "label"],
+    },
+  },
+  {
     name: "import_photos",
     title: "Import photos",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
