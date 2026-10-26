@@ -164,6 +164,10 @@
       "description": "Set Develop settings directly on a photo."
     },
     {
+      "name": "set_process_version",
+      "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
+    },
+    {
       "name": "apply_auto_adjustments",
       "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
     },
@@ -254,6 +258,10 @@
     {
       "name": "list_develop_snapshots",
       "description": "List saved develop snapshots for a photo"
+    },
+    {
+      "name": "create_virtual_copies",
+      "description": "Create virtual copies and restore the previous selection"
     },
     {
       "name": "create_develop_snapshot",

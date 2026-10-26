@@ -202,8 +202,10 @@ If you'd rather drop the plugin in by hand:
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
 | `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
 | `set_develop_settings` | Write SDK setting key/values directly. |
+| `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |
 | `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
+| `create_virtual_copies` | Create named virtual copies of up to 25 photos; return master and copy IDs and restore selection. |
 | `apply_develop_snapshot` | Restore a saved develop snapshot. |
 | `delete_develop_snapshot` | Delete one saved develop snapshot. |
 | `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
