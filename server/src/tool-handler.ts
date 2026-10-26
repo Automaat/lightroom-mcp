@@ -1,5 +1,6 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { validateToolArgs } from "./validate-args.js";
+import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
 import { getPhotoStats } from "./photo-stats.js";
 
 export interface ToolHandlerDeps {
@@ -80,6 +81,9 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     }
 
     try {
+      if (name === "find_duplicate_groups") {
+        return { content: successContent(await findDuplicateGroups(deps.dispatcher, args as DuplicateGroupArgs, options)) };
+      }
       if (name === "get_photo_stats") {
         const { photo_ids } = args as { photo_ids: (string | number)[] };
         return { content: successContent(await getPhotoStats(deps.dispatcher, photo_ids, options)) };
