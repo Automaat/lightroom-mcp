@@ -3,6 +3,16 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('apply_auto_adjustments requires tone or white_balance to be true', () => {
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914] })).not.toBeNull();
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: false, white_balance: false })).not.toBeNull();
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: true })).toBeNull();
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], white_balance: true })).toBeNull();
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: true, white_balance: true })).toBeNull();
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: 'true' })).not.toBeNull();
+    expect(validateToolArgs('apply_auto_adjustments', { photo_ids: Array.from({ length: 101 }, () => '1'), tone: true })).not.toBeNull();
+  });
+
   it('accepts arguments that satisfy the published schema', () => {
     expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();

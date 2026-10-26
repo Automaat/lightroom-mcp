@@ -1102,6 +1102,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "apply_auto_adjustments",
+    title: "Apply auto adjustments",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.applyAutoAdjustments",
+    description:
+      "Apply Lightroom's Auto Tone, Auto White Balance, or both to up to 100 photos. Set tone or white_balance to true; omitted flags are false. Opens each photo in Develop and waits for its settings to settle, then restores the user's module, view source and selection. Reports applied, unchanged, skipped or failed per photo, with a reason for each non-applied result. Missing and duplicate photos are skipped. One Develop-driving call runs at a time. Stops after about 240 seconds with complete false and remaining_ids to retry.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
+        tone: { type: "boolean", description: "Apply Lightroom Auto Tone (default false)" },
+        white_balance: { type: "boolean", description: "Apply Lightroom Auto White Balance (default false)" },
+      },
+      required: ["photo_ids"],
+      anyOf: [
+        { required: ["tone"], properties: { tone: { const: true } } },
+        { required: ["white_balance"], properties: { white_balance: { const: true } } },
+      ],
+    },
+  },
+  {
     name: "apply_denoise",
     title: "Apply denoise",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
