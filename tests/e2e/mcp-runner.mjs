@@ -404,6 +404,7 @@ async function main() {
       if (!ctx.firstPhoto) throw new Error("no photo to test against");
       const r = await c.callTool("get_photo_metadata", {
         photo_id: String(ctx.firstPhoto.id),
+        sections: ["developSettings"],
       });
       checkTrue("not error", !r.isError, r.text);
       checkTrue("has filename", typeof r.parsed.filename === "string");
@@ -571,6 +572,7 @@ async function main() {
         checkTrue("first not error", !r1.isError, r1.text);
         const meta = await c.callTool("get_photo_metadata", {
           photo_id: String(ctx.firstPhoto.id),
+          sections: ["developSettings"],
         });
         checkTrue("exposure ~0.5", Math.abs((meta.parsed.developSettings.exposure ?? 0) - 0.5) < 1e-6,
           `got ${meta.parsed.developSettings.exposure}`);
@@ -616,6 +618,7 @@ async function main() {
         checkEq("copied", cp.parsed.copied, 1);
         const dstMeta = await c.callTool("get_photo_metadata", {
           photo_id: String(dst.id),
+          sections: ["developSettings"],
         });
         checkEq("dst contrast", dstMeta.parsed.developSettings.contrast, 42);
         // restore source

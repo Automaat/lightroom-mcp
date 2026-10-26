@@ -117,6 +117,13 @@ describe('validateToolArgs', () => {
   });
 
   it('accepts arguments that satisfy the published schema', () => {
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 914, sections: [] })).toBeNull();
+    expect(validateToolArgs('get_photo_metadata', {
+      photo_id: 914, sections: ['developSettings', 'developSettings'],
+    })).toBeNull();
+    const invalidSection = validateToolArgs('get_photo_metadata', { photo_id: 914, sections: ['unknown'] });
+    expect(invalidSection).toContain('Invalid arguments for get_photo_metadata');
+    expect(invalidSection).toContain('sections');
     expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
     expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 3 })).toBeNull();
@@ -746,6 +753,19 @@ describe('tool handler argument validation', () => {
 
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toContain('Invalid arguments');
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown metadata sections before touching Lightroom', async () => {
+    const call = jest.fn((_action: string, _params: unknown) =>
+      Promise.resolve({ id: 'req_1', result: {} }));
+    const handler = createCallToolHandler({ dispatcher: { call }, isReady: () => true });
+
+    const res = await handler('get_photo_metadata', { photo_id: 914, sections: ['unknown'] });
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('Invalid arguments for get_photo_metadata');
+    expect(res.content[0].text).toContain('sections');
     expect(call).not.toHaveBeenCalled();
   });
 

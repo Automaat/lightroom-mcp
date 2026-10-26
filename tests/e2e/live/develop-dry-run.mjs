@@ -17,7 +17,7 @@ const originals = new Map();
 let failure;
 try {
   for (const id of [source_id, ...target_ids]) {
-    const metadata = await tool("get_photo_metadata", { photo_id: id });
+    const metadata = await tool("get_photo_metadata", { photo_id: id, sections: ["developSettings"] });
     originals.set(id, {
       Exposure2012: metadata.developSettings.exposure,
       Contrast2012: metadata.developSettings.contrast,

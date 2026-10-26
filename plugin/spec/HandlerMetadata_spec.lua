@@ -12,6 +12,38 @@ local function setup(photos)
 end
 
 describe("HandlerMetadata.getPhotoMetadata", function()
+    it("omits develop settings by default and with empty sections without calling the getter", function()
+        local photo = helper.fakePhoto({ id = "1", rating = 5, title = "Keep" })
+        photo.getDevelopSettings = function() error("unrequested develop read") end
+        local _, Handler = setup({ photo })
+        local default = Handler.getPhotoMetadata({ photo_id = "1" })
+        assert.is_nil(default.developSettings)
+        assert.are.equal(5, default.rating)
+        assert.are.equal("Keep", default.title)
+        assert.are.same(default, Handler.getPhotoMetadata({ photo_id = "1", sections = {} }))
+    end)
+
+    it("preserves all other fields and reads duplicate sections only once", function()
+        local photo = helper.fakePhoto({ id = "1", rating = 3,
+            developSettings = { Exposure2012 = 0.5, Contrast2012 = 42 } })
+        local reads = 0
+        local getDevelopSettings = photo.getDevelopSettings
+        photo.getDevelopSettings = function(self)
+            reads = reads + 1
+            return getDevelopSettings(self)
+        end
+        local _, Handler = setup({ photo })
+        local default = Handler.getPhotoMetadata({ photo_id = "1" })
+        local full = Handler.getPhotoMetadata({ photo_id = "1", sections = { "developSettings" } })
+        local duplicate = Handler.getPhotoMetadata({ photo_id = "1",
+            sections = { "developSettings", "developSettings" } })
+        assert.are.same(full, duplicate)
+        assert.are.same({ exposure = 0.5, contrast = 42 }, full.developSettings)
+        full.developSettings = nil
+        assert.are.same(default, full)
+        assert.are.equal(2, reads)
+    end)
+
     it("returns nonempty accessibility text and omits empty fields", function()
         local photo = helper.fakePhoto({ id = "1", altTextAccessibility = "A red barn", extDescrAccessibility = "" })
         local _, Handler = setup({ photo })
@@ -138,7 +170,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         })
         local _, Handler = setup({ photo })
 
-        local r = Handler.getPhotoMetadata({ photo_id = "42" })
+        local r = Handler.getPhotoMetadata({ photo_id = "42", sections = { "developSettings" } })
 
         assert.are.equal("/p/sunset.jpg", r.path)
         assert.are.equal(5, r.rating)
@@ -165,7 +197,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         })
         local _, Handler = setup({ photo })
 
-        local r = Handler.getPhotoMetadata({ photo_id = "43" })
+        local r = Handler.getPhotoMetadata({ photo_id = "43", sections = { "developSettings" } })
 
         assert.are.equal(-8, r.developSettings.hsl.HueAdjustmentRed)
         assert.are.equal(-15, r.developSettings.hsl.SaturationAdjustmentOrange)
@@ -181,7 +213,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         })
         local _, Handler = setup({ photo })
 
-        local r = Handler.getPhotoMetadata({ photo_id = "44" })
+        local r = Handler.getPhotoMetadata({ photo_id = "44", sections = { "developSettings" } })
 
         assert.is_nil(r.developSettings.hsl)
     end)
@@ -216,7 +248,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         })
         local _, Handler = setup({ photo })
 
-        local d = Handler.getPhotoMetadata({ photo_id = "45" }).developSettings
+        local d = Handler.getPhotoMetadata({ photo_id = "45", sections = { "developSettings" } }).developSettings
 
         assert.are.same({ LensProfileEnable = 1, LensManualDistortionAmount = 12 }, d.lens)
         assert.are.same({ PerspectiveUpright = 1, PerspectiveVertical = -5, PerspectiveAspect = 0 }, d.transform)
@@ -271,7 +303,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
             })
             local _, Handler = setup({ photo })
 
-            local d = Handler.getPhotoMetadata({ photo_id = "47" }).developSettings
+            local d = Handler.getPhotoMetadata({ photo_id = "47", sections = { "developSettings" } }).developSettings
 
             assert.are.same(expected, d[field])
             for otherField in pairs(EXPECTED_SDK_GROUPS) do
@@ -291,7 +323,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         })
         local _, Handler = setup({ photo })
 
-        local d = Handler.getPhotoMetadata({ photo_id = "46" }).developSettings
+        local d = Handler.getPhotoMetadata({ photo_id = "46", sections = { "developSettings" } }).developSettings
 
         assert.is_nil(d.lens)
         assert.is_nil(d.transform)
@@ -323,7 +355,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         })
         local _, Handler = setup({ photo })
 
-        local r = Handler.getPhotoMetadata({ photo_id = "7" })
+        local r = Handler.getPhotoMetadata({ photo_id = "7", sections = { "developSettings" } })
 
         assert.are.equal("Main Street", r.title)
         assert.are.equal("Downtown at dusk", r.caption)
@@ -341,7 +373,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         local photo = helper.fakePhoto({ id = "8", path = "/p/no-gps.jpg", fileName = "no-gps.jpg" })
         local _, Handler = setup({ photo })
 
-        local r = Handler.getPhotoMetadata({ photo_id = "8" })
+        local r = Handler.getPhotoMetadata({ photo_id = "8", sections = { "developSettings" } })
         assert.is_nil(r.gps)
         assert.is_nil(r.location)
         assert.is_nil(r.copyright)
@@ -351,7 +383,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         local photo = helper.fakePhoto({ id = "10", fileName = "empty-gps.jpg", gps = {} })
         local _, Handler = setup({ photo })
 
-        local r = Handler.getPhotoMetadata({ photo_id = "10" })
+        local r = Handler.getPhotoMetadata({ photo_id = "10", sections = { "developSettings" } })
         assert.is_nil(r.gps)
     end)
 
