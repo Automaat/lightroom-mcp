@@ -23,6 +23,7 @@ const EXPECTED_TOOL_NAMES = [
   'get_ai_metadata',
   'list_collections',
   'create_collection',
+  'create_smart_collection',
   'add_to_collection',
   'get_collection_photos',
   'remove_from_collection',
@@ -76,8 +77,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 61 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(61);
+  it('contains exactly 62 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(62);
   });
 
   it('tool names are unique', () => {
@@ -518,5 +519,36 @@ describe('set_color_label schema', () => {
 
   it('rejects pink in set_color_label', () => {
     expect(validate({ photo_ids: ['1'], label: 'pink' })).toBe(false);
+  });
+});
+
+
+describe('create_smart_collection schema', () => {
+  const smart = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_smart_collection')!;
+  const search = TOOL_DEFINITIONS.find((tool) => tool.name === 'search_photos')!;
+  const validate = new Ajv({ strict: false }).compile(smart.inputSchema);
+
+  it('create_smart_collection rejects a name without a filter', () => {
+    expect(validate({ name: 'x' })).toBe(false);
+    expect(validate({ name: 'x', parent: 'Trips / 2026' })).toBe(false);
+  });
+
+  it('shares every search filter definition without pagination', () => {
+    const { limit, offset, ...filters } = search.inputSchema.properties!;
+    const { name, parent, ...savedFilters } = smart.inputSchema.properties!;
+    expect(limit).toBeDefined();
+    expect(offset).toBeDefined();
+    expect(name).toBeDefined();
+    expect(parent).toBeDefined();
+    expect(savedFilters).toEqual(filters);
+  });
+
+  it.each([
+    [{ rating: 0 }, true], [{ edited: false }, true], [{ focal_length: 35 }, true],
+    [{ iso: 0 }, false], [{ focal_length: -1 }, false], [{ camera: ' ' }, false],
+    [{ flag: 'invalid' }, false], [{ keywords: [] }, false], [{ rating: 6 }, false],
+    [{ limit: 10 }, false],
+  ])('validates filter %j', (filter, valid) => {
+    expect(validate({ name: 'Review', ...filter })).toBe(valid);
   });
 });
