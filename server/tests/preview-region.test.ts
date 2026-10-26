@@ -80,6 +80,19 @@ describe('get_photo_preview region', () => {
     expect(JSON.parse(result.content[0].text)).toMatchObject({ width: 1, height: 1 });
   });
 
+  it('returns a valid pixel when a positive region is smaller than floating-point spacing', async () => {
+    const { handler } = makeHandler();
+    const result = await handler('get_photo_preview', {
+      photo_id: 914, region: { x: 0.5, y: 0.5, width: 1e-20, height: 1e-20 },
+    });
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ width: 1, height: 1 });
+    const image = result.content[1];
+    if (image.type !== 'image') throw new Error('Expected cropped JPEG');
+    const decoded = jpeg.decode(Buffer.from(image.data, 'base64'));
+    expect([decoded.width, decoded.height, decoded.data.length]).toEqual([1, 1, 4]);
+  });
+
   it.each([
     {}, { x: 0, y: 0, width: 0.2 }, null, [],
     { x: 0, y: 0, width: 0, height: 1 },

@@ -36,8 +36,8 @@ export function cropPreview(result: unknown, region: PreviewRegion): unknown {
   }
   const left = Math.floor(region.x * source.width);
   const top = Math.floor(region.y * source.height);
-  const right = Math.min(source.width, Math.ceil((region.x + region.width) * source.width));
-  const bottom = Math.min(source.height, Math.ceil((region.y + region.height) * source.height));
+  const right = Math.min(source.width, Math.max(left + 1, Math.ceil((region.x + region.width) * source.width)));
+  const bottom = Math.min(source.height, Math.max(top + 1, Math.ceil((region.y + region.height) * source.height)));
   const width = right - left, height = bottom - top;
   const data = Buffer.alloc(width * height * 4);
   for (let y = 0; y < height; y++) {
