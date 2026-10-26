@@ -233,6 +233,22 @@
     {
       "name": "combine_mask",
       "description": "Add, subtract or intersect a Subject, Sky or Background component on an existing mask."
+    },
+    {
+      "name": "list_develop_snapshots",
+      "description": "List saved develop snapshots for a photo"
+    },
+    {
+      "name": "create_develop_snapshot",
+      "description": "Save current develop settings as a named snapshot"
+    },
+    {
+      "name": "apply_develop_snapshot",
+      "description": "Restore saved develop settings from a snapshot"
+    },
+    {
+      "name": "delete_develop_snapshot",
+      "description": "Delete one saved develop snapshot"
     }
   ],
   "user_config": {
