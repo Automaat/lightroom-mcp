@@ -433,6 +433,28 @@ const presetSelectorSchema: InputSchema = {
   anyOf: [{ required: ["preset_uuid"] }, { required: ["preset_name"] }],
 };
 
+const searchFilterProperties = {
+  filename: { type: "string", description: "Search by filename (partial match)" },
+  keywords: stringArray("Search by keywords"),
+  rating: {
+    type: "number",
+    description: "Filter by star rating (0-5)",
+    minimum: 0,
+    maximum: 5,
+  },
+  start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
+  end_date: dateStringSchema("End date (YYYY-MM-DD)"),
+  camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
+  lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
+  iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
+  focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
+  flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
+  color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
+  edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
+  file_type: { type: "string", enum: ["DNG", "RAW", "JPG", "TIFF", "PNG", "PSD", "VIDEO", "PSB", "AVIF", "JXL"], description: "Lightroom file format; camera raw formats use RAW" },
+  folder: { type: "string", minLength: 1, pattern: "\\S", description: "Folder text, including parent folders shown in Lightroom's Folders panel (contains all words)" },
+};
+
 export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "search_photos",
@@ -445,25 +467,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        filename: { type: "string", description: "Search by filename (partial match)" },
-        keywords: stringArray("Search by keywords"),
-        rating: {
-          type: "number",
-          description: "Filter by star rating (0-5)",
-          minimum: 0,
-          maximum: 5,
-        },
-        start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
-        end_date: dateStringSchema("End date (YYYY-MM-DD)"),
-        camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
-        lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
-        iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
-        focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
-        flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
-        color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
-        edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
-        file_type: { type: "string", enum: ["DNG", "RAW", "JPG", "TIFF", "PNG", "PSD", "VIDEO", "PSB", "AVIF", "JXL"], description: "Lightroom file format; camera raw formats use RAW" },
-        folder: { type: "string", minLength: 1, pattern: "\\S", description: "Folder text, including parent folders shown in Lightroom's Folders panel (contains all words)" },
+        ...searchFilterProperties,
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
@@ -490,7 +494,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
+      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, accessibility (alt_text/extended_description, Lightroom Classic 13.2+, omitted when empty or unsupported), and develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -593,7 +597,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setMetadata",
     description:
-      "Set IPTC description and rights fields of photos (title, caption, headline, creator, copyright notice, rights usage terms, copyright info URL, creator website), as get_photo_metadata reports them. Fields left out are unchanged; an empty string clears a field. Give at least one field. Copyright status cannot be set.",
+      "Set IPTC description, rights and accessibility fields of photos (title, caption, headline, creator, copyright notice, rights usage terms, copyright info URL, creator website, alt text, extended description), as get_photo_metadata reports them. Accessibility text requires Lightroom Classic 13.2 or later. Fields left out are unchanged; an empty string clears a field. Give at least one field. Copyright status cannot be set.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -607,7 +611,42 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         rights_usage_terms: { type: "string", description: "Rights usage terms" },
         copyright_info_url: { type: "string", description: "Copyright info URL, e.g. a licensing page" },
         creator_url: { type: "string", description: "Creator's website (IPTC creator contact info)" },
+        alt_text: { type: "string", description: "Short accessibility description (Lightroom Classic 13.2+)" },
+        extended_description: { type: "string", description: "Extended accessibility description (Lightroom Classic 13.2+)" },
       },
+      required: ["photo_ids"],
+    },
+  },
+  {
+    name: "set_ai_metadata",
+    title: "Set AI metadata",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerAiMetadata.setAiMetadata",
+    description:
+      "Store an AI score and reason in private per-photo plug-in metadata in this catalog. Score is an integer from 0 to 100; reason is at most 1024 characters. Omitted fields stay unchanged; an empty string clears a field. Does not change IPTC, XMP, keywords, or export metadata.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: photoIdArray("Array of photo IDs or file paths"),
+        score: { oneOf: [{ type: "integer", minimum: 0, maximum: 100 }, { const: "" }] },
+        reason: { type: "string", maxLength: 1024 },
+      },
+      required: ["photo_ids"],
+      anyOf: [{ required: ["score"] }, { required: ["reason"] }],
+    },
+  },
+  {
+    name: "get_ai_metadata",
+    title: "Get AI metadata",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerAiMetadata.getAiMetadata",
+    description:
+      "Read private per-photo AI scores and reasons in one batch (up to 1000 IDs or paths). Returns photos with photo_id, numeric score and reason; unset fields are omitted. Missing IDs are reported separately.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { photo_ids: photoIdArray("Array of photo IDs or file paths") },
       required: ["photo_ids"],
     },
   },
@@ -644,6 +683,24 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "create_smart_collection",
+    title: "Create smart collection",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    luaHandler: "HandlerCollections.createSmartCollection",
+    description: "Save intersecting search_photos filters as a smart collection that updates as photos change. Requires at least one filter. Missing parent collection sets are created; an existing sibling name is rejected.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string", minLength: 1, pattern: "\\S", description: "Smart collection name" },
+        parent: { type: "string", description: "Parent collection set path, with levels separated by ' / ' (e.g. 'Trips / 2026')" },
+        ...searchFilterProperties,
+      },
+      required: ["name"],
+      anyOf: Object.keys(searchFilterProperties).map((key) => ({ required: [key] })),
     },
   },
   {
@@ -1152,6 +1209,41 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_process_version",
+    title: "Set process version",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.setProcessVersion",
+    description:
+      "Change photos to Lightroom's Version 1 through Version 6 process versions. Requires confirm: true because changing versions can change a photo's look. Downgrades on photos with masks are refused and reported as skipped to preserve guarded mask editing. Drives Develop photo by photo and restores the module, view source and selection by default. Returns previous_version, new_version and changed, unchanged, skipped or failed status per photo. Missing and duplicate photos are skipped. Up to 100 photos; stops after about 240 seconds and returns remaining_ids for another call.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
+        version: { type: "string", enum: ["Version 1", "Version 2", "Version 3", "Version 4", "Version 5", "Version 6"] },
+        confirm: { type: "boolean", const: true },
+        restore_selection: { type: "boolean", description: "Restore module, view source and selection (default true)" },
+      },
+      required: ["photo_ids", "version", "confirm"],
+    },
+  },
+  {
+    name: "create_virtual_copies",
+    title: "Create virtual copies",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    luaHandler: "HandlerVirtualCopies.create",
+    description: "Create one virtual copy per distinct photo, up to 25 photos per call. Optional copy_name names each copy. Returns copies with photo_id, master_id and copy_id, plus missing IDs. Use copy_id for subsequent edits. Restores the previous photo selection and view source. Repeating the call creates additional copies; an error can leave copies created before the failure.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 25 },
+        copy_name: { type: "string", minLength: 1, pattern: "\\S", description: "Name for each new virtual copy" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "list_develop_snapshots",
     title: "List develop snapshots",
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -1235,6 +1327,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         { required: ["tone"], properties: { tone: { const: true } } },
         { required: ["white_balance"], properties: { white_balance: { const: true } } },
       ],
+    },
+  },
+  {
+    name: "reset_develop_adjustments",
+    title: "Reset develop adjustments",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.resetDevelopAdjustments",
+    description:
+      "Reset all develop adjustments on up to 100 photos through Lightroom's Reset command. Requires confirm: true. Discards edits, including crop and masks; recover previous edits through Lightroom History. Opens each photo in Develop and restores the user's module, view source and selection. Reports reset, skipped or failed per photo; missing and duplicate photos are skipped. Stops after about 240 seconds or cancellation and returns remaining_ids for another call. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
+        confirm: { type: "boolean", enum: [true], description: "Confirm discarding all develop adjustments" },
+      },
+      required: ["photo_ids", "confirm"],
     },
   },
   {
