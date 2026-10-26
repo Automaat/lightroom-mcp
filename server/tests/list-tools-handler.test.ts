@@ -86,8 +86,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 70 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(70);
+  it('contains exactly 71 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(71);
   });
 
   it('tool names are unique', () => {
