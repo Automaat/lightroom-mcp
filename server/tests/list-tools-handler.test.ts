@@ -21,6 +21,8 @@ const EXPECTED_TOOL_NAMES = [
   'set_metadata',
   'set_ai_metadata',
   'get_ai_metadata',
+  'list_folders',
+  'get_folder_photos',
   'list_collections',
   'create_collection',
   'create_smart_collection',
@@ -78,8 +80,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 63 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(63);
+  it('contains exactly 65 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(65);
   });
 
   it('tool names are unique', () => {

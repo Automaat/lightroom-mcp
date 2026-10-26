@@ -179,6 +179,8 @@ If you'd rather drop the plugin in by hand:
 | `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
 | `get_ai_metadata` | Read private AI scores and reasons for up to 1000 photos in one batch. |
 | `set_metadata` | Set title, caption, headline, creator and copyright fields of photos. |
+| `list_folders` | Catalog folders in tree order, with full paths and direct photo counts (paginated). |
+| `get_folder_photos` | Photos by full folder path, optionally including subfolders (paginated). |
 | `list_collections` | All collections and collection sets. |
 | `create_smart_collection` | Save `search_photos` filters as a smart collection; requires a filter and supports parent collection set paths. |
 | `create_collection` | New collection, optionally inside a collection set path (`Trips / 2026`); missing sets are created. |
