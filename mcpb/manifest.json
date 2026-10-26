@@ -322,6 +322,18 @@
     {
       "name": "summarize_develop_settings",
       "description": "Summarize numeric Develop settings by camera and ISO for rated or exported photos"
+    },
+    {
+      "name": "list_spots",
+      "description": "List Remove spots and SDK parameters"
+    },
+    {
+      "name": "update_spot",
+      "description": "Update a Heal spot Opacity"
+    },
+    {
+      "name": "delete_spot",
+      "description": "Delete a Remove spot by index"
     }
   ],
   "user_config": {

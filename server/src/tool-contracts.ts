@@ -1556,6 +1556,48 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "list_spots",
+    title: "List Remove spots",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerSpots.list",
+    description: "List Remove spots on a photo (Lightroom Classic 14.1+). Returns count and spots with 1-based index and complete SDK params, including nested fields Lightroom reports. Indices change after deletion. Opens the photo in Develop and restores module, view source and selection; listing leaves the active tool unchanged. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: { photo_id: photoIdSchema("Photo ID or file path") },
+      required: ["photo_id"],
+    },
+  },
+  {
+    name: "update_spot",
+    title: "Update Remove spot opacity",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerSpots.update",
+    description: "Change one Heal spot's Opacity (0 to 1) by its 1-based index from list_spots (Lightroom Classic 14.1+). Only uppercase params.Opacity is writable; other fields and other spots are preserved. Sends the complete selected-spot table and reads back the result. Returns index, changed and SDK params. Opens Remove as needed and restores the previous tool, module, view source and selection. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        index: { type: "integer", minimum: 1 },
+        params: { type: "object", additionalProperties: false,
+          properties: { Opacity: { type: "number", minimum: 0, maximum: 1 } }, required: ["Opacity"] },
+      },
+      required: ["photo_id", "index", "params"],
+    },
+  },
+  {
+    name: "delete_spot",
+    title: "Delete Remove spot",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerSpots.delete",
+    description: "Delete one Remove spot by its 1-based index from list_spots (Lightroom Classic 14.1+). Requires confirm true. Returns deleted_index, remaining count and spots; later indices shift down. An invalid index changes nothing. Opens Remove as needed and restores the previous tool, module, view source and selection. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object", additionalProperties: false,
+      properties: { photo_id: photoIdSchema("Photo ID or file path"),
+        index: { type: "integer", minimum: 1 }, confirm: { type: "boolean", const: true } },
+      required: ["photo_id", "index", "confirm"],
+    },
+  },
+  {
     name: "list_masks",
     title: "List masks",
     annotations: { readOnlyHint: true, openWorldHint: false },
