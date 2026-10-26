@@ -6,6 +6,7 @@ import {
   isRealCatalog,
   isThrowawayCatalog,
   parseOpenCatalogs,
+  lightroomPid,
 } from "../lib/catalog-guard.mjs";
 import { THROWAWAY_CATALOG_ENV, THROWAWAY_MARKER_FILE } from "../lib/paths.mjs";
 
@@ -64,4 +65,32 @@ test("the guard refuses the real catalog, an unmarked catalog, none and several"
 
 test("the guard returns the throwaway catalog path when it is marked", () => {
   assert.equal(assertThrowawayCatalog([THROWAWAY], options({ fileExists: () => true })), THROWAWAY);
+});
+
+
+test("Lightroom PID uses executable identity instead of AdobeIPCBroker launched-by arguments", () => {
+  const pid = lightroomPid((command, args) => {
+    assert.equal(command, "ps");
+    assert.deepEqual(args, ["-axo", "pid=,comm="]);
+    return [
+      "81947 /Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app/Contents/Frameworks/AdobeIPCBroker.app/Contents/MacOS/AdobeIPCBroker",
+      "84715 /Applications/Adobe Lightroom Classic/Adobe Lightroom Classic.app/Contents/MacOS/Adobe Lightroom Classic",
+    ].join("\n");
+  });
+
+  assert.equal(pid, 84715);
+});
+
+test("multiple Lightroom executables do not select an arbitrary catalog owner", () => {
+  const pid = lightroomPid(() => [
+    "100 /Applications/LrA.app/Contents/MacOS/Adobe Lightroom Classic",
+    "200 /Applications/LrB.app/Contents/MacOS/Adobe Lightroom Classic",
+  ].join("\n"));
+
+  assert.equal(pid, null);
+});
+
+test("no Lightroom executable or process-query failure reports no catalog owner", () => {
+  assert.equal(lightroomPid(() => "81947 /Applications/AdobeIPCBroker"), null);
+  assert.equal(lightroomPid(() => { throw new Error("process query denied"); }), null);
 });

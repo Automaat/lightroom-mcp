@@ -227,10 +227,17 @@ end
 describe("HandlerMaskBatch.createMaskBatch", function()
     it("cancel keeps the source mask and leaves the later photos untouched", function()
         local Handler, world = setup({})
-        local context = { isCanceled = function() return #world.calls.created >= 1 end, report = function() end }
+        local progress = {}
+        local context = {
+            isCanceled = function() return #world.calls.created >= 1 end,
+            report = function(_, completed, total, message)
+                progress[#progress + 1] = { completed, total, message }
+            end,
+        }
 
         local r = Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" }, context)
 
+        assert.are.same({ { 0, 3, "1" }, { 1, 3, "1" } }, progress)
         assert.are.equal(1, r.created)
         assert.is_false(r.complete)
         assert.are.same({ "2", "3" }, r.remaining_ids)

@@ -272,7 +272,9 @@ local function runBatch(args, context)
     local items, missing = collectItems(catalog, photoIds)
     if #items > 0 then requireRecomputeApi(items[1].photo) end
     failUnsafePhotos(catalog, items)
+    local lastReportedItem
     local function report(item)
+        lastReportedItem = item
         if context then
             local done = 0
             for _, entry in ipairs(items) do if entry.status ~= STATUS_PENDING then done = done + 1 end end
@@ -301,7 +303,7 @@ local function runBatch(args, context)
         end
     end
 
-    if context and #items > 0 then report(items[#items]) end
+    if context and lastReportedItem then report(lastReportedItem) end
     local response, counts = summarize(items, outcome, request, startedAt, missing)
     Log.info(string.format("create_mask_batch %s: %d created, %d failed, %d not attempted (%d ids not found)",
         typeName, counts[STATUS_CREATED], counts[STATUS_FAILED], counts[STATUS_NOT_ATTEMPTED], #missing))
