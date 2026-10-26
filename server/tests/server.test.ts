@@ -195,7 +195,7 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 68 tools', async () => {
+    it('returns all 69 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
       expect(tools).toHaveLength(69);
@@ -231,6 +231,21 @@ describe('createMcpServer', () => {
     expect(result.content).toEqual([
       { type: 'text', text: '{"photo_id":914,"bytes":3}' },
       { type: 'image', data: 'QUJD', mimeType: 'image/jpeg' },
+    ]);
+  });
+
+  it('preserves all batch preview image blocks over MCP', async () => {
+    pair = await connect({ call: async () => ({ id: '1', result: {
+      complete: true, remaining_ids: [], previews: [1, 2, 3].map(id => ({
+        requested_id: id, photo_id: id, image: { mime_type: 'image/jpeg', data: 'QUJD' },
+      })),
+    } }) });
+    const result = await pair.client.callTool({ name: 'get_photo_previews', arguments: { photo_ids: [1, 2, 3] } });
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual([
+      { type: 'text', text: JSON.stringify({ complete: true, remaining_ids: [],
+        previews: [1, 2, 3].map(id => ({ requested_id: id, photo_id: id, image_index: id })) }) },
+      ...[1, 2, 3].map(() => ({ type: 'image', data: 'QUJD', mimeType: 'image/jpeg' })),
     ]);
   });
 
