@@ -84,6 +84,121 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(r.developSettings.hsl)
     end)
 
+    it("reads back lens, transform, crop, detail, effects and parametric splits with SDK keys", function()
+        local photo = helper.fakePhoto({
+            id = "45",
+            path = "/p/landscape.jpg",
+            fileName = "landscape.jpg",
+            developSettings = {
+                LensProfileEnable = 1,
+                LensManualDistortionAmount = 12,
+                PerspectiveUpright = 1,
+                PerspectiveVertical = -5,
+                PerspectiveAspect = 0,
+                CropTop = 0.1,
+                CropLeft = 0.05,
+                CropBottom = 0.9,
+                CropRight = 0.95,
+                CropAngle = -1.5,
+                Sharpness = 40,
+                SharpenRadius = 1.2,
+                LuminanceSmoothing = 20,
+                ColorNoiseReductionSmoothness = 50,
+                PostCropVignetteAmount = -20,
+                PostCropVignetteStyle = 1,
+                GrainAmount = 15,
+                ParametricShadowSplit = 25,
+                ParametricMidtoneSplit = 50,
+                ParametricHighlightSplit = 75,
+            },
+        })
+        local _, Handler = setup({ photo })
+
+        local d = Handler.getPhotoMetadata({ photo_id = "45" }).developSettings
+
+        assert.are.same({ LensProfileEnable = 1, LensManualDistortionAmount = 12 }, d.lens)
+        assert.are.same({ PerspectiveUpright = 1, PerspectiveVertical = -5, PerspectiveAspect = 0 }, d.transform)
+        assert.are.same(
+            { CropTop = 0.1, CropLeft = 0.05, CropBottom = 0.9, CropRight = 0.95, CropAngle = -1.5 },
+            d.crop
+        )
+        assert.are.same(
+            { Sharpness = 40, SharpenRadius = 1.2, LuminanceSmoothing = 20, ColorNoiseReductionSmoothness = 50 },
+            d.detail
+        )
+        assert.are.same({ PostCropVignetteAmount = -20, PostCropVignetteStyle = 1, GrainAmount = 15 }, d.effects)
+        assert.are.same(
+            { ParametricShadowSplit = 25, ParametricMidtoneSplit = 50, ParametricHighlightSplit = 75 },
+            d.parametricSplits
+        )
+    end)
+
+    local EXPECTED_SDK_GROUPS = {
+        lens = { "LensProfileEnable", "LensManualDistortionAmount" },
+        transform = {
+            "PerspectiveUpright", "PerspectiveVertical", "PerspectiveHorizontal",
+            "PerspectiveRotate", "PerspectiveScale", "PerspectiveAspect",
+        },
+        crop = { "CropTop", "CropLeft", "CropBottom", "CropRight", "CropAngle" },
+        detail = {
+            "Sharpness", "SharpenRadius", "SharpenDetail", "SharpenEdgeMasking",
+            "LuminanceSmoothing", "LuminanceNoiseReductionDetail",
+            "LuminanceNoiseReductionContrast", "ColorNoiseReduction",
+            "ColorNoiseReductionDetail", "ColorNoiseReductionSmoothness",
+        },
+        effects = {
+            "PostCropVignetteAmount", "PostCropVignetteMidpoint", "PostCropVignetteRoundness",
+            "PostCropVignetteFeather", "PostCropVignetteStyle",
+            "GrainAmount", "GrainSize", "GrainFrequency",
+        },
+        parametricSplits = { "ParametricShadowSplit", "ParametricMidtoneSplit", "ParametricHighlightSplit" },
+    }
+
+    for field, keys in pairs(EXPECTED_SDK_GROUPS) do
+        it("puts exactly the " .. field .. " settings in the " .. field .. " group", function()
+            local settings, expected = {}, {}
+            for index, key in ipairs(keys) do
+                settings[key] = index
+                expected[key] = index
+            end
+            local photo = helper.fakePhoto({
+                id = "47",
+                path = "/p/group.jpg",
+                fileName = "group.jpg",
+                developSettings = settings,
+            })
+            local _, Handler = setup({ photo })
+
+            local d = Handler.getPhotoMetadata({ photo_id = "47" }).developSettings
+
+            assert.are.same(expected, d[field])
+            for otherField in pairs(EXPECTED_SDK_GROUPS) do
+                if otherField ~= field then
+                    assert.is_nil(d[otherField])
+                end
+            end
+        end)
+    end
+
+    it("omits SDK develop groups when none of their settings are present", function()
+        local photo = helper.fakePhoto({
+            id = "46",
+            path = "/p/plain.jpg",
+            fileName = "plain.jpg",
+            developSettings = { Exposure2012 = 0.25 },
+        })
+        local _, Handler = setup({ photo })
+
+        local d = Handler.getPhotoMetadata({ photo_id = "46" }).developSettings
+
+        assert.is_nil(d.lens)
+        assert.is_nil(d.transform)
+        assert.is_nil(d.crop)
+        assert.is_nil(d.detail)
+        assert.is_nil(d.effects)
+        assert.is_nil(d.parametricSplits)
+    end)
+
     it("exposes IPTC location, GPS, and copyright metadata", function()
         local photo = helper.fakePhoto({
             id = "7",

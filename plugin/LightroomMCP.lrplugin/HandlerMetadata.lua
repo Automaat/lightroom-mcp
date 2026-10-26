@@ -45,6 +45,65 @@ local function hslDevelopSettings(developSettings)
     })
 end
 
+local SDK_DEVELOP_GROUPS = {
+    { field = "lens", keys = { "LensProfileEnable", "LensManualDistortionAmount" } },
+    {
+        field = "transform",
+        keys = {
+            "PerspectiveUpright",
+            "PerspectiveVertical",
+            "PerspectiveHorizontal",
+            "PerspectiveRotate",
+            "PerspectiveScale",
+            "PerspectiveAspect",
+        },
+    },
+    { field = "crop", keys = { "CropTop", "CropLeft", "CropBottom", "CropRight", "CropAngle" } },
+    {
+        field = "detail",
+        keys = {
+            "Sharpness",
+            "SharpenRadius",
+            "SharpenDetail",
+            "SharpenEdgeMasking",
+            "LuminanceSmoothing",
+            "LuminanceNoiseReductionDetail",
+            "LuminanceNoiseReductionContrast",
+            "ColorNoiseReduction",
+            "ColorNoiseReductionDetail",
+            "ColorNoiseReductionSmoothness",
+        },
+    },
+    {
+        field = "effects",
+        keys = {
+            "PostCropVignetteAmount",
+            "PostCropVignetteMidpoint",
+            "PostCropVignetteRoundness",
+            "PostCropVignetteFeather",
+            "PostCropVignetteStyle",
+            "GrainAmount",
+            "GrainSize",
+            "GrainFrequency",
+        },
+    },
+    {
+        field = "parametricSplits",
+        keys = { "ParametricShadowSplit", "ParametricMidtoneSplit", "ParametricHighlightSplit" },
+    },
+}
+
+local function addSdkDevelopGroups(target, developSettings)
+    for _, group in ipairs(SDK_DEVELOP_GROUPS) do
+        local values = {}
+        for _, key in ipairs(group.keys) do
+            values[key] = developSettings[key]
+        end
+        target[group.field] = nonEmptyGroup(values)
+    end
+    return target
+end
+
 function MetadataHandler.getPhotoMetadata(args)
     if not args.photo_id then
         error("photo_id is required")
@@ -140,7 +199,7 @@ function MetadataHandler.getPhotoMetadata(args)
                 infoUrl = photo:getFormattedMetadata('copyrightInfoUrl'),
                 creatorUrl = photo:getFormattedMetadata('creatorUrl'),
             }),
-            developSettings = {
+            developSettings = addSdkDevelopGroups({
                 whiteBalance = developSettings.WhiteBalance,
                 temperature = developSettings.Temperature,
                 tint = developSettings.Tint,
@@ -166,7 +225,7 @@ function MetadataHandler.getPhotoMetadata(args)
                 parametricDarks = developSettings.ParametricDarks,
                 parametricLights = developSettings.ParametricLights,
                 parametricHighlights = developSettings.ParametricHighlights,
-            }
+            }, developSettings)
         }
     end)
 

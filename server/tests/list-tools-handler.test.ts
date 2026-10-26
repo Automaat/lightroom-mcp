@@ -342,6 +342,25 @@ describe('develop setting schema', () => {
   it('matches Lua develop setting allowlist', () => {
     expect(parseLuaDevelopSettingKeys()).toEqual(DEVELOP_SETTING_KEYS);
   });
+
+  it('reads back every settable key in get_photo_metadata', () => {
+    const metadataPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'HandlerMetadata.lua');
+    const source = fs
+      .readFileSync(metadataPath, 'utf8')
+      .split(/\r?\n/)
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+    const groupTable = source.match(/local SDK_DEVELOP_GROUPS = \{([\s\S]*?)\n\}\n/);
+    if (!groupTable) {
+      throw new Error('SDK_DEVELOP_GROUPS table not found');
+    }
+
+    const groupKeys = [...groupTable[1].matchAll(/"([A-Z]\w+)"/g)].map((entry) => entry[1]);
+    const fieldKeys = [...source.matchAll(/=\s*developSettings\.(\w+)/g)].map((entry) => entry[1]);
+
+    expect(new Set(groupKeys).size).toBe(groupKeys.length);
+    expect([...groupKeys, ...fieldKeys].sort()).toEqual([...DEVELOP_SETTING_KEYS].sort());
+  });
 });
 
 /**
