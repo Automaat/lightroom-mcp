@@ -728,7 +728,7 @@ local function previewValue(value)
     return value
 end
 
-local function previewDevelopSettings(catalog, resolved, settings)
+local function previewDevelopSettings(catalog, resolved, settings, declaredPresetOnly)
     local result = {
         success = true,
         dry_run = true,
@@ -745,6 +745,11 @@ local function previewDevelopSettings(catalog, resolved, settings)
         masks_would_be_copied = settings.MaskGroupBasedCorrections ~= nil,
         ai_recomputed = false,
     }
+    if declaredPresetOnly then
+        result.preview_scope = "readable_declared_preset_settings"
+        result.unknown_current_totals = {}
+        result.unknown_effects = { "SDK-generated values, including GrainSeed", "Preset bookkeeping" }
+    end
     local keys = sortedSettingKeys(settings)
     local normalized = withoutVolatileIds(withoutComputedAIMaskData(settings))
     local detailBytes, missingBytes = 0, 0
@@ -768,7 +773,9 @@ local function previewDevelopSettings(catalog, resolved, settings)
             local detail = { id = tostring(entry.id), changes = {} }
             local changed = false
             for _, key in ipairs(keys) do
-                if not deepEqual(current[key], normalized[key]) then
+                if declaredPresetOnly and current[key] == nil then
+                    result.unknown_current_totals[key] = (result.unknown_current_totals[key] or 0) + 1
+                elseif not deepEqual(current[key], normalized[key]) then
                     changed = true
                     result.setting_totals[key] = (result.setting_totals[key] or 0) + 1
                     detail.changes[#detail.changes + 1] = {
@@ -821,7 +828,7 @@ function DevelopHandler.applyDevelopPreset(args)
     -- every other handler behind it.
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
     if args.dry_run then
-        return previewDevelopSettings(catalog, resolved, normalizedPresetSettings(selectedPreset.preset))
+        return previewDevelopSettings(catalog, resolved, normalizedPresetSettings(selectedPreset.preset), true)
     end
     local applied = {}
 

@@ -1749,6 +1749,54 @@ describe("HandlerDevelop batch dry runs", function()
         assert.are.equal(0, r.changed_targets)
     end)
 
+    it("limits preset diffs to readable declared keys and reports unknown effects", function()
+        local preset = fakePreset("Heavy", { settings = {
+            GrainAmount = 92, GrainFrequency = 40, GrainSize = 39, Glow = 0, Version = "18.7",
+        } })
+        local first = helper.fakePhoto({ id = "1002", developSettings = {
+            GrainAmount = 0, GrainFrequency = 50, GrainSize = 25,
+        } })
+        local second = helper.fakePhoto({ id = "1003", developSettings = {
+            GrainAmount = 92, GrainFrequency = 40, GrainSize = 39, Glow = 0,
+        } })
+        local catalog, Handler = setup({ photos = { first, second }, folders = { fakeFolder("Grain", { preset }) } })
+        catalog.withWriteAccessDo = function() error("preset preview wrote") end
+        first.applyDevelopPreset = function() error("preset preview applied") end
+        first.updateAISettings = function() error("preset preview recomputed") end
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1002", "1003" }, preset_name = "Heavy", dry_run = true })
+        assert.are.equal("readable_declared_preset_settings", r.preview_scope)
+        assert.are.same({ Glow = 1, Version = 2 }, r.unknown_current_totals)
+        assert.are.same({ GrainAmount = 1, GrainFrequency = 1, GrainSize = 1 }, r.setting_totals)
+        assert.are.equal(3, #r.details[1].changes)
+        assert.are.same({}, r.details[2].changes)
+        assert.are.equal(1, r.changed_targets)
+        assert.are.same({ "SDK-generated values, including GrainSeed", "Preset bookkeeping" }, r.unknown_effects)
+        assert.is_nil(r.setting_totals.GrainSeed)
+        assert.is_nil(r.setting_totals.Preset)
+    end)
+
+    it("keeps unknown preset values separate from unchanged values on all targets", function()
+        local preset = fakePreset("Unknown", { settings = { Glow = 0 } })
+        local target = helper.fakePhoto({ id = "1002" })
+        local _, Handler = setup({ photos = { target }, folders = { fakeFolder("User", { preset }) } })
+        local r = Handler.applyDevelopPreset({ photo_ids = { "1002" }, preset_name = "Unknown", dry_run = true })
+        assert.are.same({}, r.details[1].changes)
+        assert.are.same({ Glow = 1 }, r.unknown_current_totals)
+        assert.are.equal(0, r.changed_targets)
+    end)
+
+    it("still previews copied settings whose current value is absent", function()
+        local source = helper.fakePhoto({ id = "1001", developSettings = { Exposure2012 = 0.5 } })
+        local target = helper.fakePhoto({ id = "1002" })
+        local _, Handler = setup({ photos = { source, target } })
+        local r = Handler.copyDevelopSettings({ source_id = "1001", target_ids = { "1002" }, dry_run = true })
+        assert.are.equal(1, r.setting_totals.Exposure2012)
+        assert.is_false(r.details[1].changes[1].before_present)
+        assert.is_nil(r.preview_scope)
+        assert.is_nil(r.unknown_current_totals)
+        assert.is_nil(r.unknown_effects)
+    end)
+
     it("does not recompute or write copied AI masks", function()
         local source = helper.fakePhoto({ id = "1001", developSettings = AI_MASK_SETTINGS })
         local target = helper.fakePhoto({ id = "1002" })
