@@ -1,5 +1,6 @@
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { validateToolArgs } from "./validate-args.js";
+import { getPhotoStats } from "./photo-stats.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
@@ -79,6 +80,10 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     }
 
     try {
+      if (name === "get_photo_stats") {
+        const { photo_ids } = args as { photo_ids: (string | number)[] };
+        return { content: successContent(await getPhotoStats(deps.dispatcher, photo_ids, options)) };
+      }
       const resp = options
         ? await deps.dispatcher.call(name, args, undefined, options)
         : await deps.dispatcher.call(name, args);

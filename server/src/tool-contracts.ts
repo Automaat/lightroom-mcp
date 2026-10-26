@@ -527,6 +527,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_photo_stats",
+    title: "Get photo statistics",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerPreview.getPhotoStats",
+    description:
+      "Read rendered-preview statistics for up to 20 photos with current develop settings. Returns one result or error per input id. histogram has 64 normalized bins of Rec.709 luma (0-255, four levels per bin); mean_luminance uses that same scale. shadow_fraction counts luma <=1 and highlight_fraction counts luma >=254. sharpness is four-neighbor Laplacian variance after area resampling to a fixed 512-pixel long edge; higher means sharper. These are JPEG preview measures, not raw sensor clipping or full-resolution focus measurements. Small previews are enlarged. Catalog contents are unchanged.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: {
+          type: "array",
+          items: photoIdSchema("Photo ID or file path"),
+          minItems: 1,
+          maxItems: 20,
+          description: "Between 1 and 20 photo IDs or file paths, in result order",
+        },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "set_gps",
     title: "Set GPS",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },

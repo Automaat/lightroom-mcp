@@ -174,6 +174,7 @@ If you'd rather drop the plugin in by hand:
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
@@ -296,7 +297,7 @@ This server works with the catalog open in Lightroom Classic on your computer th
 
 The SDK is Adobe's interface for plug-ins. Its [reference](https://lrc.mcor.dev/) provides no documented calls for these operations:
 
-- Reading histogram values, individual pixel data or detected face regions. `get_photo_preview` returns a rendered image for visual inspection.
+- Reading raw sensor histograms, individual pixel data or detected face regions. `get_photo_stats` measures the rendered JPEG preview; `get_photo_preview` returns that image for visual inspection.
 - Running an HDR or panorama merge; producing a print or book; creating or editing a slideshow. The SDK does support [slideshow playback](https://lrc.mcor.dev/modules/LrSlideshow.html), but this server has no playback tool.
 - Running Super Resolution or Raw Details through a documented call.
 - Stack create or unstack operations on photos already in the catalog, or auto-stacking. The SDK's import operation can add a new photo to a stack.
