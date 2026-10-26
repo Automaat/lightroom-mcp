@@ -998,9 +998,9 @@ local function denoiseAll(catalog, resolved, amount, state, startedAt, context)
             result.id = result.id or tostring(entry.id)
             counts[result.status] = counts[result.status] + 1
             results[#results + 1] = result
-            if context then context:report(#results, #resolved, result.id) end
         end
     end
+    if context and #results > 0 then context:report(#results, #resolved, results[#results].id) end
     return results, counts, remaining
 end
 

@@ -105,8 +105,8 @@ function ImportHandler.importPhotos(args, context)
             end
         end)
         processed = processed + 1
-        if context then context:report(processed, #photosToImport, filePath) end
     end
+    if context and processed > 0 then context:report(processed, #photosToImport, photosToImport[processed]) end
 
     -- Add to collection if specified, in its own short write transaction.
     if args.collection_name and #addedPhotos > 0 then

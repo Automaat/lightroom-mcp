@@ -140,6 +140,7 @@ function ExportHandler.exportPhotos(args, context)
 
     local exportedCount = 0
     local remainingIds = {}
+    local lastName
     for index, photo in ipairs(photosToExport) do
         if context and context:isCanceled() then
             for nextIndex = index, #photosToExport do
@@ -155,8 +156,9 @@ function ExportHandler.exportPhotos(args, context)
         }
         exportSession:doExportOnCurrentTask()
         exportedCount = exportedCount + 1
-        if context then context:report(exportedCount, #photosToExport, name) end
+        lastName = name
     end
+    if context and lastName then context:report(exportedCount, #photosToExport, lastName) end
 
     Log.info(string.format("Exported %d photos to: %s", exportedCount, destination))
 

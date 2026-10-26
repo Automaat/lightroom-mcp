@@ -54,10 +54,9 @@ describe("HandlerImport.importPhotos", function()
             directories = { ["/dir"] = true },
             dirContents = { "/dir/a.jpg", "/dir/b.jpg", "/dir/c.jpg" },
         } })
-        local done = 0
         local context = {
-            isCanceled = function() return done >= 1 end,
-            report = function(_, progress) done = progress end,
+            isCanceled = function() return #catalog:getAllPhotos() >= 1 end,
+            report = function() end,
         }
 
         local r = Handler.importPhotos({ source_path = "/dir" }, context)
