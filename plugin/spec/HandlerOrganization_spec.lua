@@ -675,3 +675,100 @@ describe("HandlerOrganization.setKeywords", function()
         assert.has_error(function() Handler.setKeywords({ photo_ids = { "1" }, remove_keywords = keywords }) end)
     end)
 end)
+
+
+describe("HandlerOrganization.removeKeywordSubtree", function()
+    local function fixture()
+        local parent = helper.fakeKeyword("AI Keywords")
+        local beach = helper.fakeKeyword("Beach", { parent = parent })
+        local sea = helper.fakeKeyword("Sea", { parent = parent })
+        local wave = helper.fakeKeyword("Wave", { parent = sea })
+        local outside = helper.fakeKeyword("Beach")
+        local places = helper.fakeKeyword("Places")
+        local paris = helper.fakeKeyword("Paris", { parent = places })
+        local photo = helper.fakePhoto({ id = "1", keywords = { parent, beach, wave, outside, paris } })
+        local other = helper.fakePhoto({ id = "2", keywords = { wave } })
+        local function detach(self, keyword)
+            local remaining = {}
+            for _, existing in ipairs(self:getRawMetadata('keywords')) do
+                if existing ~= keyword then remaining[#remaining + 1] = existing end
+            end
+            self:setRawMetadata('keywords', remaining)
+        end
+        photo.removeKeyword = detach
+        other.removeKeyword = detach
+        local catalog, Handler = setup({ photos = { photo, other }, keywords = { parent, outside, places } })
+        parent.getPhotos = function()
+            catalog:getTargetPhotos()
+            assert.is_false(catalog.isInsideReadAccess())
+            assert.is_false(catalog.getQueriedInsideWriteAccess())
+            return { photo }
+        end
+        beach.getPhotos = parent.getPhotos
+        sea.getPhotos = function() return {} end
+        wave.getPhotos = function()
+            catalog:getTargetPhotos()
+            assert.is_false(catalog.isInsideReadAccess())
+            return { photo, other }
+        end
+        return catalog, Handler, photo, other, parent, outside, paris
+    end
+
+    it("detaches parent and descendants case-insensitively while preserving unrelated names and nodes", function()
+        local catalog, Handler, photo, other, parent, outside, paris = fixture()
+
+        local result = Handler.removeKeywordSubtree({ parent = "ai keywords", photo_ids = { "1", "1", "missing" } })
+
+        assert.are.same({ outside, paris }, photo:getRawMetadata('keywords'))
+        assert.are.equal(1, #other:getRawMetadata('keywords'))
+        assert.are.equal(1, result.updated)
+        assert.are.equal(3, result.removed)
+        assert.are.same({ "missing" }, result.missing)
+        assert.are.equal(parent, KeywordTree.resolve(catalog, { "AI Keywords" }))
+        assert.is_not_nil(KeywordTree.resolve(catalog, { "AI Keywords", "Sea", "Wave" }))
+        assert.is_false(catalog.getQueriedInsideReadAccess())
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("explicitly removes catalog-wide assignments and reports a repeated call as unchanged", function()
+        local _, Handler, photo, other, _, outside, paris = fixture()
+
+        local result = Handler.removeKeywordSubtree({ parent = "AI Keywords", catalog_wide = true })
+        local repeated = Handler.removeKeywordSubtree({ parent = "AI Keywords", catalog_wide = true })
+
+        assert.are.same({ outside, paris }, photo:getRawMetadata('keywords'))
+        assert.are.same({}, other:getRawMetadata('keywords'))
+        assert.are.equal(2, result.updated)
+        assert.are.equal(4, result.removed)
+        assert.are.equal(0, repeated.updated)
+        assert.are.equal(0, repeated.removed)
+    end)
+
+    it("rejects unknown parents before changing photos", function()
+        local _, Handler, photo = fixture()
+
+        assert.has_error(function()
+            Handler.removeKeywordSubtree({ parent = "Unknown|Parent", photo_ids = { "1" } })
+        end, "Keyword parent not found: Unknown|Parent")
+
+        assert.are.equal(5, #photo:getRawMetadata('keywords'))
+    end)
+
+    for _, case in ipairs({
+        { name = "missing scope", args = { parent = "AI Keywords" } },
+        { name = "false catalog scope", args = { parent = "AI Keywords", catalog_wide = false } },
+        { name = "empty photo scope", args = { parent = "AI Keywords", photo_ids = {} } },
+        { name = "conflicting scopes", args = { parent = "AI Keywords", photo_ids = { "1" }, catalog_wide = true } },
+        { name = "nonboolean scope", args = { parent = "AI Keywords", catalog_wide = "true" } },
+        { name = "empty parent", args = { parent = " ", photo_ids = { "1" } } },
+        { name = "malformed path", args = { parent = "AI Keywords||Sea", photo_ids = { "1" } } },
+    }) do
+        it("rejects " .. case.name .. " without changes", function()
+            local _, Handler, photo = fixture()
+
+            assert.has_error(function() Handler.removeKeywordSubtree(case.args) end)
+
+            assert.are.equal(5, #photo:getRawMetadata('keywords'))
+        end)
+    end
+end)
