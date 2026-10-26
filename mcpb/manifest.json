@@ -45,7 +45,7 @@
     },
     {
       "name": "get_photo_metadata",
-      "description": "Detailed EXIF + develop metadata for a photo."
+      "description": "Detailed metadata for a photo; pass sections: [\"developSettings\"] for develop settings."
     },
     {
       "name": "get_photo_preview",

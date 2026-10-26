@@ -511,12 +511,17 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, accessibility (alt_text/extended_description, Lightroom Classic 13.2+, omitted when empty or unsupported), and develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
+      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, accessibility (alt_text/extended_description, Lightroom Classic 13.2+, omitted when empty or unsupported), and optional develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        sections: {
+          type: "array",
+          items: { type: "string", enum: ["developSettings"] },
+          description: "Optional metadata sections to include. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
+        },
       },
       required: ["photo_id"],
     },
