@@ -108,8 +108,10 @@ function M.fakePhoto(meta)
             meta.__appliedPreset = preset
             meta.__appliedPresetPlugin = plugin
         end,
-        applyDevelopSettings = function(_, settings)
+        applyDevelopSettings = function(_, settings, historyName, flattenAutoNow)
             meta.__appliedSettings = settings
+            meta.__appliedHistoryName = historyName
+            meta.__appliedFlattenAutoNow = flattenAutoNow
         end,
     }
     -- Opt in with aiUpdate = "ok" | "fail"; absent models LrC before 13.3.
