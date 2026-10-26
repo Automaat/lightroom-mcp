@@ -49,6 +49,7 @@ const EXPECTED_TOOL_NAMES = [
   'create_develop_snapshot',
   'apply_develop_snapshot',
   'delete_develop_snapshot',
+  'reset_develop_adjustments',
   'apply_denoise',
   'apply_auto_adjustments',
   'list_masks',
@@ -74,8 +75,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 59 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(59);
+  it('contains exactly 60 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(60);
   });
 
   it('tool names are unique', () => {
@@ -158,6 +159,7 @@ describe('tool required fields', () => {
     ['create_virtual_copies', ['photo_ids']],
     ['apply_develop_snapshot', ['photo_id', 'snapshot_id']],
     ['delete_develop_snapshot', ['photo_id', 'snapshot_id']],
+    ['reset_develop_adjustments', ['photo_ids', 'confirm']],
     ['apply_denoise', ['photo_ids', 'amount']],
     ['apply_auto_adjustments', ['photo_ids']],
     ['list_masks', ['photo_id']],
