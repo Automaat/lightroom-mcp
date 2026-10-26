@@ -490,7 +490,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
+      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, accessibility (alt_text/extended_description, Lightroom Classic 13.2+, omitted when empty or unsupported), and develop settings. isVirtualCopy identifies copies; virtualCopy has masterPhotoId for a copy or copyIds for a master with copies. Folder stack metadata is in stack (position, top is 1; isCollapsed; topPhotoId; ordered memberIds). All photo ids are catalog local identifiers. The virtualCopy and stack groups are omitted when absent. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -593,7 +593,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setMetadata",
     description:
-      "Set IPTC description and rights fields of photos (title, caption, headline, creator, copyright notice, rights usage terms, copyright info URL, creator website), as get_photo_metadata reports them. Fields left out are unchanged; an empty string clears a field. Give at least one field. Copyright status cannot be set.",
+      "Set IPTC description, rights and accessibility fields of photos (title, caption, headline, creator, copyright notice, rights usage terms, copyright info URL, creator website, alt text, extended description), as get_photo_metadata reports them. Accessibility text requires Lightroom Classic 13.2 or later. Fields left out are unchanged; an empty string clears a field. Give at least one field. Copyright status cannot be set.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -607,6 +607,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         rights_usage_terms: { type: "string", description: "Rights usage terms" },
         copyright_info_url: { type: "string", description: "Copyright info URL, e.g. a licensing page" },
         creator_url: { type: "string", description: "Creator's website (IPTC creator contact info)" },
+        alt_text: { type: "string", description: "Short accessibility description (Lightroom Classic 13.2+)" },
+        extended_description: { type: "string", description: "Extended accessibility description (Lightroom Classic 13.2+)" },
       },
       required: ["photo_ids"],
     },
