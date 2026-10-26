@@ -49,6 +49,18 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('search_photos', {})).toBeNull();
   });
 
+  it('set_process_version accepts only named versions and explicit confirmation', () => {
+    const args = { photo_ids: [914], version: 'Version 6', confirm: true };
+    for (let version = 1; version <= 6; version++) {
+      expect(validateToolArgs('set_process_version', { ...args, version: `Version ${version}` })).toBeNull();
+    }
+    for (const version of ['Version 7', '2012']) {
+      expect(validateToolArgs('set_process_version', { ...args, version })).toContain('version');
+    }
+    expect(validateToolArgs('set_process_version', { ...args, confirm: false })).toContain('confirm');
+    expect(validateToolArgs('set_process_version', { ...args, photo_ids: Array.from({ length: 101 }, () => '1') })).toContain('photo_ids');
+  });
+
   it('bounds apply_denoise amount and batch size', () => {
     expect(validateToolArgs('apply_denoise', { photo_ids: [914], amount: 45 })).toBeNull();
     expect(validateToolArgs('apply_denoise', { photo_ids: [914], amount: 0 })).toContain('amount');

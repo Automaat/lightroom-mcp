@@ -232,6 +232,7 @@ local DISPATCH = {
     apply_develop_preset = HandlerDevelop.applyDevelopPreset,
     copy_develop_settings = HandlerDevelop.copyDevelopSettings,
     set_develop_settings = HandlerDevelop.setDevelopSettings,
+    set_process_version = HandlerDevelop.setProcessVersion,
     list_develop_snapshots = HandlerSnapshots.list,
     create_virtual_copies = HandlerVirtualCopies.create,
     create_develop_snapshot = HandlerSnapshots.create,
@@ -339,7 +340,7 @@ local function sendResponse(response)
 end
 
 local activeRequests = {}
-local LONG_ACTIONS = { export_photos = true, import_photos = true, apply_denoise = true, create_mask_batch = true }
+local LONG_ACTIONS = { set_process_version = true, export_photos = true, import_photos = true, apply_denoise = true, create_mask_batch = true }
 
 local function dispatchAction(request)
     if shutdownRequested() then return end
