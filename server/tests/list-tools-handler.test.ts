@@ -29,6 +29,7 @@ const EXPECTED_TOOL_NAMES = [
   'list_keywords',
   'rename_keyword',
   'set_rating',
+  'undo_last_step',
   'set_flag',
   'set_color_label',
   'import_photos',
@@ -71,8 +72,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 56 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(56);
+  it('contains exactly 57 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(57);
   });
 
   it('tool names are unique', () => {
@@ -137,6 +138,7 @@ describe('tool required fields', () => {
     ['delete_collection', ['collection_name']],
     ['set_keywords', ['photo_ids']],
     ['set_rating', ['photo_ids', 'rating']],
+    ['undo_last_step', ['confirm']],
     ['set_flag', ['photo_ids', 'flag']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
@@ -321,6 +323,15 @@ describe('develop setting schema', () => {
     expect(check([0, 0, 128, -1, 255, 255])).toBe(false);
     expect(check([0, 0])).toBe(false);
     expect(check(Array.from({ length: 66 }, () => 0))).toBe(false);
+  });
+
+  it('undo_last_step requires literal confirm true', () => {
+    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'undo_last_step');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    expect(validate({ confirm: true })).toBe(true);
+    for (const args of [{}, { confirm: false }, { confirm: 'true' }, { confirm: 1 }]) {
+      expect(validate(args)).toBe(false);
+    }
   });
 
   it('accepts the numeric photo ids the catalog hands back', () => {

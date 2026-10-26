@@ -815,6 +815,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "undo_last_step",
+    title: "Undo last step",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerUndo.undoLastStep",
+    description:
+      "Undo exactly one step from Lightroom's shared history. Requires confirm: true. This can undo a user action or another plug-in's action made after your last edit; it does not identify who made the last change. Call only when you accept undoing whatever Lightroom currently considers its last history step. Returns undone and can_undo (whether another undo is available after this call).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        confirm: {
+          type: "boolean",
+          const: true,
+          description: "Accept undoing the latest step in Lightroom's shared history",
+        },
+      },
+      required: ["confirm"],
+    },
+  },
+  {
     name: "set_rating",
     title: "Set rating",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
