@@ -52,6 +52,7 @@ const EXPECTED_TOOL_NAMES = [
   'export_develop_preset',
   'apply_develop_preset',
   'copy_develop_settings',
+  'match_photo_style',
   'set_develop_settings',
   'set_process_version',
   'list_develop_snapshots',
@@ -85,8 +86,8 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
-  it('contains exactly 70 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(70);
+  it('contains exactly 71 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(71);
   });
 
   it('tool names are unique', () => {
@@ -163,6 +164,7 @@ describe('tool required fields', () => {
     ['export_develop_preset', ['destination_dir']],
     ['apply_develop_preset', ['photo_ids']],
     ['copy_develop_settings', ['source_id', 'target_ids']],
+    ['match_photo_style', ['reference_id', 'target_ids']],
     ['set_develop_settings', ['photo_id', 'settings']],
     ['set_process_version', ['photo_ids', 'version', 'confirm']],
     ['list_develop_snapshots', ['photo_id']],
@@ -245,6 +247,7 @@ describe('photo array schema', () => {
     ['export_photo_metadata', 'photo_ids'],
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
+    ['match_photo_style', 'target_ids'],
     ['delete_empty_masks', 'photo_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
