@@ -56,6 +56,8 @@ Some other things to try:
 
 Already using Claude Code, Codex, Cursor, Windsurf, or VS Code? Pick your tool below. **All paths still end with the Lightroom step from the section above** — restart Lightroom and click **Start Server** in Plug-in Manager.
 
+The npm server requires Node.js 20 or later.
+
 <details>
 <summary><b>Claude Code</b></summary>
 
@@ -67,8 +69,8 @@ claude --plugin-dir ./lightroom-mcp
 ```
 
 Use `/plugin` to check that `lightroom` is loaded. The skill is available as
-`/lightroom:raw-photo-lightroom-preset`. Node.js is required: the plugin starts
-the published npm server with `npx`. That package includes the Lua bundle and
+`/lightroom:raw-photo-lightroom-preset`. Node.js 20 or later is required: the
+plugin starts the published npm server with `npx`. That package includes the Lua bundle and
 installs it on first start when no Lightroom MCP plug-in is already installed.
 Restart Lightroom and click **Start Server** in Plug-in Manager.
 
@@ -174,6 +176,7 @@ If you'd rather drop the plugin in by hand:
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
 | `set_ai_metadata` | Store or clear private AI scores (0–100) and reasons (up to 1024 characters). |
@@ -189,9 +192,12 @@ If you'd rather drop the plugin in by hand:
 | `remove_from_collection` | Remove photos from a collection (they stay in the catalog). |
 | `delete_collection` | Delete a collection (its photos stay in the catalog). |
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
+| `remove_keyword_subtree` | Detach a parent keyword and its descendants from selected photos, or explicitly from the whole catalog. Keyword nodes stay in the catalog. |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `rename_keyword` | Rename a keyword everywhere it is used. |
+| `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
 | `set_rating` | Set 0-5 star rating on photos. |
+| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |
@@ -293,7 +299,7 @@ This server works with the catalog open in Lightroom Classic on your computer th
 
 The SDK is Adobe's interface for plug-ins. Its [reference](https://lrc.mcor.dev/) provides no documented calls for these operations:
 
-- Reading histogram values, individual pixel data or detected face regions. `get_photo_preview` returns a rendered image for visual inspection.
+- Reading raw sensor histograms, individual pixel data or detected face regions. `get_photo_stats` measures the rendered JPEG preview; `get_photo_preview` returns that image for visual inspection.
 - Running an HDR or panorama merge; producing a print or book; creating or editing a slideshow. The SDK does support [slideshow playback](https://lrc.mcor.dev/modules/LrSlideshow.html), but this server has no playback tool.
 - Running Super Resolution or Raw Details through a documented call.
 - Stack create or unstack operations on photos already in the catalog, or auto-stacking. The SDK's import operation can add a new photo to a stack.

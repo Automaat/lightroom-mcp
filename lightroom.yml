@@ -20,6 +20,8 @@ globals:
 
   # LR SDK namespaces. Read-only: the plugin reads fields and calls methods on
   # them but never reassigns or extends the namespace itself.
+  LrUndo:
+    property: read-only
   LrApplication:
     property: read-only
   LrApplicationView:

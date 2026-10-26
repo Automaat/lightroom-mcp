@@ -1,6 +1,5 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createMcpServer } from '../src/create-server.js';
 import type { CallOptions, PluginResponse } from '../src/dispatcher.js';
 
@@ -9,6 +8,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   get_selected_photos: 'read-only',
   get_photo_metadata: 'read-only',
   get_photo_preview: 'read-only',
+  get_photo_stats: 'read-only',
   set_gps: 'destructive',
   set_location: 'destructive',
   set_metadata: 'destructive',
@@ -24,10 +24,13 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   remove_from_collection: 'destructive',
   delete_collection: 'destructive',
   set_keywords: 'destructive',
+  remove_keyword_subtree: 'destructive',
   list_keywords: 'read-only',
   rename_keyword: 'destructive',
   set_rating: 'destructive',
+  undo_last_step: 'destructive',
   set_flag: 'destructive',
+  remove_photos_from_catalog: 'destructive',
   set_color_label: 'destructive',
   import_photos: 'additive',
   export_photos: 'destructive',
@@ -122,7 +125,7 @@ describe('createMcpServer', () => {
 
     const result = asToolResult(await pair.client.callTool({ name: 'export_photos', arguments: {
       photo_ids: ['1', '2'], destination: '/out',
-    } }, undefined, { onprogress: (value) => progress.push(value) }));
+    } }, { onprogress: (value) => progress.push(value) }));
 
     expect(progress).toEqual([
       { progress: 1, total: 2, message: 'a.jpg' },
@@ -161,7 +164,7 @@ describe('createMcpServer', () => {
     const controller = new AbortController();
     const pending = pair.client.callTool({ name: 'export_photos', arguments: {
       photo_ids: ['1', '2'], destination: '/out',
-    } }, undefined, { signal: controller.signal });
+    } }, { signal: controller.signal });
     const rejection = expect(pending).rejects.toThrow();
 
     await started;
@@ -191,10 +194,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 64 tools', async () => {
+    it('returns all 68 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(64);
+      expect(tools).toHaveLength(68);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
@@ -213,6 +216,21 @@ describe('createMcpServer', () => {
         expect(tool.inputSchema.type).toBe('object');
       }
     });
+  });
+
+  it('preserves preview image blocks over MCP', async () => {
+    pair = await connect({ call: async () => ({
+      id: '1',
+      result: { photo_id: 914, bytes: 3, image: { mime_type: 'image/jpeg', data: 'QUJD' } },
+    }) });
+
+    const result = await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 914 } });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual([
+      { type: 'text', text: '{"photo_id":914,"bytes":3}' },
+      { type: 'image', data: 'QUJD', mimeType: 'image/jpeg' },
+    ]);
   });
 
   it('serves the bundled skill prompt with its workflow references', async () => {
