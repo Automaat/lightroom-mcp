@@ -22,6 +22,18 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_lens_blur', { photo_id: 914 })).toBeNull();
   });
 
+  it.each([
+    ['copy_develop_settings', { source_id: 1, target_ids: [2] }],
+    ['apply_develop_preset', { preset_name: 'Heavy', photo_ids: [2] }],
+  ])('%s accepts only boolean dry_run values', (name, args) => {
+    for (const dry_run of [undefined, false, true]) {
+      expect(validateToolArgs(name, { ...args, dry_run })).toBeNull();
+    }
+    for (const dry_run of ['true', 1, null]) {
+      expect(validateToolArgs(name, { ...args, dry_run })).toContain('dry_run');
+    }
+  });
+
   it('remove_photos_from_catalog requires confirm true and at most 100 photo_ids', () => {
     for (const confirm of [undefined, false, 'true', 1, null]) {
       expect(validateToolArgs('remove_photos_from_catalog', { photo_ids: [1], confirm })).not.toBeNull();

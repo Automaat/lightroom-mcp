@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import { readFileSync } from 'node:fs';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 import type { PluginResponse } from '../src/dispatcher.js';
@@ -57,6 +58,55 @@ describe('createCallToolHandler', () => {
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(result.content[0].text)).toEqual({ photo_id: 914, bytes: 3 });
     expect(result.content[1]).toEqual({ type: 'image', data: 'QUJD', mimeType: 'image/jpeg' });
+    expect(result.content).toHaveLength(2);
+  });
+
+  it('batch preview maps three ids to images in input order', async () => {
+    const previews = [1, 2, 3].map(id => ({ photo_id: id, requested_id: id,
+      image: { mime_type: 'image/jpeg', data: `jpeg${id}` } }));
+    const result = await makeHandler({ call: async () => ({ id: '1', result: { previews, complete: true } }) })
+      ('get_photo_previews', { photo_ids: [1, 2, 3] });
+    expect(JSON.parse(result.content[0].text)).toEqual({ complete: true,
+      previews: [1, 2, 3].map(id => ({ photo_id: id, requested_id: id, image_index: id })) });
+    expect(result.content.slice(1)).toEqual([1, 2, 3].map(id => ({ type: 'image', mimeType: 'image/jpeg', data: `jpeg${id}` })));
+  });
+
+  it('batch preview error keeps good images and identifies the failed input', async () => {
+    const previews = [
+      { requested_id: 1, image: { mime_type: 'image/jpeg', data: 'one' } },
+      { requested_id: 2, error: 'Photo not found: 2' },
+      { requested_id: 3, image: { mime_type: 'image/jpeg', data: 'three' } },
+    ];
+    const result = await makeHandler({ call: async () => ({ id: '1', result: { previews } }) })
+      ('get_photo_previews', { photo_ids: [1, 2, 3] });
+    expect(JSON.parse(result.content[0].text).previews).toEqual([
+      { requested_id: 1, image_index: 1 }, { requested_id: 2, error: 'Photo not found: 2' },
+      { requested_id: 3, image_index: 2 },
+    ]);
+    expect(result.content.slice(1).map(c => c.type === 'image' ? c.data : undefined)).toEqual(['one', 'three']);
+  });
+
+  it('batch preview limit rejects more than 20 ids before dispatch', async () => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => { calls++; return { id: '1', result: null }; } })
+      ('get_photo_previews', { photo_ids: Array.from({ length: 21 }, (_, i) => i + 1) });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('20');
+    expect(calls).toBe(0);
+  });
+
+  it('batch preview timeout entry allows the plugin deadline to return a partial batch', () => {
+    const source = readFileSync('src/index.ts', 'utf8');
+    expect(source).toMatch(/get_photo_previews: 30_000/);
+  });
+
+  it('batch preview timeout preserves partial results and remaining ids', async () => {
+    const result = await makeHandler({ call: async () => ({ id: '1', result: {
+      complete: false, remaining_ids: [2, 3],
+      previews: [{ requested_id: 1, image: { mime_type: 'image/jpeg', data: 'one' } }],
+    } }) })('get_photo_previews', { photo_ids: [1, 2, 3] });
+    expect(JSON.parse(result.content[0].text)).toEqual({ complete: false, remaining_ids: [2, 3],
+      previews: [{ requested_id: 1, image_index: 1 }] });
     expect(result.content).toHaveLength(2);
   });
 

@@ -177,6 +177,7 @@ If you'd rather drop the plugin in by hand:
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
@@ -256,6 +257,44 @@ The initial provider schema is version 1: `aiScore` and `aiReason` are strings
 (the tools convert the score to and from an integer). Changes to these
 persistent field definitions require a schema version bump and migration;
 incompatible field changes also require a field version bump.
+
+`copy_develop_settings` and `apply_develop_preset` accept `dry_run: true` to
+preview without writes or AI recomputation. Replies include per-setting totals
+and detail for at most five targets. `detail_truncated` flags omitted detail;
+`missing_count` and one-based `missing_indices` identify missing inputs when
+`missing_truncated` limits their path detail.
+
+Preset previews compare only declared settings whose current values the SDK
+exposes. `preview_scope` states this limit, and `unknown_current_totals` counts
+unreadable values excluded from the diff. `unknown_effects` lists effects that
+remain unpredicted: SDK-generated values such as `GrainSeed` and preset
+bookkeeping. This preview does not predict the complete result of applying a
+preset.
+
+### First-pass cull workflow
+
+Use vision as a first-pass reject filter for clear blur, closed eyes, missed
+focus and near-duplicates. Leave star ratings of the surviving photos to the
+user; thumbnails do not reliably distinguish a four-star photo from a five.
+
+1. Collect photo IDs with `search_photos`. Read existing flags and labels with
+   `get_photo_metadata`, and private reasons with `get_ai_metadata`.
+2. Call `get_photo_previews` with at most 20 IDs at a time. The default minimum
+   edge is 256 pixels; returned JPEGs have no edge over 2000 pixels and share an
+   8 MiB byte budget. Text maps each `requested_id` to its 1-based `image_index`.
+   Inspect errors separately. Retry `remaining_ids` when `complete` is false.
+3. Propose rejects with a reason per photo and show the list to the user before
+   writing. Keep uncertain shots for review; do not reject them automatically.
+4. For approved clear failures, call `set_flag` with `flag: "reject"`. Mark
+   uncertain photos with `set_color_label` using `label: "yellow"` for
+   “needs a look”. Preserve existing labels unless the user approves replacing
+   them. Store each decision's reason with `set_ai_metadata` in its `reason`
+   field (private plug-in field `aiReason`), never as keywords.
+5. Verify flags and labels with `get_photo_metadata`, and reasons with
+   `get_ai_metadata`. Undo a reject with `set_flag` and `flag: "none"`;
+   restore the previous label and reason when undoing the whole decision.
+
+This workflow deletes nothing and removes no photos from the catalog.
 
 ### Iterative preset workflow
 

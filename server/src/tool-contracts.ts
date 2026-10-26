@@ -544,6 +544,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "get_photo_previews",
+    title: "Get batch photo previews",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerPreview.getPhotoPreviews",
+    description:
+      "Get JPEG thumbnails for 1–20 photos in input order for first-pass culling. Text maps requested_id and photo_id to each 1-based image_index; failed photos have an error and no image. Default size 256, longest returned edge at most 2000 pixels, total JPEG budget 8 MiB. A 20-second render deadline returns complete:false and remaining_ids to retry. Individual failures do not fail the batch. Catalog contents are unchanged.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: {
+          type: "array", items: photoIdSchema("Photo ID or file path"), minItems: 1, maxItems: 20,
+          description: "Between 1 and 20 IDs or paths, in image order",
+        },
+        size: { type: "number", minimum: 64, maximum: 2048, description: "Minimum longest edge (64–2048, default 256)" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "find_duplicate_groups",
     title: "Find duplicate groups",
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -1275,6 +1295,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
+        dry_run: {
+          type: "boolean",
+          default: false,
+          description: "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Missing path detail has a 4,000-character budget and is trimmed further to keep the reply within 20,000 characters: missing_count and one-based missing_indices identify all missing inputs, and missing_truncated flags an incomplete missing list. Tables are summarized by entry count and strings over 128 characters by length and prefix. Preset previews compare only declared settings whose current values the SDK exposes. preview_scope is readable_declared_preset_settings; unknown_current_totals counts unreadable values per key, which are excluded from changes and setting_totals. unknown_effects explicitly excludes SDK-generated values including GrainSeed and preset bookkeeping. These effects are not predicted.",
+        },
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
         preset_name: {
           type: "string",
@@ -1299,6 +1324,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
+        dry_run: {
+          type: "boolean",
+          default: false,
+          description: "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Missing path detail has a 4,000-character budget and is trimmed further to keep the reply within 20,000 characters: missing_count and one-based missing_indices identify all missing inputs, and missing_truncated flags an incomplete missing list. Tables are summarized by entry count and strings over 128 characters by length and prefix.",
+        },
         source_id: photoIdSchema("Source photo ID or file path"),
         target_ids: photoIdArray("Target photo IDs or file paths"),
         settings: {
