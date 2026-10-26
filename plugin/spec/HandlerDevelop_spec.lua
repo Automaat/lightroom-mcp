@@ -1134,6 +1134,19 @@ local function errorOf(fn)
 end
 
 describe("HandlerDevelop.applyDenoise", function()
+    it("cancel keeps completed denoise and restores the module and selection", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" }, { id = "3" } } })
+        local context = { isCanceled = function() return #calls.enhance >= 1 end, report = function() end }
+
+        local r = Handler.applyDenoise({ photo_ids = { "1", "2", "3" }, amount = 45 }, context)
+
+        assert.are.equal(1, r.applied)
+        assert.is_false(r.complete)
+        assert.are.same({ "2", "3" }, r.remaining_ids)
+        assert.are.same({ { id = "1", name = "denoise", on = true, amount = 45 } }, calls.enhance)
+        assert.are.same({ "develop", "library" }, calls.modules)
+    end)
+
     it("switches to Develop and applies Denoise one active photo at a time", function()
         local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
 

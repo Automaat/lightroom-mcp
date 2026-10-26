@@ -26,9 +26,15 @@ export function createMcpServer(deps: ServerDeps): Server {
   server.setRequestHandler(GetPromptRequestSchema, async (request) => getSkillPrompt(request.params.name));
 
   const callTool = "callTool" in deps ? deps.callTool : createCallToolHandler(deps);
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
-    return callTool(name, args ?? {});
+    const progressToken = request.params._meta?.progressToken;
+    return callTool(name, args ?? {}, {
+      signal: extra.signal,
+      onProgress: progressToken === undefined ? undefined : (progress) => {
+        void extra.sendNotification({ method: "notifications/progress", params: { progressToken, ...progress } }).catch(() => {});
+      },
+    });
   });
 
   return server;
