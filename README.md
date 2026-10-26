@@ -157,7 +157,7 @@ If you'd rather drop the plugin in by hand:
 
 | Tool | What it does |
 | --- | --- |
-| `search_photos` | Search by filename / keywords / rating / date range. |
+| `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
@@ -175,6 +175,7 @@ If you'd rather drop the plugin in by hand:
 | `rename_keyword` | Rename a keyword everywhere it is used. |
 | `set_rating` | Set 0-5 star rating on photos. |
 | `set_flag` | Flag photos as pick or reject, or remove the flag. |
+| `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |
@@ -186,6 +187,11 @@ If you'd rather drop the plugin in by hand:
 | `apply_develop_preset` | Apply an exact preset by UUID or disambiguated name; recomputes AI masks per photo (LrC 13.3+). |
 | `copy_develop_settings` | Copy develop settings between photos; recomputes copied AI masks per photo (LrC 13.3+). |
 | `set_develop_settings` | Write SDK setting key/values directly. |
+| `list_develop_snapshots` | List a photo’s saved develop snapshots. |
+| `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
+| `apply_develop_snapshot` | Restore a saved develop snapshot. |
+| `delete_develop_snapshot` | Delete one saved develop snapshot. |
+| `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
 | `reset_develop_adjustments` | Reset all develop adjustments on up to 100 photos; requires `confirm: true`. Recover edits through Lightroom History. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |

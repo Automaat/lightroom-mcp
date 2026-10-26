@@ -107,6 +107,10 @@
       "description": "Flag photos as pick or reject, or remove the flag."
     },
     {
+      "name": "set_color_label",
+      "description": "Set or clear color labels on photos."
+    },
+    {
       "name": "import_photos",
       "description": "Import photos into the catalog."
     },
@@ -149,6 +153,10 @@
     {
       "name": "set_develop_settings",
       "description": "Set Develop settings directly on a photo."
+    },
+    {
+      "name": "apply_auto_adjustments",
+      "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
     },
     {
       "name": "reset_develop_adjustments",
@@ -237,6 +245,22 @@
     {
       "name": "combine_mask",
       "description": "Add, subtract or intersect a Subject, Sky or Background component on an existing mask."
+    },
+    {
+      "name": "list_develop_snapshots",
+      "description": "List saved develop snapshots for a photo"
+    },
+    {
+      "name": "create_develop_snapshot",
+      "description": "Save current develop settings as a named snapshot"
+    },
+    {
+      "name": "apply_develop_snapshot",
+      "description": "Restore saved develop settings from a snapshot"
+    },
+    {
+      "name": "delete_develop_snapshot",
+      "description": "Delete one saved develop snapshot"
     }
   ],
   "user_config": {
