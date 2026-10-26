@@ -3,6 +3,14 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('bounds virtual-copy batches and accepts an optional nonblank copy name', () => {
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914, '/a.jpg'] })).toBeNull();
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: 'Experiment' })).toBeNull();
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [] })).toContain('photo_ids');
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: Array.from({ length: 26 }, () => 914) })).toContain('photo_ids');
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: ' ' })).toContain('copy_name');
+  });
+
   it('apply_auto_adjustments requires tone or white_balance to be true', () => {
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914] })).not.toBeNull();
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: false, white_balance: false })).not.toBeNull();
