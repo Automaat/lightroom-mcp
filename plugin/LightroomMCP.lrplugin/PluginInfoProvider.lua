@@ -215,6 +215,7 @@ local DISPATCH = {
     delete_collection = HandlerCollections.deleteCollection,
     get_photo_metadata = HandlerMetadata.getPhotoMetadata,
     get_photo_preview = HandlerPreview.getPhotoPreview,
+    find_duplicate_groups = HandlerPreview.findDuplicateGroups,
     get_photo_stats = HandlerPreview.getPhotoStats,
     set_gps = HandlerMetadata.setGps,
     set_location = HandlerMetadata.setLocation,
