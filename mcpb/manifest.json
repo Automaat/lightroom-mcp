@@ -172,6 +172,10 @@
       "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
     },
     {
+      "name": "reset_develop_adjustments",
+      "description": "Reset all develop adjustments; requires confirmation. Recover edits through Lightroom History."
+    },
+    {
       "name": "apply_denoise",
       "description": "Turn on AI Denoise at a given amount on photos."
     },

@@ -43,6 +43,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   create_virtual_copies: 'additive',
   apply_develop_snapshot: 'destructive',
   delete_develop_snapshot: 'destructive',
+  reset_develop_adjustments: 'destructive',
   apply_denoise: 'destructive',
   apply_auto_adjustments: 'destructive',
   list_masks: 'read-only',
@@ -187,10 +188,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 60 tools', async () => {
+    it('returns all 61 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(60);
+      expect(tools).toHaveLength(61);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
