@@ -280,6 +280,18 @@ describe("HandlerPreview batch preview", function()
             "photo_ids must contain between 1 and 20 photo IDs")
     end)
 
+    it("batch preview limit preserves the 3.5 MiB per-image cap", function()
+        local photo = previewPhoto({ id = "1" }, function(_, edge, _, cb)
+            cb(fakeJpeg() .. string.rep("x", edge > 64 and 4 * 1024 * 1024 or 100))
+        end)
+        local _, Handler = setup({ photo })
+        local result = Handler.getPhotoPreviews({ photo_ids = { "1" } })
+        assert.is_true(result.complete)
+        assert.is_nil(result.previews[1].error)
+        assert.is_true(result.previews[1].bytes <= 3.5 * 1024 * 1024)
+        assert.are.equal(#fakeJpeg() + 100, result.previews[1].bytes)
+    end)
+
     it("keeps the combined JPEG bytes within 8 MiB", function()
         local photos = {}
         for i = 1, 4 do

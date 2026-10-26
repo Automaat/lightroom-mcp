@@ -149,7 +149,7 @@ function PreviewHandler.getPhotoPreviews(args)
             break
         end
         local ok, result = LrTasks.pcall(function()
-            return renderPreview({ photo_id = id, size = args.size or 256 }, deadline, budget - bytes, true)
+            return renderPreview({ photo_id = id, size = args.size or 256 }, deadline, math.min(MAX_BYTES, budget - bytes), true)
         end)
         -- A timed-out in-flight request is retried along with the untouched tail.
         if not ok and LrDate.currentTime() >= deadline then
