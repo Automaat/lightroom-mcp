@@ -92,6 +92,10 @@
       "description": "Add or remove keywords on photos, by name or hierarchy path."
     },
     {
+      "name": "remove_keyword_subtree",
+      "description": "Detach a parent keyword and its descendants from photos; keyword nodes stay in the catalog."
+    },
+    {
       "name": "list_keywords",
       "description": "List the keyword hierarchy as full paths."
     },

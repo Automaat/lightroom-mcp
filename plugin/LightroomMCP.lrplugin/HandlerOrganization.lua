@@ -280,6 +280,76 @@ function OrganizationHandler.setKeywords(args)
     }
 end
 
+function OrganizationHandler.removeKeywordSubtree(args)
+    if type(args.parent) ~= "string" or KeywordTree.trim(args.parent) == "" then
+        error("parent is required")
+    end
+    if args.catalog_wide ~= nil and type(args.catalog_wide) ~= "boolean" then
+        error("catalog_wide must be a boolean")
+    end
+    if args.catalog_wide == true then
+        if args.photo_ids ~= nil then error("Use photo_ids or catalog_wide, not both") end
+    elseif type(args.photo_ids) ~= "table" or #args.photo_ids == 0 then
+        error("photo_ids or catalog_wide=true is required")
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local parent = KeywordTree.resolve(catalog, KeywordTree.split(args.parent))
+    if not parent then error("Keyword parent not found: " .. args.parent) end
+    local keywords = { parent }
+    local subtree = { [parent] = true }
+    KeywordTree.walk(catalog, parent, function(keyword)
+        keywords[#keywords + 1] = keyword
+        subtree[keyword] = true
+    end)
+
+    local resolved = {}
+    if args.catalog_wide == true then
+        -- Keyword photo queries can yield: collect before opening either gate.
+        local seen = {}
+        for _, keyword in ipairs(keywords) do
+            for _, photo in ipairs(keyword:getPhotos()) do
+                if not seen[photo] then
+                    seen[photo] = true
+                    resolved[#resolved + 1] = { photo = photo }
+                end
+            end
+        end
+    else
+        resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+    end
+
+    local updated, removed = 0, 0
+    local missing, seen = {}, {}
+    catalog:withWriteAccessDo("Remove Keyword Subtree", function()
+        for _, entry in ipairs(resolved) do
+            local photo = entry.photo
+            if not photo then
+                missing[#missing + 1] = tostring(entry.id)
+            elseif not seen[photo] then
+                seen[photo] = true
+                local changed = false
+                for _, keyword in ipairs(photo:getRawMetadata('keywords') or {}) do
+                    if subtree[keyword] then
+                        photo:removeKeyword(keyword)
+                        removed = removed + 1
+                        changed = true
+                    end
+                end
+                if changed then updated = updated + 1 end
+            end
+        end
+    end)
+    return {
+        success = true,
+        updated = updated,
+        removed = removed,
+        missing = missing,
+        message = string.format("Removed %d keyword assignments from %d photos (%d ids not found)",
+            removed, updated, #missing),
+    }
+end
+
 function OrganizationHandler.setRating(args)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")

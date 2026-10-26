@@ -211,6 +211,7 @@ local DISPATCH = {
     set_location = HandlerMetadata.setLocation,
     set_metadata = HandlerMetadata.setMetadata,
     set_keywords = HandlerOrganization.setKeywords,
+    remove_keyword_subtree = HandlerOrganization.removeKeywordSubtree,
     list_keywords = HandlerKeywords.listKeywords,
     rename_keyword = HandlerKeywords.renameKeyword,
     set_rating = HandlerOrganization.setRating,
