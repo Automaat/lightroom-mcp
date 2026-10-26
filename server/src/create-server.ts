@@ -1,10 +1,4 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  ListPromptsRequestSchema,
-  GetPromptRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { Server } from "@modelcontextprotocol/server";
 import type { ToolCaller } from "./broker.js";
 import { createCallToolHandler, type ToolHandlerDeps } from "./tool-handler.js";
 import { listToolsHandler } from "./list-tools-handler.js";
@@ -19,20 +13,20 @@ export function createMcpServer(deps: ServerDeps): Server {
     { capabilities: { tools: {}, prompts: {} } },
   );
 
-  server.setRequestHandler(ListToolsRequestSchema, async () =>
+  server.setRequestHandler("tools/list", async () =>
     listToolsHandler(),
   );
-  server.setRequestHandler(ListPromptsRequestSchema, async () => ({ prompts: [SKILL_PROMPT] }));
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => getSkillPrompt(request.params.name));
+  server.setRequestHandler("prompts/list", async () => ({ prompts: [SKILL_PROMPT] }));
+  server.setRequestHandler("prompts/get", async (request) => getSkillPrompt(request.params.name));
 
   const callTool = "callTool" in deps ? deps.callTool : createCallToolHandler(deps);
-  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  server.setRequestHandler("tools/call", async (request, ctx) => {
     const { name, arguments: args } = request.params;
     const progressToken = request.params._meta?.progressToken;
     return callTool(name, args ?? {}, {
-      signal: extra.signal,
+      signal: ctx.mcpReq.signal,
       onProgress: progressToken === undefined ? undefined : (progress) => {
-        void extra.sendNotification({ method: "notifications/progress", params: { progressToken, ...progress } }).catch(() => {});
+        void ctx.mcpReq.notify({ method: "notifications/progress", params: { progressToken, ...progress } }).catch(() => {});
       },
     });
   });

@@ -1,4 +1,4 @@
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/server';
 import { SKILL_TEXT } from './skill-content.js';
 
 export const SKILL_PROMPT = {
@@ -9,7 +9,7 @@ export const SKILL_PROMPT = {
 
 export function getSkillPrompt(name: string) {
   if (name !== SKILL_PROMPT.name) {
-    throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`);
+    throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown prompt: ${name}`);
   }
   return {
     description: SKILL_PROMPT.description,
