@@ -4,7 +4,7 @@
   "display_name": "Lightroom Classic",
   "icon": "icon.png",
   "version": "0.25.0",
-  "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
+  "description": "Bridge Claude to Adobe Lightroom Classic \u2014 search, organize, develop, export.",
   "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
   "author": {
     "name": "Marcin Skalski"
@@ -310,6 +310,10 @@
     {
       "name": "delete_develop_snapshot",
       "description": "Delete one saved develop snapshot"
+    },
+    {
+      "name": "summarize_develop_settings",
+      "description": "Summarize numeric Develop settings by camera and ISO for rated or exported photos"
     }
   ],
   "user_config": {

@@ -7,6 +7,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   search_photos: 'read-only',
   get_selected_photos: 'read-only',
   get_photo_metadata: 'read-only',
+  summarize_develop_settings: 'read-only',
   get_photo_preview: 'read-only',
   get_photo_stats: 'read-only',
   set_gps: 'destructive',
