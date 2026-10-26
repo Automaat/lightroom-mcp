@@ -1253,6 +1253,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "reset_develop_adjustments",
+    title: "Reset develop adjustments",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.resetDevelopAdjustments",
+    description:
+      "Reset all develop adjustments on up to 100 photos through Lightroom's Reset command. Requires confirm: true. Discards edits, including crop and masks; recover previous edits through Lightroom History. Opens each photo in Develop and restores the user's module, view source and selection. Reports reset, skipped or failed per photo; missing and duplicate photos are skipped. Stops after about 240 seconds or cancellation and returns remaining_ids for another call. One Develop-driving call runs at a time.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
+        confirm: { type: "boolean", enum: [true], description: "Confirm discarding all develop adjustments" },
+      },
+      required: ["photo_ids", "confirm"],
+    },
+  },
+  {
     name: "apply_denoise",
     title: "Apply denoise",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
