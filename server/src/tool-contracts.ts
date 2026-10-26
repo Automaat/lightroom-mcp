@@ -850,6 +850,31 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "remove_keyword_subtree",
+    title: "Remove keyword subtree",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerOrganization.removeKeywordSubtree",
+    description:
+      "Detach a parent keyword and every descendant from photos, preserving unrelated keywords, including same-named keywords elsewhere. Use a dedicated parent such as 'AI Keywords' with set_keywords to undo a tagging batch. The parent path matches ignoring case; an unknown parent fails without changes. Specify photo_ids or explicitly request catalog_wide=true to affect every photo carrying the subtree. Keyword nodes stay in the catalog and remain visible in list_keywords; this tool does not delete keywords. Returns updated (photos changed), removed (assignments detached), and missing photo IDs.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        parent: {
+          type: "string",
+          minLength: 1,
+          description: "Parent-first keyword path, for example 'AI Keywords' or 'Tags|AI Keywords'",
+        },
+        photo_ids: photoIdArray("Photos to detach the subtree from; omit when catalog_wide is true"),
+        catalog_wide: {
+          type: "boolean",
+          description: "Explicitly detach the subtree from every photo in the catalog; cannot accompany photo_ids",
+        },
+      },
+      required: ["parent"],
+    },
+  },
+  {
     name: "list_keywords",
     title: "List keywords",
     annotations: { readOnlyHint: true, openWorldHint: false },
