@@ -29,13 +29,53 @@ local EXPORT_FORMATS = {
     original = 'ORIGINAL',
 }
 
+-- Expands a leading ~/ and refuses a relative path: one resolves against
+-- Lightroom's working directory ("/" on macOS), which fails with an unhelpful
+-- "Read-only file system".
+local function absolutePath(destination)
+    if destination:match("^~[/\\]") then
+        destination = LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), destination:sub(3))
+    end
+    local absolute
+    if WIN_ENV then
+        absolute = destination:match("^%a:[/\\]") or destination:match("^\\\\")
+    else
+        absolute = destination:match("^/")
+    end
+    if not absolute then
+        error("destination must be an absolute path")
+    end
+    return destination
+end
+
 function ExportHandler.exportPhotos(args)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
 
-    if not args.destination then
+    if type(args.destination) ~= "string" or args.destination:match("^%s*$") then
         error("destination is required")
+    end
+    if args.destination:find("[%z\1-\31]") then
+        error("destination must not contain control characters")
+    end
+    local destination = absolutePath(args.destination)
+
+    -- Every argument is checked before the folder is created, so a rejected
+    -- call leaves nothing behind.
+    local collisionHandling = args.on_existing or DEFAULT_COLLISION_HANDLING
+    if not COLLISION_HANDLING[collisionHandling] then
+        error("on_existing must be one of: rename, overwrite, skip")
+    end
+
+    local requestedFormat = args.format
+    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+    local formatKey = requestedFormat and requestedFormat:lower() or 'jpeg'
+    local resolvedFormat = EXPORT_FORMATS[formatKey]
+    if not resolvedFormat then
+        error("format must be one of: jpeg, png, tiff, original")
     end
 
     local catalog = LrApplication.activeCatalog()
@@ -60,25 +100,23 @@ function ExportHandler.exportPhotos(args)
 
     -- Lightroom refuses a missing folder with its own error, in the UI
     -- language; create it as export_photo_metadata and export_develop_preset do.
-    if LrFileUtils.exists(args.destination) == false then
-        LrFileUtils.createAllDirectories(args.destination)
-    end
-    if LrFileUtils.exists(args.destination) ~= "directory" then
-        error("destination is not a directory")
+    local existing = LrFileUtils.exists(destination)
+    if existing == false then
+        LrFileUtils.createAllDirectories(destination)
+        if LrFileUtils.exists(destination) ~= "directory" then
+            error("could not create destination folder: " .. destination)
+        end
+    elseif existing ~= "directory" then
+        error("destination is not a directory: " .. destination)
     end
 
     -- destinationType=specificFolder makes LR honour
     -- LR_export_destinationPathPrefix; sourceFolder ignores it and
     -- writes next to the original. LR_format is set in the
     -- format-specific block below.
-    local collisionHandling = args.on_existing or DEFAULT_COLLISION_HANDLING
-    if not COLLISION_HANDLING[collisionHandling] then
-        error("on_existing must be one of: rename, overwrite, skip")
-    end
-
     local exportSettings = {
         LR_export_destinationType = 'specificFolder',
-        LR_export_destinationPathPrefix = args.destination,
+        LR_export_destinationPathPrefix = destination,
         LR_export_useSubfolder = false,
         LR_jpeg_quality = args.quality or 90,
         LR_collisionHandling = COLLISION_HANDLING[collisionHandling],
@@ -93,17 +131,6 @@ function ExportHandler.exportPhotos(args)
     end
 
     -- Handle different formats
-    local requestedFormat = args.format
-    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
-        error("format must be one of: jpeg, png, tiff, original")
-    end
-
-    local formatKey = requestedFormat and requestedFormat:lower() or 'jpeg'
-    local resolvedFormat = EXPORT_FORMATS[formatKey]
-    if not resolvedFormat then
-        error("format must be one of: jpeg, png, tiff, original")
-    end
-
     exportSettings.LR_format = resolvedFormat
     if resolvedFormat == 'JPEG' then
         exportSettings.LR_export_colorSpace = 'sRGB'
@@ -121,13 +148,13 @@ function ExportHandler.exportPhotos(args)
     exportSession:doExportOnCurrentTask()
     local exportedCount = #photosToExport
 
-    Log.info(string.format("Exported %d photos to: %s", exportedCount, args.destination))
+    Log.info(string.format("Exported %d photos to: %s", exportedCount, destination))
 
     return {
         success = true,
         exported = exportedCount,
-        destination = args.destination,
-        message = string.format("Exported %d photos to %s", exportedCount, args.destination)
+        destination = destination,
+        message = string.format("Exported %d photos to %s", exportedCount, destination)
     }
 end
 
@@ -181,20 +208,7 @@ function ExportHandler.exportPhotoMetadata(args)
     if not destination:lower():match("%.json$") then
         error("destination must be a .json file path")
     end
-    if destination:match("^~[/\\]") then
-        destination = LrPathUtils.child(LrPathUtils.getStandardFilePath("home"), destination:sub(3))
-    end
-    -- A relative path resolves against Lightroom's working directory ("/" on
-    -- macOS), which fails with an unhelpful "Read-only file system".
-    local absolute
-    if WIN_ENV then
-        absolute = destination:match("^%a:[/\\]") or destination:match("^\\\\")
-    else
-        absolute = destination:match("^/")
-    end
-    if not absolute then
-        error("destination must be an absolute path")
-    end
+    destination = absolutePath(destination)
     if args.photo_ids ~= nil and (type(args.photo_ids) ~= "table" or #args.photo_ids == 0) then
         error("photo_ids must be a non-empty array when given")
     end
