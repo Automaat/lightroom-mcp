@@ -140,12 +140,23 @@ end
 local function write(catalog, photo, parameter, value, matches)
     assertActive(catalog, photo)
     sdk(LrDevelopController.setValue, parameter, value)
+    if parameter == "LensBlurActive" and not DevelopSession.waitFor(function()
+        assertActive(catalog, photo)
+        return sdk(LrDevelopController.getValue, parameter) == value
+    end, 20) then
+        error("Lightroom did not finish changing LensBlurActive; Lens Blur stopped; earlier changes may remain")
+    end
     flush(catalog, photo)
+    local controllerValue, savedSettings
     if not DevelopSession.waitFor(function()
         assertActive(catalog, photo)
-        return matches(sdk(LrDevelopController.getValue, parameter), stored(photo))
+        controllerValue, savedSettings = sdk(LrDevelopController.getValue, parameter), stored(photo)
+        return matches(controllerValue, savedSettings)
     end, 10) then
-        error('Lightroom did not save ' .. parameter .. '; Lens Blur stopped; earlier changes may remain')
+        error('Lightroom did not save ' .. parameter .. ' (controller=' .. tostring(controllerValue)
+            .. ', saved Active=' .. tostring(savedSettings and savedSettings.Active)
+            .. ', saved BlurAmount=' .. tostring(savedSettings and savedSettings.BlurAmount)
+            .. '); Lens Blur stopped; earlier changes may remain')
     end
 end
 

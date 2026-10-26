@@ -13,6 +13,7 @@ local function setup(opts)
         FocalRange = values.LensBlurFocalRange, BokehShape = 0 }
     local bokeh = 'Circle'
     local writes = 0
+    local pendingActive, activationWait, prematureFlush = nil, 0, false
     catalog.getTargetPhoto = function() return active end
     catalog.getTargetPhotos = function() return selection end
     catalog.setSelectedPhotos = function(_, photo, selected) active, selection = photo, selected end
@@ -28,6 +29,10 @@ local function setup(opts)
         end,
         setValue = function(name, value)
             writes = writes + 1
+            if name == 'LensBlurActive' and opts.activationDelay then
+                pendingActive, activationWait = value, opts.activationDelay
+                return
+            end
             if name == 'LensBlurActive' or values.LensBlurActive then
                 values[name] = value
             end
@@ -36,6 +41,8 @@ local function setup(opts)
         setLensBlurBokeh = function(value) writes = writes + 1 bokeh = value end,
         stopTracking = function(localParam)
             if localParam or opts.ignoreSave then return end
+            if pendingActive ~= nil then prematureFlush = true end
+            if prematureFlush then return end
             local amount = opts.ignoreAmountSave and saved.BlurAmount or values.LensBlurAmount
             saved = { Active = values.LensBlurActive, BlurAmount = values.LensBlurAmount,
                 CatEyeAmount = values.LensBlurCatEye, HighlightsBoost = values.LensBlurHighlightsBoost,
@@ -54,7 +61,15 @@ local function setup(opts)
             switchToModule = function(value) module = value end,
         },
         LrSelection = { selectNone = function() active, selection = nil, {} end },
-        LrTasks = { pcall = pcall, sleep = function() if opts.stealPhoto then active = photos[2] end end },
+        LrTasks = { pcall = pcall, sleep = function(seconds)
+            if opts.stealPhoto then active = photos[2] end
+            if pendingActive ~= nil then
+                activationWait = activationWait - seconds
+                if activationWait <= 0 then
+                    values.LensBlurActive, pendingActive = pendingActive, nil
+                end
+            end
+        end },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.DevelopSession = nil
@@ -82,6 +97,29 @@ describe('HandlerLensBlur', function()
         assert.are.equal(50, result.amount)
         assert.are.equal(50, ctx.saved().BlurAmount)
         assert.is_true(ctx.saved().Active)
+        assert.are.same({ active = '2', module = 'library', sources = { 'collection' } }, ctx.view())
+    end)
+
+    it('waits for asynchronous activation before committing and saving Amount50', function()
+        local ctx = setup({ activationDelay = 12 })
+
+        local result = ctx.Handler.set({ photo_id = '1', amount = 50 })
+
+        assert.is_true(result.active)
+        assert.are.equal(50, result.amount)
+        assert.are.equal(50, ctx.saved().BlurAmount)
+        assert.is_true(ctx.saved().Active)
+        assert.are.same({ active = '2', module = 'library', sources = { 'collection' } }, ctx.view())
+    end)
+
+    it('stops before Amount when activation never becomes ready', function()
+        local ctx = setup({ activationDelay = 30 })
+
+        local err = failure(function() ctx.Handler.set({ photo_id = '1', amount = 50 }) end)
+
+        assert.matches('did not finish changing LensBlurActive', err, 1, true)
+        assert.are.equal(1, ctx.writes())
+        assert.are.equal(35, ctx.saved().BlurAmount)
         assert.are.same({ active = '2', module = 'library', sources = { 'collection' } }, ctx.view())
     end)
 
