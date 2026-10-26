@@ -37,6 +37,81 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(r.accessibility)
     end)
 
+    it("identifies a virtual copy and its master's catalog id", function()
+        local master = helper.fakePhoto({ id = 7 })
+        local copy = helper.fakePhoto({ id = 8, isVirtualCopy = true, masterPhoto = master })
+        local _, Handler = setup({ master, copy })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "8" })
+
+        assert.is_true(r.isVirtualCopy)
+        assert.are.same({ masterPhotoId = 7 }, r.virtualCopy)
+    end)
+
+    it("lists a master's virtual copies by catalog id", function()
+        local copies = { helper.fakePhoto({ id = 8 }), helper.fakePhoto({ id = 9 }) }
+        local master = helper.fakePhoto({ id = 7, isVirtualCopy = false, virtualCopies = copies })
+        local _, Handler = setup({ master })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "7" })
+
+        assert.is_false(r.isVirtualCopy)
+        assert.are.same({ copyIds = { 8, 9 } }, r.virtualCopy)
+    end)
+
+    it("reports folder stack position, collapse state, top and ordered members", function()
+        local top = helper.fakePhoto({ id = 7 })
+        local photo = helper.fakePhoto({
+            id = 8, isInStackInFolder = true, stackPositionInFolder = 2,
+            stackInFolderIsCollapsed = false, topOfStackInFolderContainingPhoto = top,
+        })
+        photo:setRawMetadata('stackInFolderMembers', { top, photo })
+        local _, Handler = setup({ top, photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "8" })
+
+        assert.are.same({ position = 2, isCollapsed = false, topPhotoId = 7, memberIds = { 7, 8 } }, r.stack)
+        photo:setRawMetadata('stackPositionInFolder', 1)
+        photo:setRawMetadata('stackInFolderIsCollapsed', true)
+        assert.is_true(Handler.getPhotoMetadata({ photo_id = "8" }).stack.isCollapsed)
+    end)
+
+    it("omits copy and stack groups when the photo has neither", function()
+        local photo = helper.fakePhoto({ id = 7, isVirtualCopy = false,
+            virtualCopies = {}, isInStackInFolder = false })
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "7" })
+
+        assert.is_false(r.isVirtualCopy)
+        assert.is_nil(r.virtualCopy)
+        assert.is_nil(r.stack)
+    end)
+
+    it("reads member lists once without reading member metadata", function()
+        local members = {}
+        for i = 1, 1000 do
+            members[i] = { localIdentifier = i, getRawMetadata = function() error("member read") end }
+        end
+        local meta = { id = 7, virtualCopies = members, isInStackInFolder = true,
+            stackInFolderMembers = members, topOfStackInFolderContainingPhoto = members[1] }
+        local photo = helper.fakePhoto(meta)
+        local reads = {}
+        local original = photo.getRawMetadata
+        photo.getRawMetadata = function(self, key)
+            reads[key] = (reads[key] or 0) + 1
+            return original(self, key)
+        end
+        local _, Handler = setup({ photo })
+
+        local r = Handler.getPhotoMetadata({ photo_id = "7" })
+
+        assert.are.equal(1000, #r.virtualCopy.copyIds)
+        assert.are.equal(1000, #r.stack.memberIds)
+        assert.are.equal(1, reads.virtualCopies)
+        assert.are.equal(1, reads.stackInFolderMembers)
+    end)
+
     it("returns full metadata for a found photo", function()
         local photo = helper.fakePhoto({
             id = "42",

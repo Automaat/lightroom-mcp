@@ -110,6 +110,34 @@ local function addSdkDevelopGroups(target, developSettings)
     return target
 end
 
+local function photoIds(photos)
+    if not photos or #photos == 0 then return nil end
+    local ids = {}
+    for i, photo in ipairs(photos) do
+        ids[i] = photo.localIdentifier
+    end
+    return ids
+end
+
+local function virtualCopyMetadata(photo, isVirtualCopy)
+    if isVirtualCopy then
+        local master = photo:getRawMetadata('masterPhoto')
+        return nonEmptyGroup({ masterPhotoId = master and master.localIdentifier })
+    end
+    return nonEmptyGroup({ copyIds = photoIds(photo:getRawMetadata('virtualCopies')) })
+end
+
+local function stackMetadata(photo)
+    if not photo:getRawMetadata('isInStackInFolder') then return nil end
+    local top = photo:getRawMetadata('topOfStackInFolderContainingPhoto')
+    return nonEmptyGroup({
+        position = photo:getRawMetadata('stackPositionInFolder'),
+        isCollapsed = photo:getRawMetadata('stackInFolderIsCollapsed'),
+        topPhotoId = top and top.localIdentifier,
+        memberIds = photoIds(photo:getRawMetadata('stackInFolderMembers')),
+    })
+end
+
 function MetadataHandler.getPhotoMetadata(args)
     if not args.photo_id then
         error("photo_id is required")
@@ -154,8 +182,12 @@ function MetadataHandler.getPhotoMetadata(args)
             })
         end
 
+        local isVirtualCopy = photo:getRawMetadata('isVirtualCopy') == true
         photoData = {
             id = photo.localIdentifier,
+            isVirtualCopy = isVirtualCopy,
+            virtualCopy = virtualCopyMetadata(photo, isVirtualCopy),
+            stack = stackMetadata(photo),
             path = photo:getRawMetadata('path'),
             filename = photo:getFormattedMetadata('fileName'),
             rating = photo:getRawMetadata('rating'),

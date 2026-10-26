@@ -59,6 +59,8 @@ for _, key in ipairs({
     "rating", "colorNameForLabel", "pickStatus", "keywords",
     "uuid", "isVirtualCopy", "croppedDimensions", "dateTimeOriginalISO8601",
     "masterPhoto", "virtualCopies", "orientation",
+    "isInStackInFolder", "stackInFolderIsCollapsed", "stackPositionInFolder",
+    "topOfStackInFolderContainingPhoto", "stackInFolderMembers",
     -- EXIF
     "dateTimeOriginal", "dateTimeDigitized", "cameraMake", "cameraModel",
     "cameraSerialNumber", "lens", "isoSpeedRating", "focalLength",
