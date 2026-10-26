@@ -1066,6 +1066,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
+        dry_run: {
+          type: "boolean",
+          default: false,
+          description: "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Tables are summarized by entry count and strings over 128 characters by length and prefix. Presets preview the settings exposed by the SDK.",
+        },
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
         preset_name: {
           type: "string",
@@ -1090,6 +1095,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
+        dry_run: {
+          type: "boolean",
+          default: false,
+          description: "Preview without writes or AI recomputation. Returns setting_totals across all targets and details for at most 5 targets within a 12,000-character detail budget; detail_truncated marks omitted detail. Tables are summarized by entry count and strings over 128 characters by length and prefix. Presets preview the settings exposed by the SDK.",
+        },
         source_id: photoIdSchema("Source photo ID or file path"),
         target_ids: photoIdArray("Target photo IDs or file paths"),
         settings: {
