@@ -69,6 +69,27 @@ describe('createMcpServer', () => {
     });
   });
 
+  it('serves the bundled skill prompt with its workflow references', async () => {
+    pair = await connect({ ready: false });
+    expect(pair.client.getServerCapabilities()).toMatchObject({ prompts: {}, tools: {} });
+    const { prompts } = await pair.client.listPrompts();
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0].name).toBe('raw-photo-lightroom-preset');
+    const result = await pair.client.getPrompt({ name: prompts[0].name });
+    expect(result.messages).toEqual([{
+      role: 'user',
+      content: { type: 'text', text: expect.stringContaining('Judge color only from RAW files rendered by Lightroom/Camera Raw.') },
+    }]);
+    expect(result.messages[0].content).toMatchObject({
+      text: expect.stringContaining('# RAW-First Lightroom Workflow v2'),
+    });
+  });
+
+  it('rejects an unknown skill prompt', async () => {
+    pair = await connect();
+    await expect(pair.client.getPrompt({ name: 'unknown' })).rejects.toThrow('Unknown prompt: unknown');
+  });
+
   describe('CallTool — connection gate', () => {
     it('returns isError when plugin sockets not ready', async () => {
       pair = await connect({ ready: false });

@@ -16,7 +16,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/generate-skill.mjs && tsc",
     "check": "tsc --noEmit && tsc -p tsconfig.test.json",
     "lint": "eslint src tests",
     "watch": "tsc --watch",
