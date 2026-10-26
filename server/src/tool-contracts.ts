@@ -1134,6 +1134,41 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_process_version",
+    title: "Set process version",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.setProcessVersion",
+    description:
+      "Change photos to Lightroom's Version 1 through Version 6 process versions. Requires confirm: true because changing versions can change a photo's look. Downgrades on photos with masks are refused and reported as skipped to preserve guarded mask editing. Drives Develop photo by photo and restores the module, view source and selection by default. Returns previous_version, new_version and changed, unchanged, skipped or failed status per photo. Missing and duplicate photos are skipped. Up to 100 photos; stops after about 240 seconds and returns remaining_ids for another call.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
+        version: { type: "string", enum: ["Version 1", "Version 2", "Version 3", "Version 4", "Version 5", "Version 6"] },
+        confirm: { type: "boolean", const: true },
+        restore_selection: { type: "boolean", description: "Restore module, view source and selection (default true)" },
+      },
+      required: ["photo_ids", "version", "confirm"],
+    },
+  },
+  {
+    name: "create_virtual_copies",
+    title: "Create virtual copies",
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+    luaHandler: "HandlerVirtualCopies.create",
+    description: "Create one virtual copy per distinct photo, up to 25 photos per call. Optional copy_name names each copy. Returns copies with photo_id, master_id and copy_id, plus missing IDs. Use copy_id for subsequent edits. Restores the previous photo selection and view source. Repeating the call creates additional copies; an error can leave copies created before the failure.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 25 },
+        copy_name: { type: "string", minLength: 1, pattern: "\\S", description: "Name for each new virtual copy" },
+      },
+      required: ["photo_ids"],
+    },
+  },
+  {
     name: "list_develop_snapshots",
     title: "List develop snapshots",
     annotations: { readOnlyHint: true, openWorldHint: false },
