@@ -3,6 +3,14 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('bounds virtual-copy batches and accepts an optional nonblank copy name', () => {
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914, '/a.jpg'] })).toBeNull();
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: 'Experiment' })).toBeNull();
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [] })).toContain('photo_ids');
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: Array.from({ length: 26 }, () => 914) })).toContain('photo_ids');
+    expect(validateToolArgs('create_virtual_copies', { photo_ids: [914], copy_name: ' ' })).toContain('copy_name');
+  });
+
   it('apply_auto_adjustments requires tone or white_balance to be true', () => {
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914] })).not.toBeNull();
     expect(validateToolArgs('apply_auto_adjustments', { photo_ids: [914], tone: false, white_balance: false })).not.toBeNull();
@@ -39,6 +47,18 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
     expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 3 })).toBeNull();
     expect(validateToolArgs('search_photos', {})).toBeNull();
+  });
+
+  it('set_process_version accepts only named versions and explicit confirmation', () => {
+    const args = { photo_ids: [914], version: 'Version 6', confirm: true };
+    for (let version = 1; version <= 6; version++) {
+      expect(validateToolArgs('set_process_version', { ...args, version: `Version ${version}` })).toBeNull();
+    }
+    for (const version of ['Version 7', '2012']) {
+      expect(validateToolArgs('set_process_version', { ...args, version })).toContain('version');
+    }
+    expect(validateToolArgs('set_process_version', { ...args, confirm: false })).toContain('confirm');
+    expect(validateToolArgs('set_process_version', { ...args, photo_ids: Array.from({ length: 101 }, () => '1') })).toContain('photo_ids');
   });
 
   it('bounds apply_denoise amount and batch size', () => {

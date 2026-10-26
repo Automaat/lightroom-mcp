@@ -12,6 +12,7 @@
   },
   "files": [
     "dist",
+    "LightroomMCP.lrplugin",
     "README.md",
     "LICENSE"
   ],
@@ -24,6 +25,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage --runInBand",
     "prepare": "npm run build",
+    "prepack": "node scripts/stage-plugin.mjs",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

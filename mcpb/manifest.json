@@ -2,6 +2,7 @@
   "manifest_version": "0.3",
   "name": "lightroom-mcp",
   "display_name": "Lightroom Classic",
+  "icon": "icon.png",
   "version": "0.25.0",
   "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
   "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
@@ -155,6 +156,10 @@
       "description": "Set Develop settings directly on a photo."
     },
     {
+      "name": "set_process_version",
+      "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
+    },
+    {
       "name": "apply_auto_adjustments",
       "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
     },
@@ -249,6 +254,10 @@
     {
       "name": "list_develop_snapshots",
       "description": "List saved develop snapshots for a photo"
+    },
+    {
+      "name": "create_virtual_copies",
+      "description": "Create virtual copies and restore the previous selection"
     },
     {
       "name": "create_develop_snapshot",
