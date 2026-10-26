@@ -469,7 +469,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     name: "get_photo_metadata",
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings. developSettings holds the basic panel, HSL (hsl), tone curves and parametric curve, plus lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups, each keyed by the SDK names set_develop_settings takes, so every key it writes reads back. A group is omitted when the photo has none of its settings",
+      "Get detailed metadata for a specific photo: keywords (names, plus keywordPaths as full hierarchy paths), EXIF, title/caption/headline, GPS (latitude/longitude/altitude), IPTC location (sublocation/city/stateProvince/country/isoCountryCode), copyright, and develop settings. developSettings reads back every key set_develop_settings writes. The basic panel, tone curves and parametric curve use camelCase names (exposure, toneCurve, parametricShadows, ...). The hsl, lens, transform, crop, detail (sharpening, noise reduction), effects (vignette, grain) and parametricSplits groups use the SDK names set_develop_settings takes, and a group is omitted when the photo has none of its settings",
     inputSchema: {
       type: "object",
       additionalProperties: false,

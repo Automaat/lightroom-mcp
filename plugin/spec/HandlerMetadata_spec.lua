@@ -133,6 +133,53 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         )
     end)
 
+    local EXPECTED_SDK_GROUPS = {
+        lens = { "LensProfileEnable", "LensManualDistortionAmount" },
+        transform = {
+            "PerspectiveUpright", "PerspectiveVertical", "PerspectiveHorizontal",
+            "PerspectiveRotate", "PerspectiveScale", "PerspectiveAspect",
+        },
+        crop = { "CropTop", "CropLeft", "CropBottom", "CropRight", "CropAngle" },
+        detail = {
+            "Sharpness", "SharpenRadius", "SharpenDetail", "SharpenEdgeMasking",
+            "LuminanceSmoothing", "LuminanceNoiseReductionDetail",
+            "LuminanceNoiseReductionContrast", "ColorNoiseReduction",
+            "ColorNoiseReductionDetail", "ColorNoiseReductionSmoothness",
+        },
+        effects = {
+            "PostCropVignetteAmount", "PostCropVignetteMidpoint", "PostCropVignetteRoundness",
+            "PostCropVignetteFeather", "PostCropVignetteStyle",
+            "GrainAmount", "GrainSize", "GrainFrequency",
+        },
+        parametricSplits = { "ParametricShadowSplit", "ParametricMidtoneSplit", "ParametricHighlightSplit" },
+    }
+
+    for field, keys in pairs(EXPECTED_SDK_GROUPS) do
+        it("puts exactly the " .. field .. " settings in the " .. field .. " group", function()
+            local settings, expected = {}, {}
+            for index, key in ipairs(keys) do
+                settings[key] = index
+                expected[key] = index
+            end
+            local photo = helper.fakePhoto({
+                id = "47",
+                path = "/p/group.jpg",
+                fileName = "group.jpg",
+                developSettings = settings,
+            })
+            local _, Handler = setup({ photo })
+
+            local d = Handler.getPhotoMetadata({ photo_id = "47" }).developSettings
+
+            assert.are.same(expected, d[field])
+            for otherField in pairs(EXPECTED_SDK_GROUPS) do
+                if otherField ~= field then
+                    assert.is_nil(d[otherField])
+                end
+            end
+        end)
+    end
+
     it("omits SDK develop groups when none of their settings are present", function()
         local photo = helper.fakePhoto({
             id = "46",
