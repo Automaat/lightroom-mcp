@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local LrTasks = import 'LrTasks'
 
 local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
@@ -7,7 +8,7 @@ local Log = require 'Log'
 local MetadataHandler = {}
 
 local function accessibilityText(photo, key)
-    local ok, value = pcall(photo.getRawMetadata, photo, key)
+    local ok, value = LrTasks.pcall(function() return photo:getRawMetadata(key) end)
     if ok and value ~= "" then return value end
     return nil
 end
@@ -476,8 +477,9 @@ function MetadataHandler.setMetadata(args)
         if entry.photo then
             for _, change in ipairs(changes) do
                 if change.accessibility then
-                    local ok = pcall(entry.photo.getRawMetadata, entry.photo, change.key)
+                    local ok, err = LrTasks.pcall(function() return entry.photo:getRawMetadata(change.key) end)
                     if not ok then
+                        Log.warn("Accessibility metadata preflight failed: " .. tostring(err))
                         error("Accessibility text requires Lightroom Classic 13.2 or later")
                     end
                 end
@@ -490,7 +492,9 @@ function MetadataHandler.setMetadata(args)
             if entry.photo then
                 for _, change in ipairs(changes) do
                     if change.accessibility then
-                        local ok, err = pcall(entry.photo.setRawMetadata, entry.photo, change.key, change.value)
+                        local ok, err = LrTasks.pcall(function()
+                            entry.photo:setRawMetadata(change.key, change.value)
+                        end)
                         if not ok then
                             error("Accessibility text requires Lightroom Classic 13.2 or later: " .. tostring(err))
                         end

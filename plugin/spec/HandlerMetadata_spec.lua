@@ -4,6 +4,7 @@ local function setup(photos)
     local catalog = helper.fakeCatalog({ photos = photos or {} })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
+        LrTasks = { pcall = pcall },
         LrLogger = helper.defaultLrLogger(),
     })
     package.loaded.HandlerMetadata = nil
