@@ -440,7 +440,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerSearch.searchPhotos",
     description:
-      "Search for photos in Lightroom catalog by criteria (paginated, default limit 100). Providing at least one filter (filename, keywords, rating, or date) significantly improves performance on large catalogs.",
+      "Search photos using intersecting Library filters (paginated, default limit 100): filename, keywords, rating, capture date, camera, lens, ISO, focal length, flag, color label, edited status, file type and folder. Provide at least one filter to improve performance on large catalogs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -455,6 +455,15 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         start_date: dateStringSchema("Start date (YYYY-MM-DD)"),
         end_date: dateStringSchema("End date (YYYY-MM-DD)"),
+        camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
+        lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
+        iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
+        focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
+        flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
+        color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
+        edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
+        file_type: { type: "string", enum: ["DNG", "RAW", "JPG", "TIFF", "PNG", "PSD", "VIDEO", "PSB", "AVIF", "JXL"], description: "Lightroom file format; camera raw formats use RAW" },
+        folder: { type: "string", minLength: 1, pattern: "\\S", description: "Folder text, including parent folders shown in Lightroom's Folders panel (contains all words)" },
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
@@ -1184,6 +1193,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         snapshot_id: { type: "string", minLength: 1, description: "Snapshot id returned for this photo" },
       },
       required: ["photo_id", "snapshot_id"],
+    },
+  },
+  {
+    name: "apply_auto_adjustments",
+    title: "Apply auto adjustments",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.applyAutoAdjustments",
+    description:
+      "Apply Lightroom's Auto Tone, Auto White Balance, or both to up to 100 photos. Set tone or white_balance to true; omitted flags are false. Opens each photo in Develop and waits for its settings to settle, then restores the user's module, view source and selection. Reports applied, unchanged, skipped or failed per photo, with a reason for each non-applied result. Missing and duplicate photos are skipped. One Develop-driving call runs at a time. Stops after about 240 seconds with complete false and remaining_ids to retry.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_ids: { ...photoIdArray("Photo IDs or file paths"), maxItems: 100 },
+        tone: { type: "boolean", description: "Apply Lightroom Auto Tone (default false)" },
+        white_balance: { type: "boolean", description: "Apply Lightroom Auto White Balance (default false)" },
+      },
+      required: ["photo_ids"],
+      anyOf: [
+        { required: ["tone"], properties: { tone: { const: true } } },
+        { required: ["white_balance"], properties: { white_balance: { const: true } } },
+      ],
     },
   },
   {

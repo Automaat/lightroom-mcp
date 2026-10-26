@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lightroom": {
+      "command": "npx",
+      "args": ["-y", "@mskalski/lightroom-mcp"]
+    }
+  }
+}
