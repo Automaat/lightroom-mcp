@@ -192,6 +192,14 @@
       "description": "Set Develop settings directly on a photo."
     },
     {
+      "name": "get_lens_blur",
+      "description": "Read Lens Blur state and controls on one photo (Lightroom Classic 13.3+)."
+    },
+    {
+      "name": "set_lens_blur",
+      "description": "Set Lens Blur controls with ordered activation and saved readback (Lightroom Classic 13.3+)."
+    },
+    {
       "name": "set_process_version",
       "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
     },
