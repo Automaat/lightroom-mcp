@@ -1043,6 +1043,7 @@ local function denoiseSetup(opts)
         selections = {}, enhance = {}, amounts = {}, switched = 0, modules = {}, sources = {}, selectNone = 0,
     }
     local Handler
+    local pendingAuto, pendingAutoWhiteBalance
     local controller = {
         getEnhancePanelState = function()
             if module ~= "develop" or opts.panelUnavailable then return nil end
@@ -1066,6 +1067,25 @@ local function denoiseSetup(opts)
             saveDenoise(active, amount)
         end,
     }
+    controller.setAutoTone = function()
+        if opts.autoError then error(opts.autoError) end
+        if opts.onAuto then opts.onAuto(Handler, clock) end
+        if opts.autoDelay then
+            pendingAuto = { photo = active, at = clock.now + opts.autoDelay }
+        elseif not opts.autoUnchanged then
+            settingsOf[active].Exposure2012 = 1.25
+        end
+        calls.autoTone = (calls.autoTone or 0) + 1
+    end
+    controller.setAutoWhiteBalance = function()
+        if opts.autoWhiteBalanceDelay then
+            pendingAutoWhiteBalance = { photo = active, at = clock.now + opts.autoWhiteBalanceDelay }
+        elseif not opts.autoUnchanged then
+            settingsOf[active].Temperature = 5200
+            settingsOf[active].Tint = 12
+        end
+        calls.autoWhiteBalance = (calls.autoWhiteBalance or 0) + 1
+    end
     if opts.beforeLrC15 then controller.getEnhancePanelState = nil end
     local view = {
         getCurrentModuleName = function() return module end,
@@ -1079,6 +1099,15 @@ local function denoiseSetup(opts)
         pcall = pcall,
         sleep = function(seconds)
             clock.now = clock.now + seconds
+            if pendingAuto and clock.now >= pendingAuto.at then
+                settingsOf[pendingAuto.photo].Exposure2012 = 1.25
+                pendingAuto = nil
+            end
+            if pendingAutoWhiteBalance and clock.now >= pendingAutoWhiteBalance.at then
+                settingsOf[pendingAutoWhiteBalance.photo].Temperature = 5200
+                settingsOf[pendingAutoWhiteBalance.photo].Tint = 12
+                pendingAutoWhiteBalance = nil
+            end
             if autoSelectPending then
                 autoSelectPending = false
                 active = photos[1]
@@ -1124,7 +1153,7 @@ local function denoiseSetup(opts)
         dropNextSelection = opts.dropSelectionAfterSourceSwitch or false
         autoSelectPending = opts.autoSelectAfterSourceSwitch or false
     end
-    return Handler, calls
+    return Handler, calls, photos, clock
 end
 
 local function errorOf(fn)
@@ -1354,6 +1383,106 @@ describe("HandlerDevelop.applyDenoise", function()
         assert.truthy(errorOf(function()
             Handler.applyDenoise({ photo_ids = { "1" }, amount = 30, restore_selection = "no" })
         end):find("restore_selection must be a boolean", 1, true))
+        assert.are.equal(0, calls.switched)
+    end)
+end)
+
+describe("HandlerDevelop.applyAutoAdjustments", function()
+    it("applies requested operations and restores the module and selected photo", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" }, { id = "2" } } })
+        local result = Handler.applyAutoAdjustments({ photo_ids = { "2", "1" }, tone = true, white_balance = true })
+        assert.is_true(result.success)
+        assert.are.equal(2, result.applied)
+        assert.are.equal(2, calls.autoTone)
+        assert.are.equal(2, calls.autoWhiteBalance)
+        assert.are.same({ "develop", "library" }, calls.modules)
+        assert.are.equal("1", calls.selections[#calls.selections])
+    end)
+
+    it("does not apply white balance when only tone is requested", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        assert.are.equal(1, Handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true }).applied)
+        assert.is_nil(calls.autoWhiteBalance)
+    end)
+
+    it("does not apply tone when only white balance is requested", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        assert.are.equal(1, Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true }).applied)
+        assert.is_nil(calls.autoTone)
+    end)
+
+    it("waits for a delayed Auto result before selecting another photo", function()
+        local Handler = denoiseSetup({ photos = { { id = "1" }, { id = "2" } }, autoDelay = 3 })
+        local result = Handler.applyAutoAdjustments({ photo_ids = { "1", "2" }, tone = true })
+        assert.are.equal(2, result.applied)
+    end)
+
+    for _, delay in ipairs({ "autoDelay", "autoWhiteBalanceDelay" }) do
+        it("settles both operations before moving on with " .. delay, function()
+            local opts = { photos = { { id = "1" }, { id = "2" } } }
+            opts[delay] = 3
+            local Handler, _, photos = denoiseSetup(opts)
+            local result = Handler.applyAutoAdjustments({ photo_ids = { "1", "2" }, tone = true, white_balance = true })
+            assert.are.equal(2, result.applied)
+            for _, photo in ipairs(photos) do
+                local settings = photo:getDevelopSettings()
+                assert.are.equal(1.25, settings.Exposure2012)
+                assert.are.equal(5200, settings.Temperature)
+            end
+        end)
+    end
+
+    it("reports unchanged, missing and duplicate photos with reasons", function()
+        local Handler = denoiseSetup({ photos = { { id = "1" } }, autoUnchanged = true })
+        local result = Handler.applyAutoAdjustments({ photo_ids = { "1", "404", "1" }, tone = true })
+        assert.are.equal(1, result.unchanged)
+        assert.are.equal(2, result.skipped)
+        assert.are.equal("Auto returned the current settings", result.results[1].reason)
+        assert.are.equal("photo not found", result.results[2].reason)
+        assert.are.equal("duplicate", result.results[3].reason)
+    end)
+
+    it("returns the unreached ids when the time budget expires after the first photo", function()
+        local Handler = denoiseSetup({
+            photos = { { id = "1" }, { id = "2" }, { id = "3" } },
+            onAuto = function(_, clock) clock.now = 241 end,
+        })
+        local result = Handler.applyAutoAdjustments({ photo_ids = { "1", "2", "3" }, tone = true })
+        assert.is_false(result.complete)
+        assert.is_false(result.success)
+        assert.are.equal(1, result.applied)
+        assert.are.same({ "2", "3" }, result.remaining_ids)
+    end)
+
+    it("rejects overlap through the shared Develop session lock", function()
+        local nested
+        local Handler = denoiseSetup({ photos = { { id = "1" } }, onAuto = function(handler)
+            nested = errorOf(function()
+                handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true })
+            end)
+        end })
+        assert.are.equal(1, Handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true }).applied)
+        assert.truthy(nested:find("is already running", 1, true))
+    end)
+
+    it("reports SDK failure and restores the view, releasing the lock", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } }, autoError = "Auto failed" })
+        local result = Handler.applyAutoAdjustments({ photo_ids = { "1" }, tone = true })
+        assert.are.equal(1, result.failed)
+        assert.truthy(result.results[1].reason:find("Auto failed", 1, true))
+        assert.are.same({ "develop", "library" }, calls.modules)
+        assert.are.equal(1, Handler.applyAutoAdjustments({ photo_ids = { "1" }, white_balance = true }).applied)
+    end)
+
+    it("rejects neither operation and malformed flags before opening Develop", function()
+        local Handler, calls = denoiseSetup({ photos = { { id = "1" } } })
+        for _, args in ipairs({
+            { photo_ids = { "1" } },
+            { photo_ids = { "1" }, tone = false, white_balance = false },
+            { photo_ids = { "1" }, tone = "true" },
+        }) do
+            assert.truthy(errorOf(function() Handler.applyAutoAdjustments(args) end))
+        end
         assert.are.equal(0, calls.switched)
     end)
 end)

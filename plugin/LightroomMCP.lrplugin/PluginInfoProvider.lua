@@ -236,6 +236,7 @@ local DISPATCH = {
     apply_develop_snapshot = HandlerSnapshots.apply,
     delete_develop_snapshot = HandlerSnapshots.delete,
     apply_denoise = HandlerDevelop.applyDenoise,
+    apply_auto_adjustments = HandlerDevelop.applyAutoAdjustments,
     list_masks = HandlerMasks.listMasks,
     create_gradient_mask = HandlerGradientMasks.createGradientMask,
     update_gradient_mask = HandlerGradientMasks.updateGradientMask,

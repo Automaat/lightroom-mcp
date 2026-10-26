@@ -191,6 +191,7 @@ If you'd rather drop the plugin in by hand:
 | `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |
 | `apply_develop_snapshot` | Restore a saved develop snapshot. |
 | `delete_develop_snapshot` | Delete one saved develop snapshot. |
+| `apply_auto_adjustments` | Apply Lightroom Auto Tone, Auto White Balance, or both, restoring the Develop view afterwards. |
 | `apply_denoise` | Turn on AI Denoise at an amount (LrC 15+); drives the Develop module photo by photo. |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
 | `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |

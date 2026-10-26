@@ -155,6 +155,10 @@
       "description": "Set Develop settings directly on a photo."
     },
     {
+      "name": "apply_auto_adjustments",
+      "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
+    },
+    {
       "name": "apply_denoise",
       "description": "Turn on AI Denoise at a given amount on photos."
     },
