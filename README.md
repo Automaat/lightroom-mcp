@@ -176,7 +176,7 @@ If you'd rather drop the plugin in by hand:
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright for one photo; add `sections: ["developSettings"]` for develop settings. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
-| `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_preview` | JPEG preview of one photo (raw files too), optionally cropped to a region, returned as an image. |
 | `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |

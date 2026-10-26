@@ -532,7 +532,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreview",
     description:
-      "Get a JPEG preview of a photo, returned as an image, so you can see what it shows. Lightroom renders it with the photo's current develop settings, so raw files work. size is the smallest longest edge you will accept: Lightroom returns the smallest preview it has at least that big, so the image is often larger. An image over 3.5 MB or 2000px is replaced by the next smaller preview. width and height report what came back.",
+      "Get a JPEG preview of a photo, returned as an image, so you can see what it shows. Lightroom renders it with the photo's current develop settings, so raw files work. size is the smallest longest edge you will accept: Lightroom returns the smallest preview it has at least that big, so the image is often larger. An image over 3.5 MB or 2000px is replaced by the next smaller preview. Optional region crops the rendered frame after develop crop and rotation: normalized x/y/width/height, origin top-left, x right, y down. Region calls request a larger source preview, up to size 2048, before cropping; requested_size reports that source request. width, height and bytes describe the returned image.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -543,6 +543,18 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Minimum longest edge in pixels (64-2048, default 512)",
           minimum: 64,
           maximum: 2048,
+        },
+        region: {
+          type: "object",
+          additionalProperties: false,
+          description: "Rectangle within the rendered preview, including its develop crop and displayed orientation. Pixel bounds round outward.",
+          properties: {
+            x: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+            y: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+            width: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+            height: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+          },
+          required: ["x", "y", "width", "height"],
         },
       },
       required: ["photo_id"],
