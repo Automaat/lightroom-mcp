@@ -36,6 +36,48 @@ local function setup(opts)
 end
 
 describe("HandlerExport.exportPhotos", function()
+    it("reports rising progress with the photo currently being exported", function()
+        local photos = {
+            helper.fakePhoto({ id = "1", path = "/a.jpg", fileName = "a.jpg" }),
+            helper.fakePhoto({ id = "2", path = "/b.jpg", fileName = "b.jpg" }),
+        }
+        local _, Handler, calls = setup({ photos = photos })
+        local progress = {}
+        local context = {
+            isCanceled = function() return false end,
+            report = function(_, completed, total, message)
+                progress[#progress + 1] = { completed, total, message, exported = #calls }
+            end,
+        }
+
+        Handler.exportPhotos({ photo_ids = { "1", "2" }, destination = "/out" }, context)
+
+        assert.are.same({
+            { 0, 2, "a.jpg", exported = 0 },
+            { 1, 2, "b.jpg", exported = 1 },
+            { 2, 2, "b.jpg", exported = 2 },
+        }, progress)
+    end)
+
+    it("cancel keeps finished exports and leaves later photos untouched", function()
+        local photos = {
+            helper.fakePhoto({ id = "1", path = "/a.jpg" }),
+            helper.fakePhoto({ id = "2", path = "/b.jpg" }),
+            helper.fakePhoto({ id = "3", path = "/c.jpg" }),
+            helper.fakePhoto({ id = "4", path = "/d.jpg" }),
+            helper.fakePhoto({ id = "5", path = "/e.jpg" }),
+        }
+        local _, Handler, calls = setup({ photos = photos })
+        local context = { isCanceled = function() return #calls >= 2 end, report = function() end }
+
+        local r = Handler.exportPhotos({ photo_ids = { "1", "2", "3", "4", "5" }, destination = "/out" }, context)
+
+        assert.are.equal(2, r.exported)
+        assert.is_false(r.complete)
+        assert.are.same({ "3", "4", "5" }, r.remaining_ids)
+        assert.are.equal(2, #calls)
+    end)
+
     it("exports found photos with default JPEG settings", function()
         local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
         local _, Handler, calls = setup({ photos = { p } })

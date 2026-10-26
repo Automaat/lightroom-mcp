@@ -48,7 +48,7 @@ local function absolutePath(destination)
     return destination
 end
 
-function ExportHandler.exportPhotos(args)
+function ExportHandler.exportPhotos(args, context)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
@@ -138,21 +138,35 @@ function ExportHandler.exportPhotos(args)
         exportSettings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
     end
 
-    -- Create export session
-    local exportSession = LrExportSession {
-        photosToExport = photosToExport,
-        exportSettings = exportSettings,
-    }
-
-    -- Execute export (outside the read-access block above)
-    exportSession:doExportOnCurrentTask()
-    local exportedCount = #photosToExport
+    local exportedCount = 0
+    local remainingIds = {}
+    local lastName
+    for index, photo in ipairs(photosToExport) do
+        if context and context:isCanceled() then
+            for nextIndex = index, #photosToExport do
+                remainingIds[#remainingIds + 1] = tostring(photosToExport[nextIndex].localIdentifier)
+            end
+            break
+        end
+        local name = photo:getFormattedMetadata("fileName") or tostring(photo.localIdentifier)
+        if context then context:report(exportedCount, #photosToExport, name) end
+        local exportSession = LrExportSession {
+            photosToExport = { photo },
+            exportSettings = exportSettings,
+        }
+        exportSession:doExportOnCurrentTask()
+        exportedCount = exportedCount + 1
+        lastName = name
+    end
+    if context and lastName then context:report(exportedCount, #photosToExport, lastName) end
 
     Log.info(string.format("Exported %d photos to: %s", exportedCount, destination))
 
     return {
         success = true,
         exported = exportedCount,
+        complete = #remainingIds == 0,
+        remaining_ids = #remainingIds > 0 and remainingIds or nil,
         destination = destination,
         message = string.format("Exported %d photos to %s", exportedCount, destination)
     }

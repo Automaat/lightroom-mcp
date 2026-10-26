@@ -59,6 +59,12 @@ export class McpSession {
       } catch {
         continue;
       }
+      if (message.method === "notifications/progress") {
+        for (const waiter of this.pending.values()) {
+          if (waiter.progressToken === message.params?.progressToken) waiter.onProgress?.(message.params);
+        }
+        continue;
+      }
       const waiter = this.pending.get(message.id);
       if (!waiter) continue;
       this.pending.delete(message.id);
@@ -71,30 +77,44 @@ export class McpSession {
     this.process.stdin.write(JSON.stringify(message) + "\n");
   }
 
-  rpc(method, params, timeoutMs = DEFAULT_TOOL_TIMEOUT_MS) {
+  rpc(method, params, timeoutMs = DEFAULT_TOOL_TIMEOUT_MS, { signal, onProgress, progressToken } = {}) {
     const id = this.nextId++;
+    if (signal?.aborted) return Promise.reject(new Error("Request cancelled"));
+    if (onProgress && progressToken === undefined) progressToken = `live-${id}`;
+    if (progressToken !== undefined) params = { ...params, _meta: { ...params._meta, progressToken } };
     return new Promise((resolve, reject) => {
+      const cancel = () => {
+        if (!this.pending.has(id)) return;
+        this.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id, reason: "Live test cancellation" } });
+        this.pending.get(id).reject(new Error("Request cancelled"));
+        this.pending.delete(id);
+      };
       const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", cancel);
         this.pending.delete(id);
         reject(new Error(`rpc timeout after ${timeoutMs} ms: ${method}`));
       }, timeoutMs);
       this.pending.set(id, {
+        progressToken, onProgress,
         resolve: (value) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", cancel);
           resolve(value);
         },
         reject: (error) => {
           clearTimeout(timer);
+          signal?.removeEventListener("abort", cancel);
           reject(error);
         },
       });
+      signal?.addEventListener("abort", cancel, { once: true });
       this.send({ jsonrpc: "2.0", id, method, params });
     });
   }
 
-  async tool(name, args = {}, { timeoutMs = DEFAULT_TOOL_TIMEOUT_MS } = {}) {
+  async tool(name, args = {}, { timeoutMs = DEFAULT_TOOL_TIMEOUT_MS, signal, onProgress, progressToken } = {}) {
     const startedAt = Date.now();
-    const result = await this.rpc("tools/call", { name, arguments: args }, timeoutMs);
+    const result = await this.rpc("tools/call", { name, arguments: args }, timeoutMs, { signal, onProgress, progressToken });
     const text = result?.content?.find((block) => block.type === "text")?.text ?? "";
     const image = result?.content?.find((block) => block.type === "image") ?? null;
     let data;

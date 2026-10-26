@@ -31,6 +31,45 @@ describe('Dispatcher', () => {
     });
   });
 
+  it('progress does not resolve a pending request or consume its final response', async () => {
+    const progress: unknown[] = [];
+    const pending = dispatcher.call('export_photos', {}, undefined, { onProgress: (value) => progress.push(value) });
+    const id = parseSent(sent[0]).id;
+
+    dispatcher.handleResponseLine(JSON.stringify({ progressFor: id, progress: { progress: 1, total: 2, message: 'a.jpg' } }));
+
+    expect(dispatcher.pendingCount()).toBe(1);
+    expect(progress).toEqual([{ progress: 1, total: 2, message: 'a.jpg' }]);
+    dispatcher.handleResponseLine(JSON.stringify({ id, result: { exported: 2 } }));
+    expect((await pending).result).toEqual({ exported: 2 });
+  });
+
+  it('cancel names only its active request and ignores cancellation after completion', async () => {
+    const controller = new AbortController();
+    const pending = dispatcher.call('export_photos', {}, undefined, { signal: controller.signal });
+    const id = parseSent(sent[0]).id;
+
+    controller.abort();
+
+    expect(JSON.parse(sent[1])).toEqual({ hello: 'test-token', action: 'cancel', params: { request_id: id } });
+    dispatcher.handleResponseLine(JSON.stringify({ id, result: { exported: 1 } }));
+    await pending;
+    controller.abort();
+    expect(sent).toHaveLength(2);
+  });
+
+  it('cancel after a finished call sends no control frame', async () => {
+    const controller = new AbortController();
+    const pending = dispatcher.call('export_photos', {}, undefined, { signal: controller.signal });
+    const id = parseSent(sent[0]).id;
+    dispatcher.handleResponseLine(JSON.stringify({ id, result: { exported: 1 } }));
+    await pending;
+
+    controller.abort();
+
+    expect(sent).toHaveLength(1);
+  });
+
   it('serializes the call as line-delimited JSON with id, action, params', async () => {
     const promise = dispatcher.call('list_collections', { foo: 'bar' });
     expect(sent).toHaveLength(1);

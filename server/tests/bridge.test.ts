@@ -4,7 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '../src/bridge.js';
-import { BrokerClient, BrokerServer, OWNER_LOST_MESSAGE, brokerPath, signNonce } from '../src/broker.js';
+import { BrokerClient, BrokerServer, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
 import { acquireInstanceLock, LockHeldError, type InstanceLock } from '../src/instance-lock.js';
 import type { ToolResponse } from '../src/tool-handler.js';
 
@@ -301,7 +301,7 @@ describe('Bridge', () => {
     label: string,
     started: string[],
     stopped: string[] = [],
-    call?: (name: string) => Promise<ToolResponse>,
+    call?: ToolCaller,
   ) {
     const bridge = new Bridge({
       ipcPath: ipcPath(dir),
@@ -321,6 +321,33 @@ describe('Bridge', () => {
     bridges.push(bridge);
     return bridge;
   }
+
+
+  it('forwards progress and cancel from a follower across the broker', async () => {
+    const dir = tmpDir();
+    let cancelled = false;
+    const a = makeBridge(dir, 'a', [], [], async (_name, _args, options) => {
+      options?.onProgress?.({ progress: 1, total: 2, message: 'a.jpg' });
+      await new Promise<void>((resolve) => options?.signal?.addEventListener('abort', () => {
+        cancelled = true; resolve();
+      }, { once: true }));
+      return ok('stopped after first photo');
+    });
+    const b = makeBridge(dir, 'b', []);
+    await a.start();
+    await b.start();
+    const controller = new AbortController();
+    const progress: unknown[] = [];
+
+    const pending = b.callTool('export_photos', {}, { signal: controller.signal, onProgress: (value) => {
+      progress.push(value); controller.abort();
+    } });
+
+    expect(text(await pending)).toBe('stopped after first photo');
+    expect(cancelled).toBe(true);
+    expect(progress).toEqual([{ progress: 1, total: 2, message: 'a.jpg' }]);
+    expect(b.role()).toBe('follower');
+  });
 
   it('lets a second bridge start and forwards its calls to the owner', async () => {
     const dir = tmpDir();
