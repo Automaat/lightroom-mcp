@@ -47,7 +47,7 @@ end
 -- Returns a JPEG of the photo as Lightroom renders it (develop settings
 -- applied, so raw files work), base64-encoded for the JSON response. The
 -- server turns `image` into an MCP image block.
-function PreviewHandler.getPhotoPreview(args)
+local function renderPreview(args, batchDeadline, byteLimit, strictDimensions)
     if not args.photo_id then
         error("photo_id is required")
     end
@@ -68,7 +68,8 @@ function PreviewHandler.getPhotoPreview(args)
 
     -- Wall-clock deadline across every attempt: sleeps can overshoot and the
     -- request call itself takes time, so counting sleeps undercounts.
-    local deadline = LrDate.currentTime() + TIMEOUT_SECONDS
+    local deadline = batchDeadline or (LrDate.currentTime() + TIMEOUT_SECONDS)
+    byteLimit = byteLimit or MAX_BYTES
     local function render(edge)
         -- requestJpegThumbnail is asynchronous and may call back before it
         -- returns. The request object must stay referenced until the callback
@@ -94,7 +95,7 @@ function PreviewHandler.getPhotoPreview(args)
     end
 
     local function tooBig(data)
-        if #data > MAX_BYTES then return true end
+        if #data > byteLimit then return true end
         local w, h = jpegDimensions(data)
         return w ~= nil and math.max(w, h) > MAX_EDGE
     end
@@ -106,12 +107,15 @@ function PreviewHandler.getPhotoPreview(args)
         edge = math.max(MIN_SIZE, math.floor(edge / 2))
         jpeg = render(edge)
     end
-    if #jpeg > MAX_BYTES then
+    if #jpeg > byteLimit then
         error(string.format("Preview is %d bytes, over the %d byte limit even at size %d",
-            #jpeg, MAX_BYTES, MIN_SIZE))
+            #jpeg, byteLimit, MIN_SIZE))
     end
 
     local width, height = jpegDimensions(jpeg)
+    if strictDimensions and (not width or not height or math.max(width, height) > MAX_EDGE) then
+        error("Preview must be a JPEG with a longest edge at most 2000 pixels")
+    end
     Log.info(string.format("Rendered preview for photo %s (%sx%s, %d bytes)",
         tostring(args.photo_id), tostring(width), tostring(height), #jpeg))
 
@@ -126,6 +130,41 @@ function PreviewHandler.getPhotoPreview(args)
             data = LrStringUtils.encodeBase64(jpeg),
         },
     }
+end
+
+function PreviewHandler.getPhotoPreview(args)
+    return renderPreview(args)
+end
+
+function PreviewHandler.getPhotoPreviews(args)
+    if type(args.photo_ids) ~= "table" or #args.photo_ids < 1 or #args.photo_ids > 20 then
+        error("photo_ids must contain between 1 and 20 photo IDs")
+    end
+    local deadline = LrDate.currentTime() + TIMEOUT_SECONDS
+    local previews, remaining = {}, {}
+    local bytes, budget = 0, 8 * 1024 * 1024
+    for index, id in ipairs(args.photo_ids) do
+        if LrDate.currentTime() >= deadline or bytes >= budget then
+            for rest = index, #args.photo_ids do remaining[#remaining + 1] = args.photo_ids[rest] end
+            break
+        end
+        local ok, result = LrTasks.pcall(function()
+            return renderPreview({ photo_id = id, size = args.size or 256 }, deadline, budget - bytes, true)
+        end)
+        -- A timed-out in-flight request is retried along with the untouched tail.
+        if not ok and LrDate.currentTime() >= deadline then
+            for rest = index, #args.photo_ids do remaining[#remaining + 1] = args.photo_ids[rest] end
+            break
+        end
+        if ok then
+            bytes = bytes + result.bytes
+            result.requested_id = id
+            previews[#previews + 1] = result
+        else
+            previews[#previews + 1] = { requested_id = id, error = tostring(result) }
+        end
+    end
+    return { previews = previews, complete = #remaining == 0, remaining_ids = remaining, bytes = bytes }
 end
 
 function PreviewHandler.getPhotoStats(args)

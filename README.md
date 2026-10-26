@@ -174,6 +174,7 @@ If you'd rather drop the plugin in by hand:
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
 | `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `set_gps` | Set the GPS position (decimal degrees) of photos. |
 | `set_location` | Set the IPTC location (sublocation, city, state, country, ISO code) of photos. |
@@ -249,6 +250,31 @@ The initial provider schema is version 1: `aiScore` and `aiReason` are strings
 (the tools convert the score to and from an integer). Changes to these
 persistent field definitions require a schema version bump and migration;
 incompatible field changes also require a field version bump.
+
+### First-pass cull workflow
+
+Use vision as a first-pass reject filter for clear blur, closed eyes, missed
+focus and near-duplicates. Leave star ratings of the surviving photos to the
+user; thumbnails do not reliably distinguish a four-star photo from a five.
+
+1. Collect photo IDs with `search_photos`. Read existing flags and labels with
+   `get_photo_metadata`, and private reasons with `get_ai_metadata`.
+2. Call `get_photo_previews` with at most 20 IDs at a time. The default minimum
+   edge is 256 pixels; returned JPEGs have no edge over 2000 pixels and share an
+   8 MiB byte budget. Text maps each `requested_id` to its 1-based `image_index`.
+   Inspect errors separately. Retry `remaining_ids` when `complete` is false.
+3. Propose rejects with a reason per photo and show the list to the user before
+   writing. Keep uncertain shots for review; do not reject them automatically.
+4. For approved clear failures, call `set_flag` with `flag: "reject"`. Mark
+   uncertain photos with `set_color_label` using `label: "yellow"` for
+   “needs a look”. Preserve existing labels unless the user approves replacing
+   them. Store each decision's reason with `set_ai_metadata` in its `reason`
+   field (private plug-in field `aiReason`), never as keywords.
+5. Verify flags and labels with `get_photo_metadata`, and reasons with
+   `get_ai_metadata`. Undo a reject with `set_flag` and `flag: "none"`;
+   restore the previous label and reason when undoing the whole decision.
+
+This workflow deletes nothing and removes no photos from the catalog.
 
 ### Iterative preset workflow
 

@@ -44,6 +44,17 @@ function isImagePayload(result: unknown): result is ImagePayload {
 // block. The rest of the result still comes first as JSON text, as for every
 // other tool, without the base64 data repeated in it.
 function successContent(result: unknown): ToolResponse["content"] {
+  if (typeof result === "object" && result !== null && "previews" in result
+    && Array.isArray(result.previews)) {
+    const images: Array<ToolResponse["content"][number]> = [];
+    const previews = result.previews.map((preview: unknown) => {
+      if (!isImagePayload(preview)) return preview;
+      const { image, ...rest } = preview;
+      images.push({ type: "image", data: image.data, mimeType: image.mime_type });
+      return { ...rest, image_index: images.length };
+    });
+    return [{ type: "text", text: JSON.stringify({ ...result, previews }) }, ...images];
+  }
   if (isImagePayload(result)) {
     const { image, ...rest } = result;
     return [
