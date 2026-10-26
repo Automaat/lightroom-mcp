@@ -14,6 +14,7 @@ The integration adds the missing feedback loop:
 - `get_photo_metadata`: read EXIF and every Develop key supported by `set_develop_settings`.
 - `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.
 - `set_develop_settings`: apply bounded global/HSL/detail settings.
+- `create_develop_snapshot`, `list_develop_snapshots`, `apply_develop_snapshot`, and `delete_develop_snapshot`: save and restore a photo's Develop state and manage its snapshots.
 - `export_photos`: render the actual Lightroom result for visual comparison.
 - `copy_develop_settings`: apply an approved subset to a cluster.
 - `get_develop_preset`: read exact historical preset settings.
@@ -30,7 +31,7 @@ This improves setting selection. It does not by itself create a canonical preset
 ## Current gaps
 
 - Export returns a destination and count, not exact output filenames. Export one representative per unique folder and inspect the new file.
-- No virtual-copy, snapshot, undo, reset, or restore tool.
+- No virtual-copy, undo, or reset tool.
 - Adobe's SDK creates plugin-managed presets that are hidden from the Develop panel. Use versioned names and export/import the accepted file, or create a visible canonical preset through Lightroom's UI.
 - A preset can be exported only when Lightroom exposes a backing file. Built-in presets can lack one, and the backing format is determined by Lightroom.
 - Global develop-setting allowlists do not expose Profile, Color Grading, Calibration, or global Point Color. Local Point Color is available through the mask tools above.
