@@ -532,7 +532,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_id: photoIdSchema("One photo ID or file path; supply photo_id or photo_ids, never both"),
         photo_ids: {
           ...photoIdArray("1 to 100 photo IDs or file paths; returns photos in request order and missing identifiers separately. Repeated identifiers produce repeated entries."),
           maxItems: MAX_METADATA_PHOTO_IDS,
@@ -543,7 +543,6 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Optional metadata sections to include for each photo. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
         },
       },
-      oneOf: [{ required: ["photo_id"] }, { required: ["photo_ids"] }],
     },
   },
   {
@@ -1066,7 +1065,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
         rating: {
           type: "number",
-          description: "Star rating (0-5)",
+          description: "Star rating (0-5); supply rating, flag, or both",
           minimum: 0,
           maximum: 5,
         },
@@ -1077,7 +1076,6 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_ids"],
-      anyOf: [{ required: ["rating"] }, { required: ["flag"] }],
     },
   },
   {

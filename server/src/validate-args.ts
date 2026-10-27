@@ -47,7 +47,18 @@ function describe(error: { instancePath?: string; message?: string; params?: unk
 export function validateToolArgs(name: string, args: unknown): string | null {
   const validate = validators.get(name);
   if (!validate) return null;
-  if (validate(args ?? {})) return null;
+  if (validate(args ?? {})) {
+    const params = (args ?? {}) as Record<string, unknown>;
+    // Keep root schemas compatible with Claude Code; enforce relations here.
+    if (name === "set_rating_and_flag" && params.rating === undefined && params.flag === undefined) {
+      return `Invalid arguments for ${name}: rating or flag is required`;
+    }
+    if (name === "get_photo_metadata"
+      && (params.photo_id !== undefined) === (params.photo_ids !== undefined)) {
+      return `Invalid arguments for ${name}: provide exactly one of photo_id or photo_ids`;
+    }
+    return null;
+  }
 
   const problems = (validate.errors ?? []).map(error =>
     name === "get_photo_preview" && error.instancePath === "/size"

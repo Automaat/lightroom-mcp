@@ -87,6 +87,55 @@ describe('set_rating_and_flag', () => {
   });
 });
 
+describe('client-compatible metadata selectors', () => {
+  const invalid: Array<[unknown, string]> = [
+    [{}, 'photo_id'],
+    [{ sections: ['developSettings'] }, 'photo_ids'],
+    [{ photo_id: 914, photo_ids: [915] }, 'photo_id'],
+    [{ photo_id: null }, 'photo_id'],
+    [{ photo_id: false, photo_ids: [914] }, 'photo_id'],
+    [{ photo_ids: '914' }, 'photo_ids'],
+    [{ photo_ids: [] }, 'photo_ids'],
+    [{ photo_ids: [null] }, 'photo_ids'],
+    [{ photo_ids: [914], sections: ['unknown'] }, 'sections'],
+    [false, 'object'],
+  ];
+
+  it.each(invalid)('never dispatches invalid selector combinations (%#)', async (args, field) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: {} };
+    } });
+    const result = await handler('get_photo_metadata', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(field);
+    expect(calls).toBe(0);
+  });
+
+  const photo = { id: 914, rating: 3, pickStatus: 1, title: 'Example' };
+  const batch = { photos: [photo, photo], missing: ['absent'] };
+  const valid: Array<[Record<string, unknown>, unknown]> = [
+    [{ photo_id: 914 }, photo],
+    [{ photo_id: '/a.jpg', sections: [] }, photo],
+    [{ photo_id: 914, sections: ['developSettings', 'developSettings'] }, photo],
+    [{ photo_ids: [914, '/a.jpg', 'absent'] }, batch],
+    [{ photo_ids: [914, 914], sections: ['developSettings'] }, batch],
+  ];
+
+  it.each(valid)('preserves single/batch arguments and returned metadata (%#)', async (args, metadata) => {
+    const received: unknown[] = [];
+    const handler = makeHandler({ call: async (action, params) => {
+      received.push([action, params]);
+      return { id: '1', result: metadata };
+    } });
+    const result = await handler('get_photo_metadata', args);
+    expect(result.isError).not.toBe(true);
+    expect(received).toEqual([['get_photo_metadata', args]]);
+    expect(JSON.parse(result.content[0].text)).toEqual(metadata);
+  });
+});
+
 describe('createCallToolHandler', () => {
   it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };

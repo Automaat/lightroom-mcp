@@ -118,6 +118,16 @@ describe('TOOL_DEFINITIONS', () => {
     expect(names).not.toContain('set_flag');
   });
 
+  it.each(['set_rating_and_flag', 'get_photo_metadata'])(
+    'publishes %s without root unions rejected by Claude Code', name => {
+      const schema = TOOL_DEFINITIONS.find(tool => tool.name === name)!.inputSchema;
+      expect(schema.type).toBe('object');
+      expect(schema).not.toHaveProperty('anyOf');
+      expect(schema).not.toHaveProperty('oneOf');
+      expect(schema).not.toHaveProperty('allOf');
+    },
+  );
+
   it('tool names are unique', () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
