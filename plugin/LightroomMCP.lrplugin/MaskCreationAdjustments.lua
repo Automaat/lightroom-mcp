@@ -55,15 +55,20 @@ function MaskCreationAdjustments.write(entry, requested)
     end
 end
 
+function MaskCreationAdjustments.requireLiveRanges(requested)
+    for _, item in ipairs(requested or {}) do
+        local ok, low, high = LrTasks.pcall(LrDevelopController.getRange, item.spec.sdk)
+        if ok and type(low) == "number" and type(high) == "number"
+            and (item.value < low or item.value > high) then
+            error("adjustments." .. item.name .. " is outside Lightroom's slider range; nothing was written", 0)
+        end
+    end
+end
+
 function MaskCreationAdjustments.confirm(photoId, maskId, requested)
     if requested == nil then return end
     MaskSelection.withMaskSelected(photoId, tostring(maskId), function()
         for _, item in ipairs(requested) do
-            local ok, low, high = LrTasks.pcall(LrDevelopController.getRange, item.spec.sdk)
-            if ok and type(low) == "number" and type(high) == "number"
-                and (item.value < low or item.value > high) then
-                error("adjustments." .. item.name .. " is outside Lightroom's slider range", 0)
-            end
             local confirmed = DevelopSession.waitFor(function()
                 local read, value = LrTasks.pcall(LrDevelopController.getValue, item.spec.sdk)
                 return read and type(value) == "number"

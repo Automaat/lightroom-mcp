@@ -77,6 +77,7 @@ end
 
 local function writeWithBrushCrossCheck(catalog, photo, toolName, description, build, locationOf, photoId, adjustments)
     return DevelopSession.withPhoto(toolName, catalog, photo, function()
+        MaskCreationAdjustments.requireLiveRanges(adjustments)
         return GuardedMaskWrite.apply(catalog, photo, {
             description = description,
             build = build,

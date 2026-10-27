@@ -121,6 +121,7 @@ function GradientMaskHandler.createGradientMask(args)
     local location
     local toolType = GradientGeometry.TOOL_TYPE_OF_SHAPE[request.shape]
     local written = DevelopSession.withPhoto("create_gradient_mask", catalog, photo, function()
+        MaskCreationAdjustments.requireLiveRanges(request.adjustments)
         return GuardedMaskWrite.apply(catalog, photo, {
             description = "Create gradient mask",
             build = function(entries)

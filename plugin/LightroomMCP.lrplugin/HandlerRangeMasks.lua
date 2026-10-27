@@ -151,6 +151,7 @@ function RangeMaskHandler.createRangeMask(args)
 
     local location
     local written = DevelopSession.withPhoto("create_range_mask", catalog, photo, function()
+        MaskCreationAdjustments.requireLiveRanges(adjustments)
         return GuardedMaskWrite.apply(catalog, photo, {
             description = "Create range mask",
             build = function(entries)
