@@ -526,12 +526,20 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: tooMany })).toContain('mask_ids');
   });
 
-  it('requires a photo list for delete_empty_masks', () => {
-    expect(validateToolArgs('delete_empty_masks', { photo_ids: [914, '/a.dng'] })).toBeNull();
-    expect(validateToolArgs('delete_empty_masks', {})).toContain('photo_ids');
-    expect(validateToolArgs('delete_empty_masks', { photo_ids: [] })).toContain('photo_ids');
-    expect(validateToolArgs('delete_empty_masks', { photo_ids: 914 })).toContain('photo_ids');
-    expect(validateToolArgs('delete_empty_masks', { photo_ids: [914], extra: 1 })).toContain('unknown property "extra"');
+  it('uses only a photo list for empty-mask deletion through delete_masks', () => {
+    expect(validateToolArgs('delete_masks', { photo_ids: [914, '/a.dng'] })).toBeNull();
+    expect(validateToolArgs('delete_masks', {})).toContain('photo_ids');
+    expect(validateToolArgs('delete_masks', { photo_ids: [] })).toContain('photo_ids');
+    expect(validateToolArgs('delete_masks', { photo_ids: 914 })).toContain('photo_ids');
+    expect(validateToolArgs('delete_masks', { photo_ids: [914], extra: 1 })).toContain('unknown property "extra"');
+    expect(validateToolArgs('delete_masks', { photo_ids: [914], photo_id: 914 })).toContain('oneOf');
+    for (const target of [{ mask_ids: ['m'] }, { tool_ids: ['t'] }, { all: true }]) {
+      expect(validateToolArgs('delete_masks', { photo_ids: [914], ...target })).toContain('oneOf');
+      expect(validateToolArgs('delete_masks', { photo_id: 914, photo_ids: [914], ...target })).toContain('oneOf');
+    }
+    expect(validateToolArgs('delete_masks', { photo_ids: [914], empty: true })).toContain('unknown property "empty"');
+    expect(validateToolArgs('delete_masks', { photo_ids: [true] })).toContain('photo_ids');
+    expect(validateToolArgs('delete_masks', { photo_ids: Array(1001).fill(914) })).toContain('photo_ids');
   });
 
   it('requires photo, mask and a known numeric slider for set_mask_adjustments', () => {

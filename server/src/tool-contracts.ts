@@ -26,6 +26,18 @@ const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
 const MAX_MASK_BATCH_PHOTO_IDS = 200;
 
+// Keep the client schema flat while enforcing exclusive selectors before dispatch.
+export const deleteMasksValidationSchema = {
+  oneOf: [
+    {
+      required: ["photo_id"],
+      not: { required: ["photo_ids"] },
+      oneOf: [{ required: ["mask_ids"] }, { required: ["tool_ids"] }, { required: ["all"] }],
+    },
+    { required: ["photo_ids"], maxProperties: 1 },
+  ],
+};
+
 const MASK_TYPES = ["subject", "sky", "background"] as const;
 const CREATE_MASK_TYPES = [...MASK_TYPES, "people", "landscape"] as const;
 const MASK_COMBINE_OPERATIONS = ["add", "subtract", "intersect"] as const;
@@ -1979,7 +1991,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskDelete.deleteMasks",
     description:
-      "Delete masks on one photo (Lightroom Classic 11+). Exactly one of mask_ids, tool_ids or all=true; ids from list_masks. Removing a last component removes its mask. All ids validated before deletion; unknown ids fail unchanged. Opens Develop/Masking and verifies applied/saved deletion; shared restoration rules apply. Remaining mask ids can change: call list_masks again. Returns deleted mask/tool ids and remaining mask count.",
+      "Delete mask_ids, tool_ids or all=true on one photo_id (LrC 11+), or give only photo_ids to delete tool-less masks on up to 1000 photos (LrC 14+). Ids come from list_masks; unknown ids fail unchanged, and removing a last component removes its mask. Single-photo deletion opens Develop/Masking, verifies applied/saved deletion and restores the view; remaining ids can change, so list_masks again. Empty-mask deletion preserves module/selection without Develop. Returns deleted mask/tool ids and remaining count, or photos_changed, photos_checked and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1990,40 +2002,22 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           items: { type: "string", minLength: 1 },
           minItems: 1,
           maxItems: MAX_MASK_DELETE_IDS,
-          description: "Mask ids from list_masks to delete",
+          description: "Mask ids from list_masks",
         },
         tool_ids: {
           type: "array",
           items: { type: "string", minLength: 1 },
           minItems: 1,
           maxItems: MAX_MASK_DELETE_IDS,
-          description: "Component tool ids from list_masks to delete",
+          description: "Component ids from list_masks",
         },
         all: {
           type: "boolean",
           enum: [true],
-          description: "Pass true to delete every mask on the photo",
+          description: "Delete every mask",
         },
+        photo_ids: photoIdArray("Empty masks only: photo IDs or paths"),
       },
-      required: ["photo_id"],
-      oneOf: [{ required: ["mask_ids"] }, { required: ["tool_ids"] }, { required: ["all"] }],
-    },
-  },
-  {
-    name: "delete_empty_masks",
-    toolset: "masks",
-    title: "Delete empty masks",
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    luaHandler: "HandlerMaskDelete.deleteEmptyMasks",
-    description:
-      "Delete tool-less masks on up to 1000 photos (LrC 14+). Catalog-only: preserves module/selection without opening Develop. Returns photos_changed (lost a mask), photos_checked and missing IDs.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_ids: photoIdArray("Photo IDs or file paths"),
-      },
-      required: ["photo_ids"],
     },
   },
   {

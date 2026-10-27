@@ -272,7 +272,6 @@ local DISPATCH = {
     add_brush_strokes = HandlerBrushMasks.addBrushStrokes,
     create_range_mask = HandlerRangeMasks.createRangeMask,
     delete_masks = HandlerMaskDelete.deleteMasks,
-    delete_empty_masks = HandlerMaskDelete.deleteEmptyMasks,
     set_mask_adjustments = HandlerMaskAdjustments.setMaskAdjustments,
     get_mask = HandlerMaskRead.getMask,
     invert_mask = HandlerMaskInvert.invertMask,

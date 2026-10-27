@@ -22,7 +22,7 @@ The integration adds the missing feedback loop:
 - `create_develop_preset`: capture explicit settings from a representative as a plugin-managed checkpoint.
 - `export_develop_preset`: copy an exportable backing file without overwriting.
 - `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.
-- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks`, and `delete_empty_masks`: inspect and manage local masks.
+- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, and `delete_masks`: inspect and manage local masks. Call `delete_masks` with only `photo_ids` to remove empty masks in bulk without opening Develop; use `photo_id` and exactly one of `mask_ids`, `tool_ids` or `all` for targeted deletion.
 - `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: "people"` or `type: "landscape"`: create or edit mask geometry and AI parts on supported Lightroom versions.
 - `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: ["adjustments"]`, `["curves"]` or `["point_colors"]` to read only selected kinds.
 

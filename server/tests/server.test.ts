@@ -69,7 +69,6 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   add_brush_strokes: 'destructive',
   create_range_mask: 'destructive',
   delete_masks: 'destructive',
-  delete_empty_masks: 'destructive',
   set_mask_adjustments: 'destructive',
   get_mask: 'read-only',
   invert_mask: 'destructive',
@@ -200,9 +199,9 @@ describe('createMcpServer', () => {
 
     it.each([
       ['develop', 56, ['core', 'develop']],
-      ['masks', 48, ['core', 'masks']],
-      ['develop,masks', 72, ['core', 'develop', 'masks']],
-      ['all', 72, ['core', 'develop', 'masks']],
+      ['masks', 47, ['core', 'masks']],
+      ['develop,masks', 71, ['core', 'develop', 'masks']],
+      ['all', 71, ['core', 'develop', 'masks']],
     ] as const)('toolset %s preserves contract order and definitions', async (toolsets, count, groups) => {
       pair = await connect({ toolsets });
       const first = await pair.client.listTools();
@@ -373,10 +372,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 72 tools', async () => {
+    it('returns all 71 tools', async () => {
       pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(72);
+      expect(tools).toHaveLength(71);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

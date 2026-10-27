@@ -1,6 +1,7 @@
 import { Ajv, type ValidateFunction } from "ajv";
 import type { PreviewArgs } from "./preview-region.js";
 import {
+  deleteMasksValidationSchema,
   developSettingKeysValidationSchema,
   developSettingsValidationSchema,
   TOOL_CONTRACTS,
@@ -25,9 +26,11 @@ const validators = new Map<string, ValidateFunction>(
       : ["copy_develop_settings", "create_develop_preset"].includes(contract.name)
         ? { ...(contract.inputSchema.properties?.settings as object), ...developSettingKeysValidationSchema }
         : null;
-    const schema = settings
-      ? { ...contract.inputSchema, properties: { ...contract.inputSchema.properties, settings } }
-      : contract.inputSchema;
+    const schema = contract.name === "delete_masks"
+      ? { ...contract.inputSchema, ...deleteMasksValidationSchema }
+      : settings
+        ? { ...contract.inputSchema, properties: { ...contract.inputSchema.properties, settings } }
+        : contract.inputSchema;
     return [contract.name, ajv.compile(schema)];
   }),
 );

@@ -76,7 +76,6 @@ const EXPECTED_TOOL_NAMES = [
   'add_brush_strokes',
   'create_range_mask',
   'delete_masks',
-  'delete_empty_masks',
   'set_mask_adjustments',
   'get_mask',
   'invert_mask',
@@ -106,8 +105,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 72 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(72);
+  it('contains exactly 71 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(71);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -259,8 +258,6 @@ describe('tool required fields', () => {
     ['create_brush_mask', ['photo_id', 'strokes']],
     ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
     ['create_range_mask', ['photo_id', 'type']],
-    ['delete_masks', ['photo_id']],
-    ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
     ['get_mask', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
@@ -280,12 +277,30 @@ describe('tool required fields', () => {
     'list_keywords',
     'list_develop_presets',
     'get_develop_preset',
+    'delete_masks',
   ])(
     '%s has no required fields',
     (name) => {
       expect(toolRequired(name)).toBeUndefined();
     },
   );
+});
+
+describe('delete_masks schema', () => {
+  it('keeps root selector unions private for client compatibility', () => {
+    const schema = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!.inputSchema;
+    for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(schema).not.toHaveProperty(keyword);
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toHaveProperty('photo_id');
+    expect(schema.properties).toHaveProperty('photo_ids');
+  });
+
+  it('is smaller than the two deletion definitions it replaces', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!;
+    expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(936);
+    expect(JSON.stringify(tool).length).toBeLessThan(1887);
+    expect(TOOL_DEFINITIONS.some(tool => tool.name === 'delete_empty_masks')).toBe(false);
+  });
 });
 
 describe('set_keywords schema', () => {
@@ -321,7 +336,7 @@ describe('photo array schema', () => {
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
     ['match_photo_style', 'target_ids'],
-    ['delete_empty_masks', 'photo_ids'],
+    ['delete_masks', 'photo_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
     const properties = tool?.inputSchema.properties as Record<
