@@ -415,6 +415,18 @@ const developSettingsProperties = Object.fromEntries(
   ]),
 );
 
+export const developSettingsValidationSchema = {
+  type: "object",
+  properties: developSettingsProperties,
+  additionalProperties: false,
+  minProperties: 1,
+};
+
+export const developSettingKeysValidationSchema = {
+  type: "array",
+  items: { type: "string", enum: [...DEVELOP_SETTING_KEYS] },
+};
+
 const presetSelectorProperties = {
   preset_name: { type: "string", minLength: 1, description: "Develop preset name" },
   preset_uuid: { type: "string", minLength: 1, description: "Develop preset UUID (preferred)" },
@@ -511,12 +523,17 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read photo keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read photo keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        sections: {
+          type: "array",
+          items: { type: "string", enum: ["developSettings"] },
+          description: "Optional metadata sections to include. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
+        },
       },
       required: ["photo_id"],
     },
@@ -1195,11 +1212,16 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "List develop presets",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.listDevelopPresets",
-    description: "List Lightroom-visible Develop presets and plugin-managed preset checkpoints",
+    description: "List Lightroom-visible Develop presets and plugin-managed checkpoints (paginated, default limit 100). Filter by name or folder before paging. Returns name, folder, scope and uuid; use get_develop_preset for backing-file metadata. count is the total matches; has_more indicates another page.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      properties: {},
+      properties: {
+        limit: { type: "number", minimum: 0, description: "Max presets to return (default 100; floored)" },
+        offset: { type: "number", minimum: 0, description: "Number of matching presets to skip (default 0; floored)" },
+        query: { type: "string", minLength: 1, description: "Keep presets whose name contains this text, ignoring case" },
+        folder: { type: "string", minLength: 1, description: "Exact, case-sensitive folder name, including Plugin Develop Presets for checkpoints" },
+      },
     },
   },
   {
@@ -1247,11 +1269,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         settings: {
           type: "array",
-          items: { type: "string", enum: [...DEVELOP_SETTING_KEYS] },
+          items: { type: "string" },
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
           uniqueItems: true,
-          description: "Explicit Lightroom SDK setting keys to capture from the source photo",
+          description: "Explicit SDK setting keys from set_develop_settings to capture from the source photo",
         },
       },
       required: ["photo_id", "preset_name", "settings"],
@@ -1335,12 +1357,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "array",
           items: {
             type: "string",
-            enum: [...DEVELOP_SETTING_KEYS],
           },
           minItems: 1,
           maxItems: DEVELOP_SETTING_KEYS.length,
           description:
-            "Optional whitelist of SDK setting keys (e.g., Exposure2012, Contrast2012, HueAdjustmentOrange). Omit to copy all.",
+            "Optional whitelist of SDK setting keys from set_develop_settings. Omit to copy all.",
         },
       },
       required: ["source_id", "target_ids"],
@@ -1377,8 +1398,10 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
         settings: {
           type: "object",
-          properties: developSettingsProperties,
-          additionalProperties: false,
+          propertyNames: { enum: [...DEVELOP_SETTING_KEYS] },
+          additionalProperties: {
+            oneOf: [...scalarDevelopSettingValueSchema.oneOf, pointCurveDevelopSettingValueSchema],
+          },
           minProperties: 1,
           description:
             "Allowlisted SDK setting key/value pairs (e.g., {\"Exposure2012\": 0.5, \"SaturationAdjustmentOrange\": -10})",

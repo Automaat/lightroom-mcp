@@ -144,6 +144,12 @@ function MetadataHandler.getPhotoMetadata(args)
         error("photo_id is required")
     end
 
+    local includeDevelopSettings = false
+    for _, section in ipairs(args.sections or {}) do
+        if section ~= "developSettings" then error("Unknown sections entry: " .. tostring(section)) end
+        includeDevelopSettings = true
+    end
+
     local catalog = LrApplication.activeCatalog()
     local photoData = nil
 
@@ -169,7 +175,7 @@ function MetadataHandler.getPhotoMetadata(args)
         end
 
         -- Get develop settings
-        local developSettings = photo:getDevelopSettings()
+        local developSettings = includeDevelopSettings and photo:getDevelopSettings() or nil
 
         -- GPS is a raw {latitude, longitude} table; omit the group when absent
         -- or when present but carrying no coordinates.
@@ -242,7 +248,7 @@ function MetadataHandler.getPhotoMetadata(args)
                 infoUrl = photo:getFormattedMetadata('copyrightInfoUrl'),
                 creatorUrl = photo:getFormattedMetadata('creatorUrl'),
             }),
-            developSettings = addSdkDevelopGroups({
+            developSettings = developSettings and addSdkDevelopGroups({
                 whiteBalance = developSettings.WhiteBalance,
                 temperature = developSettings.Temperature,
                 tint = developSettings.Tint,

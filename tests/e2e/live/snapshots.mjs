@@ -8,7 +8,7 @@ const otherId = requireFixtureId(marker, "orient_6");
 const prefix = `lrmcp-snapshots-${Date.now()}`;
 const created = new Set();
 const tool = async (name, args) => (await session.toolOrThrow(name, args)).data;
-const metadata = await tool("get_photo_metadata", { photo_id });
+const metadata = await tool("get_photo_metadata", { photo_id, sections: ["developSettings"] });
 const initial = metadata.developSettings.exposure;
 const before = await tool("list_develop_snapshots", { photo_id });
 let failure;
@@ -22,7 +22,7 @@ try {
   await tool("set_develop_settings", { photo_id, settings: { Exposure2012: -1 } });
   assert.equal((await session.tool("create_develop_snapshot", { photo_id, name: first.name })).isError, true);
   await tool("apply_develop_snapshot", { photo_id, snapshot_id: first.id });
-  const restored = await tool("get_photo_metadata", { photo_id });
+  const restored = await tool("get_photo_metadata", { photo_id, sections: ["developSettings"] });
   assert.equal(restored.developSettings.exposure, 1);
   for (const key of ["rating", "pickStatus", "keywords", "title", "caption"]) {
     assert.deepEqual(restored[key], metadata[key], `snapshot changed ${key}`);
@@ -33,7 +33,7 @@ try {
   created.add(replacement.id);
   assert.equal(replacement.name, second.name);
   await tool("apply_develop_snapshot", { photo_id, snapshot_id: replacement.id });
-  assert.equal((await tool("get_photo_metadata", { photo_id })).developSettings.exposure, -1);
+  assert.equal((await tool("get_photo_metadata", { photo_id, sections: ["developSettings"] })).developSettings.exposure, -1);
   for (const action of ["apply", "delete"]) {
     for (const args of [
       { photo_id, snapshot_id: "missing-snapshot" },
