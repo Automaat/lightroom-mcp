@@ -21,7 +21,6 @@ local ACTIONS = { "add", "update", "delete", "clear" }
 local ACTION_LOOKUP = {}
 for _, action in ipairs(ACTIONS) do ACTION_LOOKUP[action] = true end
 
-local READ_CONTROLLER_FUNCTIONS = { "getValue", "getSelectedPointColorSwatchIndex" }
 local EDIT_CONTROLLER_FUNCTIONS = {
     "getValue",
     "getSelectedPointColorSwatchIndex",
@@ -292,25 +291,8 @@ function MaskPointColorsHandler.editMaskPointColors(args)
     }
 end
 
-function MaskPointColorsHandler.getMaskPointColors(args)
-    local photoId, maskId = MaskSelection.requireTarget(args)
-    requireSupport("get_mask_point_colors", READ_CONTROLLER_FUNCTIONS)
-    local catalog, photo = MaskSelection.resolvePhoto(photoId)
-
-    local swatches = DevelopSession.withPhoto("get_mask_point_colors", catalog, photo, function()
-        return MaskSelection.withMaskSelected(photoId, maskId, function()
-            return MaskPointColors.indexed(readSwatches())
-        end)
-    end)
-
-    Log.info(string.format("Read %d Point Color swatches of mask %s on photo %s", #swatches, maskId, photoId))
-
-    return {
-        success = true,
-        photo_id = photoId,
-        mask_id = maskId,
-        swatches = swatches,
-    }
+function MaskPointColorsHandler.readSelected()
+    return { swatches = MaskPointColors.indexed(readSwatches()) }
 end
 
 return MaskPointColorsHandler

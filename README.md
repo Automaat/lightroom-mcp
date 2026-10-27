@@ -170,6 +170,10 @@ If you'd rather drop the plugin in by hand:
 
 ## Tools
 
+By default, the server exposes only core catalog and metadata tools. Set `LIGHTROOM_MCP_TOOLSETS` in your MCP client’s server environment to `develop`, `masks`, `develop,masks`, or `all` to add those tools. Core stays enabled. Restart the server after changing the setting; its tool list stays fixed for the session, and disabled tools cannot be called. In the desktop bundle, use **Enabled toolsets**.
+
+The Develop toolset includes presets, settings, snapshots, virtual copies, style summaries, Lens Blur, Denoise and Remove spots. The masks toolset includes all local mask tools. The table below lists every tool, including opt-in tools.
+
 | Tool | What it does |
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
@@ -199,9 +203,8 @@ If you'd rather drop the plugin in by hand:
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `rename_keyword` | Rename a keyword everywhere it is used. |
 | `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
-| `set_rating` | Set 0-5 star rating on photos. |
+| `set_rating_and_flag` | Set a 0-5 star rating, a pick flag (`pick`, `reject`, `none`), or both in one write. |
 | `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
-| `set_flag` | Flag photos as pick or reject, or remove the flag. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
@@ -230,23 +233,19 @@ If you'd rather drop the plugin in by hand:
 | `update_spot` | Change a Heal spot's uppercase `params.Opacity` from 0 to 1 |
 | `delete_spot` | Delete one Remove spot by index with `confirm: true` |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
-| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `update_gradient_mask` | Move or reshape an existing linear or radial gradient by tool id; same guarded write. |
-| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
-| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `delete_masks` | With `photo_id`, delete masks or components by id, or all masks (LrC 11+); unknown ids delete nothing; briefly opens Develop. With only `photo_ids`, delete empty masks from up to 1000 photos without opening Develop or changing selection (LrC 14+). |
 | `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ...) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |
-| `get_mask_adjustments` | Read a mask's current local slider values by mask id (LrC 11+); briefly opens the photo in Develop. |
+| `get_mask` | Read local adjustments, curves and Point Color in one Develop session; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). Returns supported kinds and named errors for unsupported versions. |
 | `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original (LrC 11.4+); briefly opens the photo in Develop. |
-| `create_mask` | Create a Subject, Sky or Background mask with optional local adjustments and get its id (LrC 11+); briefly opens the photo in Develop. |
+| `create_mask` | Create Subject/Sky/Background masks (LrC 11+) with optional adjustments, or People parts/Landscape categories (guarded LrC 15.6 / process 15.4) with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`. Returns mask ids; missing AI parts leave no new masks. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
 | `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each mask recomputed for its own photo; opens only the first photo in Develop; guarded write, LrC 15.6 only. |
-| `create_people_mask` | Create People masks for chosen parts (skin, hair, eyes, lips, clothes, ...) covering all people, and get their ids; one person cannot be chosen; guarded write, LrC 15.6 only; no Develop switch; fails and leaves nothing if there is no person or part. |
-| `create_landscape_mask` | Create Landscape masks for chosen categories (sky, water, vegetation, mountains, ...) and get their ids; same guarded write and no-leftover rule; no Develop switch. |
 | `set_mask_curves` | Set a mask's local tone curve per channel (main, red, green, blue) by mask id (LrC 12.3+); briefly opens the photo in Develop. |
-| `get_mask_curves` | Read a mask's local tone curve per channel by mask id (LrC 12.3+); briefly opens the photo in Develop. |
 | `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id (LrC 13.2+); briefly opens the photo in Develop. |
-| `get_mask_point_colors` | Read a mask's local Point Color swatches by mask id (LrC 13.2+); briefly opens the photo in Develop. |
 | `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id and get the component's id (LrC 11+); briefly opens the photo in Develop. |
 
 Full schemas and parameter docs: [`server/src/list-tools-handler.ts`](server/src/list-tools-handler.ts).
@@ -287,13 +286,13 @@ user; thumbnails do not reliably distinguish a four-star photo from a five.
    Inspect errors separately. Retry `remaining_ids` when `complete` is false.
 3. Propose rejects with a reason per photo and show the list to the user before
    writing. Keep uncertain shots for review; do not reject them automatically.
-4. For approved clear failures, call `set_flag` with `flag: "reject"`. Mark
+4. For approved clear failures, call `set_rating_and_flag` with `flag: "reject"`. Mark
    uncertain photos with `set_color_label` using `label: "yellow"` for
    “needs a look”. Preserve existing labels unless the user approves replacing
    them. Store each decision's reason with `set_ai_metadata` in its `reason`
    field (private plug-in field `aiReason`), never as keywords.
 5. Verify flags and labels with `get_photo_metadata`, and reasons with
-   `get_ai_metadata`. Undo a reject with `set_flag` and `flag: "none"`;
+   `get_ai_metadata`. Undo a reject with `set_rating_and_flag` and `flag: "none"`;
    restore the previous label and reason when undoing the whole decision.
 
 This workflow deletes nothing and removes no photos from the catalog.
@@ -383,6 +382,7 @@ Env vars:
 | --- | --- | --- |
 | `LIGHTROOM_MCP_REQUEST_PORT` | `58763` | Plugin request port. |
 | `LIGHTROOM_MCP_RESPONSE_PORT` | `58764` | Plugin response port. |
+| `LIGHTROOM_MCP_TOOLSETS` | `core` | Comma-separated `core`, `develop`, `masks`, or `all`; core is always enabled. |
 | `LIGHTROOM_MCP_TOKEN_PATH` | `~/.config/lightroom-mcp/token` | Auth token file. |
 
 If you change ports on the server side, change them in **Plug-in Manager → Lightroom MCP** to match.

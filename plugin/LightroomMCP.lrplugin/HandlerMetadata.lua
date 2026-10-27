@@ -368,13 +368,7 @@ function MetadataHandler.setGps(args)
     return {
         success = true,
         updated = updatedCount,
-        latitude = args.latitude,
-        longitude = args.longitude,
-        altitude = args.altitude,
-        altitude_cleared = clearAltitude or nil,
         missing = missingIds,
-        message = string.format("Set GPS for %d photos (%d ids not found)",
-            updatedCount, missingCount)
     }
 end
 
@@ -442,8 +436,6 @@ function MetadataHandler.setLocation(args)
         updated = updatedCount,
         fields = fields,
         missing = missingIds,
-        message = string.format("Set location for %d photos (%d ids not found)",
-            updatedCount, missingCount)
     }
 end
 
@@ -541,8 +533,6 @@ function MetadataHandler.setMetadata(args)
         updated = updatedCount,
         fields = fields,
         missing = missingIds,
-        message = string.format("Set metadata for %d photos (%d ids not found)",
-            updatedCount, missingCount)
     }
 end
 

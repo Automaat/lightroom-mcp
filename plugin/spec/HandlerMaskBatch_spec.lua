@@ -255,7 +255,8 @@ describe("HandlerMaskBatch.createMaskBatch", function()
 
         assert.is_true(r.success)
         assert.is_true(r.complete)
-        assert.are.equal("sky", r.type)
+        assert.is_nil(r.type)
+        assert.is_nil(r.message)
         assert.are.equal(3, r.created)
         assert.are.equal(0, r.failed)
         assert.are.equal(0, r.not_attempted)
@@ -328,7 +329,7 @@ describe("HandlerMaskBatch.createMaskBatch", function()
             adjustments = { exposure = -1.5, contrast = 20 },
         })
 
-        assert.are.same({ exposure = -1.5, contrast = 20 }, r.adjustments)
+        assert.is_nil(r.adjustments)
         for _, id in ipairs({ "1", "2", "3" }) do
             assert.are.equal(-1.5, entriesOf(world, id)[1]["Locallocal_Exposure"])
             assert.are.equal(20, entriesOf(world, id)[1]["Locallocal_Contrast"])

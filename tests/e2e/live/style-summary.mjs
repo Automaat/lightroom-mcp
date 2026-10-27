@@ -25,8 +25,8 @@ try {
   for (const photo of top.photos) {
     if (String(photo.id) !== String(photoId)) changedRatings.push(photo.id);
   }
-  if (changedRatings.length) await tool("set_rating", { photo_ids: changedRatings, rating: 4 });
-  await tool("set_rating", { photo_ids: [photoId], rating: 5 });
+  if (changedRatings.length) await tool("set_rating_and_flag", { photo_ids: changedRatings, rating: 4 });
+  await tool("set_rating_and_flag", { photo_ids: [photoId], rating: 5 });
   exposureChanged = true;
   await tool("set_develop_settings", { photo_id: photoId, settings: { Exposure2012: 0.5 } });
   const summary = await tool("summarize_develop_settings", { min_rating: 5 });
@@ -51,8 +51,8 @@ try {
     }
   } finally {
     try {
-      if (initial) await tool("set_rating", { photo_ids: [photoId], rating: initial.rating ?? 0 });
-      if (changedRatings.length) await tool("set_rating", { photo_ids: changedRatings, rating: 5 });
+      if (initial) await tool("set_rating_and_flag", { photo_ids: [photoId], rating: initial.rating ?? 0 });
+      if (changedRatings.length) await tool("set_rating_and_flag", { photo_ids: changedRatings, rating: 5 });
       if (initial) {
         const restored = await tool("get_photo_metadata", { photo_id: photoId, sections: ["developSettings"] });
         assert.equal(restored.rating ?? 0, initial.rating ?? 0);

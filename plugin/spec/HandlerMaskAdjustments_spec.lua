@@ -648,49 +648,6 @@ describe("HandlerMaskAdjustments.setMaskAdjustments", function()
     end)
 end)
 
-describe("HandlerMaskAdjustments.getMaskAdjustments", function()
-    it("returns the current value of every local slider Lightroom exposes", function()
-        local Handler, calls = setup(everyPhotoAndMask(twoMasks()))
-
-        local r = Handler.getMaskAdjustments({ photo_id = "1", mask_id = "mask-a" })
-
-        assert.is_true(r.success)
-        assert.are.equal("mask-a", r.mask_id)
-        assert.are.same({ local_Exposure = 0.5, local_Contrast = 10, local_Shadows = 20 }, r.adjustments)
-        assert.truthy(#r.unavailable > 0)
-        assert.are.equal("local_Highlights", r.unavailable[1])
-        assert.are.equal(0, #calls.setValue)
-        assert.are.equal("mask-b", calls.selectMask[#calls.selectMask])
-        assert.are.same({ "develop", "library" }, calls.modules)
-    end)
-
-    it("reads each mask separately", function()
-        local Handler = setup(everyPhotoAndMask(twoMasks()))
-
-        local b = Handler.getMaskAdjustments({ photo_id = "1", mask_id = "mask-b" })
-
-        assert.are.equal(-30, b.adjustments.local_Contrast)
-    end)
-
-    it("names the unknown mask and requires both ids", function()
-        local Handler, calls = setup(everyPhotoAndMask(twoMasks()))
-
-        assert.truthy(errorOf(function() Handler.getMaskAdjustments({ photo_id = "1", mask_id = "nope" }) end)
-            :find("Mask not found on photo 1: nope", 1, true))
-        assert.truthy(errorOf(function() Handler.getMaskAdjustments({ photo_id = "1" }) end)
-            :find("mask_id is required", 1, true))
-        assert.truthy(errorOf(function() Handler.getMaskAdjustments({ mask_id = "mask-a" }) end)
-            :find("photo_id is required", 1, true))
-        assert.are.equal(0, #calls.setValue)
-    end)
-
-    it("names the unknown photo", function()
-        local Handler = setup(everyPhotoAndMask(twoMasks()))
-
-        assert.truthy(errorOf(function() Handler.getMaskAdjustments({ photo_id = "404", mask_id = "mask-a" }) end)
-            :find("Photo not found: 404", 1, true))
-    end)
-end)
 
 describe("LocalSliders", function()
     it("lists unique local_ names with an ordered fallback range", function()

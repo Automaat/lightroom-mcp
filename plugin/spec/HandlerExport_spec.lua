@@ -73,6 +73,7 @@ describe("HandlerExport.exportPhotos", function()
         local r = Handler.exportPhotos({ photo_ids = { "1", "2", "3", "4", "5" }, destination = "/out" }, context)
 
         assert.are.equal(2, r.exported)
+        assert.is_nil(r.message)
         assert.is_false(r.complete)
         assert.are.same({ "3", "4", "5" }, r.remaining_ids)
         assert.are.equal(2, #calls)
@@ -389,6 +390,7 @@ describe("HandlerExport.exportPhotoMetadata", function()
         local out = tempJson()
 
         local r = Handler.exportPhotoMetadata({ photo_ids = { 11, 12 }, destination = out })
+        assert.is_nil(r.message)
 
         assert.is_true(r.success)
         assert.are.equal(2, r.exported)

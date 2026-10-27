@@ -7,8 +7,9 @@ import { PluginSocket } from "./plugin-socket.js";
 import { Dispatcher } from "./dispatcher.js";
 import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
+import { parseToolsets, type Toolset } from "./toolsets.js";
 import { createMcpServer } from "./create-server.js";
-import { createCallToolHandler, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
+import { createCallToolHandler, NOT_CONNECTED_DETAILS, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
 import { Bridge, type Leader } from "./bridge.js";
 import { brokerPath } from "./broker.js";
 import { parseCli, helpText } from "./cli.js";
@@ -89,9 +90,11 @@ async function main() {
     return;
   }
 
+  let toolsets: readonly Toolset[];
   let REQUEST_PORT: number;
   let RESPONSE_PORT: number;
   try {
+    toolsets = parseToolsets(process.env.LIGHTROOM_MCP_TOOLSETS);
     REQUEST_PORT = requestPort();
     RESPONSE_PORT = responsePort();
   } catch (err) {
@@ -110,7 +113,7 @@ async function main() {
     lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
   });
 
-  const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) });
+  const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) }, { toolsets });
   server.oninitialized = () => void bridge.start();
 
   const transport = new StdioServerTransport();
@@ -248,7 +251,11 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   const callTool = createCallToolHandler({
     dispatcher,
     isReady: () => socketsConnected() && liveness.isUsable(),
-    notReadyMessage: () => (socketsConnected() ? unresponsive.current() : NOT_CONNECTED_MESSAGE),
+    notReadyMessage: () => {
+      if (socketsConnected()) return unresponsive.current();
+      console.error(`[plugin] ${NOT_CONNECTED_DETAILS}`);
+      return NOT_CONNECTED_MESSAGE;
+    },
     settleReadiness: async () => {
       await waitUntil(socketsConnected, STARTUP_GRACE_MS, CONNECT_POLL_MS);
       await liveness.settled();
