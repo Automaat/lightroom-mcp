@@ -621,8 +621,6 @@ function DevelopHandler.createDevelopPreset(args)
     local entry = presetEntry(preset, "Plugin Develop Presets", "plugin")
     local result = presetSummary(entry)
     result.success = true
-    result.source_photo_id = args.photo_id
-    result.settings = args.settings
     result.visible_in_develop = false
     result.message = "Created plugin-managed Develop preset checkpoint"
     Log.info(string.format("Created plugin preset %s from photo %s", args.preset_name, args.photo_id))
@@ -681,7 +679,7 @@ function DevelopHandler.exportDevelopPreset(args)
     return result
 end
 
-local AI_UPDATE_UNSUPPORTED_NOTE = "; AI mask update needs Lightroom Classic 13.3 or later"
+local AI_UPDATE_UNSUPPORTED_NOTE = "AI mask update needs Lightroom Classic 13.3 or later"
 
 local containsAIMasks = AIMaskData.containsAIMasks
 local withoutComputedAIMaskData = AIMaskData.withoutComputedData
@@ -715,14 +713,14 @@ local function recomputeAISettings(catalog, applied)
     return updated, failed, true
 end
 
-local function aiUpdateMessageSuffix(supported, failed)
+local function aiUpdateMessage(supported, failed)
     if not supported then
         return AI_UPDATE_UNSUPPORTED_NOTE
     end
     if #failed > 0 then
-        return string.format("; AI mask update failed for %d photos", #failed)
+        return string.format("AI mask update failed for %d photos", #failed)
     end
-    return ""
+    return nil
 end
 
 local DRY_RUN_DETAIL_LIMIT = 5
@@ -886,8 +884,7 @@ function DevelopHandler.applyDevelopPreset(args)
         missing = missingIds,
         ai_updated = aiUpdated,
         ai_update_failed = aiFailed,
-        message = string.format("Applied preset %s to %d photos (%d ids not found)",
-            selectedPreset.name, appliedCount, missingCount) .. aiUpdateMessageSuffix(aiSupported, aiFailed),
+        message = aiUpdateMessage(aiSupported, aiFailed),
     }
 end
 
@@ -952,12 +949,10 @@ function DevelopHandler.copyDevelopSettings(args)
     return {
         success = true,
         copied = copiedCount,
-        source = args.source_id,
         missing = missingIds,
         ai_updated = aiUpdated,
         ai_update_failed = aiFailed,
-        message = string.format("Copied develop settings from %s to %d photos (%d ids not found)",
-            args.source_id, copiedCount, missingCount) .. aiUpdateMessageSuffix(aiSupported, aiFailed),
+        message = aiUpdateMessage(aiSupported, aiFailed),
     }
 end
 
@@ -1239,7 +1234,6 @@ function DevelopHandler.applyDenoise(args, context)
     return {
         success = counts.failed == 0 and complete,
         complete = complete,
-        amount = amount,
         applied = counts.applied,
         amount_changed = counts.amount_changed,
         unchanged = counts.unchanged,
@@ -1345,7 +1339,7 @@ function DevelopHandler.setProcessVersion(args, context)
         if context and #results > 0 then context:report(#results, #resolved, results[#results].id) end
         local complete = #remaining == 0
         return {
-            success = complete and counts.failed == 0, complete = complete, version = args.version,
+            success = complete and counts.failed == 0, complete = complete,
             changed = counts.changed, unchanged = counts.unchanged, skipped = counts.skipped, failed = counts.failed,
             results = results, remaining_ids = not complete and remaining or nil,
             seconds = math.floor((LrDate.currentTime() - started) * 10 + 0.5) / 10,

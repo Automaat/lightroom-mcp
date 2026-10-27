@@ -276,7 +276,6 @@ function OrganizationHandler.setKeywords(args)
     return {
         success = true,
         updated = updatedCount,
-        message = string.format("Updated keywords for %d photos", updatedCount)
     }
 end
 
@@ -345,8 +344,6 @@ function OrganizationHandler.removeKeywordSubtree(args)
         updated = updated,
         removed = removed,
         missing = missing,
-        message = string.format("Removed %d keyword assignments from %d photos (%d ids not found)",
-            removed, updated, #missing),
     }
 end
 
@@ -445,10 +442,7 @@ function OrganizationHandler.setColorLabel(args)
     return {
         success = true,
         updated = updatedCount,
-        label = args.label,
         missing = missingIds,
-        message = string.format("Set color label to %s for %d photos (%d ids not found)",
-            args.label, updatedCount, missingCount)
     }
 end
 

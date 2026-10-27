@@ -233,16 +233,14 @@ local function summarize(items, outcome, request, startedAt, missing)
         results[#results + 1] = describe(item)
     end
 
-    local message = string.format("Created %d %s masks, %d failed, %d not attempted (%d ids not found)",
-        counts[STATUS_CREATED], request.typeName, counts[STATUS_FAILED], counts[STATUS_NOT_ATTEMPTED], #missing)
+    local message
     if outcome.alertPossible then
-        message = message .. "; Lightroom probably shows a \"No " .. request.typeName
+        message = "Lightroom probably shows a \"No " .. request.typeName
             .. " detected\" alert: click OK in Lightroom before the next Develop call"
     end
     local response = {
         success = counts[STATUS_FAILED] == 0 and counts[STATUS_NOT_ATTEMPTED] == 0,
         complete = counts[STATUS_NOT_ATTEMPTED] == 0,
-        type = request.typeName,
         created = counts[STATUS_CREATED],
         failed = counts[STATUS_FAILED],
         not_attempted = counts[STATUS_NOT_ATTEMPTED],
@@ -252,7 +250,6 @@ local function summarize(items, outcome, request, startedAt, missing)
         seconds = math.floor((LrDate.currentTime() - startedAt) * 10 + 0.5) / 10,
         message = message,
     }
-    if next(request.values) then response.adjustments = request.values end
     return response, counts
 end
 

@@ -646,7 +646,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setGps",
     description:
-      "Set the GPS position of photos in decimal degrees, replacing any position they already have. Altitude is left unchanged unless altitude is given or clear_altitude is true.",
+      "Replace GPS coordinates in decimal degrees. Altitude stays unless altitude or clear_altitude is given. Returns success, updated and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -684,7 +684,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setLocation",
     description:
-      "Set the IPTC location fields of photos (sublocation, city, state/province, country, ISO country code), as get_photo_metadata reports them. Fields left out are unchanged; an empty string clears a field. Give at least one field. GPS is not touched (use set_gps).",
+      "Set IPTC location fields from get_photo_metadata; at least one is required. Omitted fields stay, empty strings clear. GPS stays (use set_gps). Returns success, updated, fields and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -711,7 +711,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setMetadata",
     description:
-      "Set IPTC title/caption/headline, creator, copyright notice/usage terms/info URL, creator website and accessibility alt text/extended description, as get_photo_metadata reports. Accessibility requires LrC 13.2+. At least one field; omitted fields stay, empty strings clear. Copyright status is unwritable.",
+      "Set IPTC text from get_photo_metadata. Accessibility needs LrC 13.2+. At least one field; omitted fields stay, empty strings clear. Copyright status is unwritable. Returns success, updated, fields and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -817,7 +817,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Create collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.createCollection",
-    description: "Create a new collection",
+    description: "Create a collection; returns success and its path.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -837,7 +837,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Create smart collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.createSmartCollection",
-    description: "Save intersecting search_photos filters as a smart collection that updates as photos change. Requires at least one filter. Missing parent collection sets are created; an existing sibling name is rejected.",
+    description: "Save intersecting search_photos filters as an auto-updating smart collection; at least one filter. Creates missing parent sets; rejects existing sibling names. Returns success and path.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -856,7 +856,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.addToCollection",
     description:
-      "Add photos to a collection. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+      "Add photos to a collection; returns success, added count and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -900,7 +900,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.removeFromCollection",
     description:
-      "Remove photos from a collection. They stay in the catalog and in any other collection. Smart collections cannot be edited this way. removed counts unique photos that were in the collection. Use a path from list_collections when names repeat.",
+      "Remove photos from a regular collection; catalog and other memberships stay. Returns success, removed (unique members), not_in_collection and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -921,7 +921,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.deleteCollection",
     description:
-      "Delete a collection. Its photos stay in the catalog. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+      "Delete a collection; photos stay in the catalog. Returns success, photo_count and that reminder.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -941,7 +941,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setKeywords",
     description:
-      "Add/remove keyword names or parent-first '|' paths (e.g. Places|Europe|Paris; see list_keywords). Case-insensitive matching. Missing names create top-level keywords; paths create missing levels unless create_missing=false.",
+      "Add/remove keyword names or parent-first '|' paths from list_keywords, ignoring case. Missing names create top-level keywords; paths create missing levels unless create_missing=false. Returns success and updated count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1025,7 +1025,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerKeywords.renameKeyword",
     description:
-      "Rename in place; tagged photos update, parent/children/synonyms stay. keyword: unique plain name or 'Parent|Child' path from list_keywords. Case-insensitive sibling conflicts fail (no merging); case-only renames work.",
+      "Rename in place; tagged photos update, parent/children/synonyms stay. Case-insensitive sibling conflicts fail; case-only renames work. Returns success, old_path, new_path and photo_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1033,7 +1033,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         keyword: {
           type: "string",
           minLength: 1,
-          description: "Keyword to rename: a plain name or a 'Parent|Child' path",
+          description: "Keyword from list_keywords: a unique plain name or a 'Parent|Child' path",
         },
         new_name: {
           type: "string",
@@ -1096,7 +1096,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setColorLabel",
     description:
-      "Set the color label of photos to red, yellow, green, blue, purple, or none to clear it. get_photo_metadata reports it as colorLabel.",
+      "Set a color label or none to clear; get_photo_metadata reports colorLabel. Returns success, updated and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1134,12 +1134,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerImport.importPhotos",
     description:
-      "Import a photo, or every photo in a folder and its subfolders, into the Lightroom catalog. Folder imports take camera raw (CR3, RAF, ORF, RW2, NEF, ARW, DNG and other Camera Raw formats), JPEG, HEIC/HEIF, AVIF, JPEG XL, TIFF, PNG and PSD/PSB files; other files are skipped and counted by extension in the reply.",
+      "Import a photo or a folder recursively. Returns success, imported/skipped counts, skipped_by_extension, complete and remaining_paths. Only unsupported-extension notes remain in message.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        source_path: { type: "string", description: "Path to photo or folder to import" },
+        source_path: { type: "string", description: "Photo or folder to import. Folder imports accept camera raw (CR3, RAF, ORF, RW2, NEF, ARW, DNG and other Camera Raw formats), JPEG, HEIC/HEIF, AVIF, JPEG XL, TIFF, PNG and PSD/PSB; other files are skipped by extension." },
         collection_name: {
           type: "string",
           description: "Collection to add imported photos to (optional)",
@@ -1157,7 +1157,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Export photos",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
-    description: "Export photos from Lightroom",
+    description: "Export photos; returns success, exported count, destination, complete and remaining_ids to retry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1193,7 +1193,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotoMetadata",
     description:
-      "Export up to 1000 photos to disk JSON: file/capture time/dimensions/rating/title/caption/GPS/location/keywords/keywordPaths, excluding develop settings. Omitted photo_ids uses selection, or filmstrip if none. Prefer over per-photo get_photo_metadata.",
+      "Export up to 1000 photos to disk JSON: file/capture time/dimensions/rating/title/caption/GPS/location/keywords/keywordPaths, no develop settings. Omitted photo_ids uses selection, or filmstrip if none. Prefer over per-photo get_photo_metadata. Returns success, exported, destination and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1261,7 +1261,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerDevelop.createDevelopPreset",
     description:
-      "Create a versioned plugin-managed Develop preset checkpoint from selected settings on one photo. The checkpoint is hidden from the Develop panel; export it for handoff.",
+      "Capture selected settings as a versioned plugin Develop checkpoint, hidden from Develop; export for handoff. Returns success, preset identity/file, visible_in_develop:false and a checkpoint note.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1317,7 +1317,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDevelopPreset",
     description:
-      "Apply one exact Develop preset to photos. AI masks are recomputed per target on LrC 13.3+: ai_updated counts successes, ai_update_failed lists failed IDs. Earlier versions or presets without AI masks apply normally.",
+      "Apply an exact Develop preset; returns success, applied, resolved preset identity, missing IDs, ai_updated and ai_update_failed. AI masks recompute per target on LrC 13.3+; earlier versions or non-AI presets apply normally. message holds AI warnings only.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1346,7 +1346,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.copyDevelopSettings",
     description:
-      "Copy Develop settings from one photo to others. When the copied settings contain AI masks (copied when settings is omitted), Lightroom Classic 13.3+ recomputes each mask for every target photo after copying; ai_updated counts the photos recomputed and ai_update_failed lists the ids where the recompute failed. Earlier versions, and copies without AI masks, behave as before.",
+      "Copy Develop settings; omitted settings includes AI masks. LrC 13.3+ recomputes each AI mask per target; earlier versions and non-AI copies behave normally. Returns success, copied, missing IDs, ai_updated count, ai_update_failed IDs and AI warning message only.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1602,7 +1602,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDenoise",
     description:
-      "Enable/change AI Denoise amount through the Develop panel (Lightroom Classic 15+), not a plain develop key. Activates each photo; shared Develop restoration rules apply. Computation runs in background Activity Center. Same amount skips; other settings stay. Max 100 photos; stops near 240 s with complete:false and remaining_ids to retry.",
+      "Enable/change AI Denoise through Develop (LrC 15+), not a develop key. Activates each photo; shared restoration rules apply. Activity Center computes in background. Same amount skips; other settings stay. Max 100 photos; stops near 240 s. Returns success, counts, per-photo results, seconds, complete/remaining_ids and progress/retry guidance.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
