@@ -20,6 +20,7 @@ Read results, write effects, arguments and errors stay the same.
 | `apply_develop_preset` | `message` contains only AI-update warnings or minimum-version guidance; keep the resolved preset identity and all outcome counts. |
 | `copy_develop_settings` | Omit the `source` echo and count sentence; keep AI-update warnings/version guidance, counts and missing IDs. Dry-run results stay the same. |
 | `apply_denoise` | Omit the requested `amount`; keep per-photo outcomes, counts, timing and Activity Center/retry guidance. |
+| `set_process_version` | Omit the requested top-level `version`; keep each photo's actual `previous_version`/`new_version`, status, counts and retry IDs. |
 | `create_mask_batch` | Omit requested `type`/`adjustments` and count sentence; keep per-photo outcomes, mask IDs, counts, timing and blocking-alert guidance. |
 
 Use returned counts and IDs to handle outcomes. Read photo or mask metadata when

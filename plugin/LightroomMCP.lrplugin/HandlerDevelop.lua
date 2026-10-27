@@ -1339,7 +1339,7 @@ function DevelopHandler.setProcessVersion(args, context)
         if context and #results > 0 then context:report(#results, #resolved, results[#results].id) end
         local complete = #remaining == 0
         return {
-            success = complete and counts.failed == 0, complete = complete, version = args.version,
+            success = complete and counts.failed == 0, complete = complete,
             changed = counts.changed, unchanged = counts.unchanged, skipped = counts.skipped, failed = counts.failed,
             results = results, remaining_ids = not complete and remaining or nil,
             seconds = math.floor((LrDate.currentTime() - started) * 10 + 0.5) / 10,
