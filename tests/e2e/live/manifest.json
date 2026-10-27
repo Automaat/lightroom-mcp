@@ -37,7 +37,7 @@
     {
       "key": "people_photo",
       "envVar": "LRMCP_LIVE_PEOPLE_PHOTO",
-      "description": "Photo with at least one person for create_people_mask checks; optional"
+      "description": "Photo with at least one person for create_mask type people checks; optional"
     }
   ]
 }

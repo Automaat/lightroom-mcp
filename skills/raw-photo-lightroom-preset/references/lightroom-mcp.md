@@ -23,7 +23,7 @@ The integration adds the missing feedback loop:
 - `export_develop_preset`: copy an exportable backing file without overwriting.
 - `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.
 - `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks`, and `delete_empty_masks`: inspect and manage local masks.
-- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_people_mask`, and `create_landscape_mask`: create or edit mask geometry and AI parts on supported Lightroom versions.
+- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: "people"` or `type: "landscape"`: create or edit mask geometry and AI parts on supported Lightroom versions.
 - `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: ["adjustments"]`, `["curves"]` or `["point_colors"]` to read only selected kinds.
 
 This improves setting selection. It does not by itself create a canonical preset XMP.

@@ -323,6 +323,16 @@ function MaskCreateHandler.isNothingFoundFailure(message)
 end
 
 function MaskCreateHandler.createMask(args)
+    local people = args.type == "people"
+    local landscape = args.type == "landscape"
+    if args.parts ~= nil and not people then error("parts requires type people") end
+    if args.categories ~= nil and not landscape then error("categories requires type landscape") end
+    if people or landscape then
+        if args.adjustments ~= nil then
+            error("adjustments is not supported for people or landscape; use set_mask_adjustments afterwards")
+        end
+        return (require 'HandlerAiMasks').createMask(args)
+    end
     local photoId = requirePhotoId(args.photo_id)
     local typeName, spec = MaskTypes.require(args.type)
     local values = validateAdjustments(args.adjustments)
