@@ -12,6 +12,7 @@ USAGE
 ENV
   LIGHTROOM_MCP_REQUEST_PORT   plugin request port  (default 58763)
   LIGHTROOM_MCP_RESPONSE_PORT  plugin response port (default 58764)
+  LIGHTROOM_MCP_TOOLSETS       core plus develop, masks, or all (default core)
   LIGHTROOM_MCP_TOKEN_PATH     auth token file      (default ~/.config/lightroom-mcp/token)
 `;
 

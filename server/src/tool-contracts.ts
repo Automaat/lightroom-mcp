@@ -1,10 +1,12 @@
 import type { JSONObject, Tool } from "@modelcontextprotocol/server";
+import type { Toolset } from "./toolsets.js";
 import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 type InputSchema = Tool["inputSchema"];
 
 export interface ToolContract {
   name: string;
+  toolset: Toolset;
   title: string;
   annotations: {
     readOnlyHint: boolean;
@@ -474,6 +476,7 @@ const searchFilterProperties = {
 export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "search_photos",
+    toolset: "core",
     alwaysLoad: true,
     title: "Search photos",
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -493,6 +496,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_selected_photos",
+    toolset: "core",
     title: "Get selected photos",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerSelection.getSelectedPhotos",
@@ -509,6 +513,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "summarize_develop_settings",
+    toolset: "develop",
     title: "Summarize develop settings",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerStyleSummary.summarize",
@@ -526,6 +531,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_photo_metadata",
+    toolset: "core",
     title: "Get photo metadata",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
@@ -550,6 +556,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_photo_preview",
+    toolset: "core",
     alwaysLoad: true,
     title: "Get photo preview",
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -586,6 +593,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_photo_previews",
+    toolset: "core",
     title: "Get batch photo previews",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreviews",
@@ -606,6 +614,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "find_duplicate_groups",
+    toolset: "core",
     title: "Find duplicate groups",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.findDuplicateGroups",
@@ -624,6 +633,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_photo_stats",
+    toolset: "core",
     title: "Get photo statistics",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoStats",
@@ -646,6 +656,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_gps",
+    toolset: "core",
     title: "Set GPS",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setGps",
@@ -684,6 +695,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_location",
+    toolset: "core",
     title: "Set location",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setLocation",
@@ -711,6 +723,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_metadata",
+    toolset: "core",
     title: "Set metadata",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setMetadata",
@@ -737,6 +750,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_ai_metadata",
+    toolset: "core",
     title: "Set AI metadata",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerAiMetadata.setAiMetadata",
@@ -756,6 +770,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_ai_metadata",
+    toolset: "core",
     title: "Get AI metadata",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerAiMetadata.getAiMetadata",
@@ -770,6 +785,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_folders",
+    toolset: "core",
     title: "List folders",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerFolders.listFolders",
@@ -785,6 +801,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_folder_photos",
+    toolset: "core",
     title: "Get folder photos",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerFolders.getFolderPhotos",
@@ -803,6 +820,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_collections",
+    toolset: "core",
     title: "List collections",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.listCollections",
@@ -818,6 +836,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_collection",
+    toolset: "core",
     title: "Create collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.createCollection",
@@ -838,6 +857,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_smart_collection",
+    toolset: "core",
     title: "Create smart collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.createSmartCollection",
@@ -856,6 +876,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "add_to_collection",
+    toolset: "core",
     title: "Add to collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.addToCollection",
@@ -877,6 +898,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_collection_photos",
+    toolset: "core",
     title: "Get collection photos",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.getCollectionPhotos",
@@ -900,6 +922,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "remove_from_collection",
+    toolset: "core",
     title: "Remove from collection",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.removeFromCollection",
@@ -921,6 +944,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "delete_collection",
+    toolset: "core",
     title: "Delete collection",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.deleteCollection",
@@ -941,6 +965,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_keywords",
+    toolset: "core",
     title: "Set keywords",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setKeywords",
@@ -970,6 +995,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "remove_keyword_subtree",
+    toolset: "core",
     title: "Remove keyword subtree",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.removeKeywordSubtree",
@@ -995,6 +1021,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_keywords",
+    toolset: "core",
     title: "List keywords",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerKeywords.listKeywords",
@@ -1025,6 +1052,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "rename_keyword",
+    toolset: "core",
     title: "Rename keyword",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerKeywords.renameKeyword",
@@ -1050,6 +1078,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "undo_last_step",
+    toolset: "core",
     title: "Undo last step",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerUndo.undoLastStep",
@@ -1070,6 +1099,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_rating_and_flag",
+    toolset: "core",
     alwaysLoad: true,
     title: "Set rating and flag",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
@@ -1097,6 +1127,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_color_label",
+    toolset: "core",
     title: "Set color label",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setColorLabel",
@@ -1118,6 +1149,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "remove_photos_from_catalog",
+    toolset: "core",
     title: "Remove photos from catalog",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRemoveFromCatalog.removePhotos",
@@ -1135,6 +1167,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "import_photos",
+    toolset: "core",
     title: "Import photos",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerImport.importPhotos",
@@ -1159,6 +1192,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "export_photos",
+    toolset: "core",
     title: "Export photos",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
@@ -1194,6 +1228,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "export_photo_metadata",
+    toolset: "core",
     title: "Export photo metadata",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotoMetadata",
@@ -1219,6 +1254,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_develop_presets",
+    toolset: "develop",
     title: "List develop presets",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.listDevelopPresets",
@@ -1236,6 +1272,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_develop_preset",
+    toolset: "develop",
     title: "Get develop preset",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.getDevelopPreset",
@@ -1245,6 +1282,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "compare_develop_presets",
+    toolset: "develop",
     title: "Compare develop presets",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.compareDevelopPresets",
@@ -1262,6 +1300,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_develop_preset",
+    toolset: "develop",
     title: "Create develop preset",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerDevelop.createDevelopPreset",
@@ -1291,6 +1330,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "export_develop_preset",
+    toolset: "develop",
     title: "Export develop preset",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerDevelop.exportDevelopPreset",
@@ -1318,6 +1358,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "apply_develop_preset",
+    toolset: "develop",
     title: "Apply develop preset",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDevelopPreset",
@@ -1347,6 +1388,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "copy_develop_settings",
+    toolset: "develop",
     title: "Copy develop settings",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.copyDevelopSettings",
@@ -1379,6 +1421,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "match_photo_style",
+    toolset: "develop",
     title: "Match reference photo style",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.matchPhotoStyle",
@@ -1396,6 +1439,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_develop_settings",
+    toolset: "develop",
     title: "Set develop settings",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.setDevelopSettings",
@@ -1422,6 +1466,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_lens_blur",
+    toolset: "develop",
     title: "Get Lens Blur",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerLensBlur.get",
@@ -1435,6 +1480,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_lens_blur",
+    toolset: "develop",
     title: "Set Lens Blur",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerLensBlur.set",
@@ -1465,6 +1511,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_process_version",
+    toolset: "develop",
     title: "Set process version",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.setProcessVersion",
@@ -1484,6 +1531,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_virtual_copies",
+    toolset: "develop",
     title: "Create virtual copies",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerVirtualCopies.create",
@@ -1500,6 +1548,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_develop_snapshots",
+    toolset: "develop",
     title: "List develop snapshots",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerSnapshots.list",
@@ -1515,6 +1564,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_develop_snapshot",
+    toolset: "develop",
     title: "Create develop snapshot",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerSnapshots.create",
@@ -1532,6 +1582,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "apply_develop_snapshot",
+    toolset: "develop",
     title: "Apply develop snapshot",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerSnapshots.apply",
@@ -1548,6 +1599,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "delete_develop_snapshot",
+    toolset: "develop",
     title: "Delete develop snapshot",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerSnapshots.delete",
@@ -1564,6 +1616,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "apply_auto_adjustments",
+    toolset: "develop",
     title: "Apply auto adjustments",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyAutoAdjustments",
@@ -1586,6 +1639,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "reset_develop_adjustments",
+    toolset: "develop",
     title: "Reset develop adjustments",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.resetDevelopAdjustments",
@@ -1603,6 +1657,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "apply_denoise",
+    toolset: "develop",
     title: "Apply denoise",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDenoise",
@@ -1633,6 +1688,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_spots",
+    toolset: "develop",
     title: "List Remove spots",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerSpots.list",
@@ -1645,6 +1701,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "update_spot",
+    toolset: "develop",
     title: "Update Remove spot opacity",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerSpots.update",
@@ -1662,6 +1719,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "delete_spot",
+    toolset: "develop",
     title: "Delete Remove spot",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerSpots.delete",
@@ -1675,6 +1733,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "list_masks",
+    toolset: "masks",
     title: "List masks",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMasks.listMasks",
@@ -1691,6 +1750,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_gradient_mask",
+    toolset: "masks",
     title: "Create gradient mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.createGradientMask",
@@ -1731,6 +1791,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "update_gradient_mask",
+    toolset: "masks",
     title: "Update gradient mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.updateGradientMask",
@@ -1749,6 +1810,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_brush_mask",
+    toolset: "masks",
     title: "Create brush mask",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.createBrushMask",
@@ -1783,6 +1845,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "add_brush_strokes",
+    toolset: "masks",
     title: "Add brush strokes",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.addBrushStrokes",
@@ -1801,6 +1864,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_range_mask",
+    toolset: "masks",
     title: "Create range mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRangeMasks.createRangeMask",
@@ -1910,6 +1974,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "delete_masks",
+    toolset: "masks",
     title: "Delete masks",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskDelete.deleteMasks",
@@ -1946,6 +2011,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "delete_empty_masks",
+    toolset: "masks",
     title: "Delete empty masks",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskDelete.deleteEmptyMasks",
@@ -1962,6 +2028,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_mask_adjustments",
+    toolset: "masks",
     title: "Set mask adjustments",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskAdjustments.setMaskAdjustments",
@@ -1987,6 +2054,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_mask",
+    toolset: "masks",
     title: "Get mask",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskRead.getMask",
@@ -2012,6 +2080,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "invert_mask",
+    toolset: "masks",
     title: "Invert mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskInvert.invertMask",
@@ -2038,6 +2107,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_mask",
+    toolset: "masks",
     title: "Create mask",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerMaskCreate.createMask",
@@ -2081,6 +2151,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "create_mask_batch",
+    toolset: "masks",
     title: "Create mask batch",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerMaskBatch.createMaskBatch",
@@ -2111,6 +2182,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_mask_curves",
+    toolset: "masks",
     title: "Set mask curves",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskCurves.setMaskCurves",
@@ -2135,6 +2207,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "edit_mask_point_colors",
+    toolset: "masks",
     title: "Edit mask point colors",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskPointColors.editMaskPointColors",
@@ -2170,6 +2243,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "combine_mask",
+    toolset: "masks",
     title: "Combine mask",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskCombine.combineMask",

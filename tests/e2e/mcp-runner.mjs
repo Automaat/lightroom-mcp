@@ -46,7 +46,7 @@ class McpClient {
   async start() {
     this.proc = spawn("node", [SERVER_BIN], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: { ...process.env, LIGHTROOM_MCP_TOOLSETS: "all" },
     });
     this.proc.stdout.setEncoding("utf8");
     this.proc.stderr.setEncoding("utf8");

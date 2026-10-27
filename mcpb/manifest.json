@@ -30,7 +30,8 @@
       ],
       "env": {
         "LIGHTROOM_MCP_REQUEST_PORT": "${user_config.request_port}",
-        "LIGHTROOM_MCP_RESPONSE_PORT": "${user_config.response_port}"
+        "LIGHTROOM_MCP_RESPONSE_PORT": "${user_config.response_port}",
+        "LIGHTROOM_MCP_TOOLSETS": "${user_config.toolsets}"
       }
     }
   },
@@ -325,6 +326,13 @@
     }
   ],
   "user_config": {
+    "toolsets": {
+      "type": "string",
+      "title": "Enabled toolsets",
+      "description": "Core catalog tools are always enabled. Add develop, masks, develop,masks, or all. Restart the server after changing this setting.",
+      "default": "core",
+      "required": false
+    },
     "request_port": {
       "type": "string",
       "title": "Plugin request port",

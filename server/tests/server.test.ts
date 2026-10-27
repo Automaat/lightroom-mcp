@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createMcpServer } from '../src/create-server.js';
+import { parseToolsets } from '../src/toolsets.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
 import type { CallOptions, PluginResponse } from '../src/dispatcher.js';
 
@@ -95,13 +96,13 @@ interface Pair {
   client: Client;
 }
 
-async function connect(opts: { ready?: boolean; call?: CallFn } = {}): Promise<Pair> {
+async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string } = {}): Promise<Pair> {
   const server = createMcpServer({
     isReady: () => opts.ready ?? true,
     dispatcher: {
       call: opts.call ?? (async () => ({ id: 'x', result: null })),
     },
-  });
+  }, { toolsets: parseToolsets(opts.toolsets) });
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -180,6 +181,92 @@ describe('createMcpServer', () => {
     }
   });
 
+  describe('toolset selection', () => {
+    const coreNames = [
+      'search_photos', 'get_selected_photos', 'get_photo_metadata', 'get_photo_preview',
+      'get_photo_previews', 'find_duplicate_groups', 'get_photo_stats', 'set_gps',
+      'set_location', 'set_metadata', 'set_ai_metadata', 'get_ai_metadata', 'list_folders',
+      'get_folder_photos', 'list_collections', 'create_collection', 'create_smart_collection',
+      'add_to_collection', 'get_collection_photos', 'remove_from_collection', 'delete_collection',
+      'set_keywords', 'remove_keyword_subtree', 'list_keywords', 'rename_keyword', 'undo_last_step',
+      'set_rating_and_flag', 'set_color_label', 'remove_photos_from_catalog', 'import_photos',
+      'export_photos', 'export_photo_metadata',
+    ];
+
+    it.each([undefined, '', '   ', 'core'])('toolset %p lists only approved core tools', async (toolsets) => {
+      pair = await connect({ toolsets });
+      expect((await pair.client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([...coreNames].sort());
+    });
+
+    it.each([
+      ['develop', 56, ['core', 'develop']],
+      ['masks', 48, ['core', 'masks']],
+      ['develop,masks', 72, ['core', 'develop', 'masks']],
+      ['all', 72, ['core', 'develop', 'masks']],
+    ] as const)('toolset %s preserves contract order and definitions', async (toolsets, count, groups) => {
+      pair = await connect({ toolsets });
+      const first = await pair.client.listTools();
+      const contracts = TOOL_CONTRACTS.filter((tool) => groups.some((group) => group === tool.toolset));
+      expect(first.tools).toHaveLength(count);
+      expect(first.tools.map((tool) => tool.name)).toEqual(contracts.map((tool) => tool.name));
+      first.tools.forEach((tool, index) => {
+        expect(tool.description).toBe(contracts[index].description);
+        expect(tool.inputSchema).toEqual(contracts[index].inputSchema);
+      });
+      expect(JSON.stringify(await pair.client.listTools())).toBe(JSON.stringify(first));
+      expect(pair.client.getServerCapabilities()?.tools).not.toHaveProperty('listChanged');
+    });
+
+    it.each([
+      ['set_develop_settings', 'develop'], ['create_virtual_copies', 'develop'],
+      ['summarize_develop_settings', 'develop'], ['list_masks', 'masks'],
+    ])('toolset default refuses hidden %s before dispatcher', async (name, group) => {
+      let called = false;
+      pair = await connect({ call: async () => { called = true; return { id: '1', result: null }; } });
+      const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('LIGHTROOM_MCP_TOOLSETS');
+      expect(result.content[0].text).toContain(group);
+      expect(called).toBe(false);
+    });
+
+    it('toolset selection copies options at startup and ignores later env changes', async () => {
+      const toolsets: Array<'core' | 'develop' | 'masks'> = ['core'];
+      const server = createMcpServer({ callTool: async () => ({ content: [{ type: 'text', text: '{}' }] }) }, { toolsets });
+      const client = new Client({ name: 'fixed-toolsets', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      const original = process.env.LIGHTROOM_MCP_TOOLSETS;
+      try {
+        const first = JSON.stringify(await client.listTools());
+        toolsets.push('develop', 'masks');
+        process.env.LIGHTROOM_MCP_TOOLSETS = 'all';
+        expect(JSON.stringify(await client.listTools())).toBe(first);
+        expect((await client.callTool({ name: 'list_masks' })).isError).toBe(true);
+      } finally {
+        if (original === undefined) delete process.env.LIGHTROOM_MCP_TOOLSETS;
+        else process.env.LIGHTROOM_MCP_TOOLSETS = original;
+        await client.close();
+        await server.close();
+      }
+    });
+
+    it('toolset gate refuses hidden tools before a forwarding caller', async () => {
+      let called = false;
+      const server = createMcpServer({ callTool: async () => { called = true; return { content: [{ type: 'text', text: '{}' }] }; } });
+      const client = new Client({ name: 'forwarding-toolsets', version: '1.0.0' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+      try {
+        expect((await client.callTool({ name: 'set_develop_settings' })).isError).toBe(true);
+        expect(called).toBe(false);
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    });
+  });
+
   it('loads only three hot catalog tools upfront over the wire', async () => {
     pair = await connect();
     const { tools } = await pair.client.listTools();
@@ -192,10 +279,10 @@ describe('createMcpServer', () => {
   });
 
   it('keeps tool lists byte-identical across calls and fresh servers', async () => {
-    pair = await connect();
+    pair = await connect({ toolsets: 'all' });
     const first = await pair.client.listTools();
     const repeated = await pair.client.listTools();
-    const second = await connect();
+    const second = await connect({ toolsets: 'all' });
     try {
       expect(JSON.stringify(repeated)).toBe(JSON.stringify(first));
       expect(JSON.stringify(await second.client.listTools())).toBe(JSON.stringify(first));
@@ -268,7 +355,7 @@ describe('createMcpServer', () => {
 
   describe('ListTools', () => {
     it('exposes tool annotations and titles for every classified tool', async () => {
-      pair = await connect();
+      pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
       expect(tools.map((tool) => tool.name).sort()).toEqual(Object.keys(TOOL_CLASSES).sort());
       for (const tool of tools) {
@@ -287,13 +374,13 @@ describe('createMcpServer', () => {
     });
 
     it('returns all 72 tools', async () => {
-      pair = await connect();
+      pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
       expect(tools).toHaveLength(72);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
-      pair = await connect();
+      pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
       const names = tools.map((t) => t.name);
       expect(names).toContain('search_photos');
@@ -404,6 +491,7 @@ describe('createMcpServer', () => {
     it('passes undefined args as empty object to dispatcher', async () => {
       let capturedParams: unknown = 'not-set';
       pair = await connect({
+        toolsets: 'all',
         call: async (_action, params) => {
           capturedParams = params;
           return { id: '1', result: null };

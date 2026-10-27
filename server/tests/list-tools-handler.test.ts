@@ -177,13 +177,13 @@ describe('TOOL_DEFINITIONS', () => {
 
 describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
-    const result = listToolsHandler();
+    const result = listToolsHandler(new Set(['core', 'develop', 'masks']));
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
 
   it('keeps repeated tool lists byte-identical and in contract order', () => {
-    expect(JSON.stringify(listToolsHandler())).toBe(JSON.stringify(listToolsHandler()));
-    expect(listToolsHandler().tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+    expect(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks'])))).toBe(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks']))));
+    expect(listToolsHandler(new Set(['core', 'develop', 'masks'])).tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
   });
 
   it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(

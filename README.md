@@ -170,6 +170,10 @@ If you'd rather drop the plugin in by hand:
 
 ## Tools
 
+By default, the server exposes only core catalog and metadata tools. Set `LIGHTROOM_MCP_TOOLSETS` in your MCP client’s server environment to `develop`, `masks`, `develop,masks`, or `all` to add those tools. Core stays enabled. Restart the server after changing the setting; its tool list stays fixed for the session, and disabled tools cannot be called. In the desktop bundle, use **Enabled toolsets**.
+
+The Develop toolset includes presets, settings, snapshots, virtual copies, style summaries, Lens Blur, Denoise and Remove spots. The masks toolset includes all local mask tools. The table below lists every tool, including opt-in tools.
+
 | Tool | What it does |
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
@@ -379,6 +383,7 @@ Env vars:
 | --- | --- | --- |
 | `LIGHTROOM_MCP_REQUEST_PORT` | `58763` | Plugin request port. |
 | `LIGHTROOM_MCP_RESPONSE_PORT` | `58764` | Plugin response port. |
+| `LIGHTROOM_MCP_TOOLSETS` | `core` | Comma-separated `core`, `develop`, `masks`, or `all`; core is always enabled. |
 | `LIGHTROOM_MCP_TOKEN_PATH` | `~/.config/lightroom-mcp/token` | Auth token file. |
 
 If you change ports on the server side, change them in **Plug-in Manager → Lightroom MCP** to match.
