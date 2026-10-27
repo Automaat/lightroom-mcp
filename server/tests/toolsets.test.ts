@@ -26,12 +26,15 @@ describe('toolset parser', () => {
 
   it('wires every bundle environment reference to a defined setting with a default', () => {
     const manifest = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), '..', 'mcpb/manifest.json'), 'utf8')) as {
-      user_config: Record<string, { default: string }>;
+      user_config: Record<string, { default: string | boolean; type: string }>;
       server: { mcp_config: { env: Record<string, string> } };
     };
     const env = manifest.server.mcp_config.env;
     expect(env.LIGHTROOM_MCP_TOOLSETS).toBe('${user_config.toolsets}');
     expect(manifest.user_config.toolsets.default).toBe('core');
+    expect(env.LIGHTROOM_MCP_READ_ONLY).toBe('${user_config.read_only}');
+    expect(manifest.user_config.read_only.default).toBe(false);
+    expect(manifest.user_config.read_only.type).toBe('boolean');
     for (const value of Object.values(env)) {
       for (const match of value.matchAll(/\$\{user_config\.([^}]+)\}/g)) {
         expect(manifest.user_config).toHaveProperty(match[1]);

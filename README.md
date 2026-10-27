@@ -172,6 +172,8 @@ If you'd rather drop the plugin in by hand:
 
 By default, the server exposes only core catalog and metadata tools. Set `LIGHTROOM_MCP_TOOLSETS` in your MCP client’s server environment to `develop`, `masks`, `develop,masks`, or `all` to add those tools. Core stays enabled. Restart the server after changing the setting; its tool list stays fixed for the session, and disabled tools cannot be called. In the desktop bundle, use **Enabled toolsets**.
 
+Set `LIGHTROOM_MCP_READ_ONLY` to `true` or `1` to hide write tools and refuse calls to them before they reach Lightroom, including when this server forwards through another bridge. The switch applies within the enabled toolsets. Exports (`export_photos`, `export_photo_metadata`, `export_develop_preset`) write files and are blocked. Read tools for masks and other Develop settings can briefly switch the module, photo or selected mask, then restore the previous view; they do not change photo data. Previews return image data in memory using Lightroom's preview cache. In the desktop bundle, enable **Read-only mode**. Restart the server after changing this setting.
+
 The Develop toolset includes presets, settings, snapshots, virtual copies, style summaries, Lens Blur, Denoise and Remove spots. The masks toolset includes all local mask tools. The table below lists every tool, including opt-in tools.
 
 | Tool | What it does |
@@ -384,6 +386,7 @@ Env vars:
 | `LIGHTROOM_MCP_REQUEST_PORT` | `58763` | Plugin request port. |
 | `LIGHTROOM_MCP_RESPONSE_PORT` | `58764` | Plugin response port. |
 | `LIGHTROOM_MCP_TOOLSETS` | `core` | Comma-separated `core`, `develop`, `masks`, or `all`; core is always enabled. |
+| `LIGHTROOM_MCP_READ_ONLY` | `false` | `true` or `1` hides and refuses write tools; `false`, `0`, unset or empty disables the switch. Values are case-sensitive and surrounding whitespace is ignored. Invalid values fail startup. |
 | `LIGHTROOM_MCP_TOKEN_PATH` | `~/.config/lightroom-mcp/token` | Auth token file. |
 
 If you change ports on the server side, change them in **Plug-in Manager → Lightroom MCP** to match.
