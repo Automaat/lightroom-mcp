@@ -363,13 +363,13 @@ const stringArray = (description: string, maxItems?: number) => ({
  * numbers. Accept both rather than making every caller stringify.
  */
 const photoIdSchema = (description: string): JSONObject => ({
-  oneOf: [{ type: "string", minLength: 1 }, { type: "number" }],
+  type: ["string", "number"], minLength: 1,
   description,
 });
 
 const photoIdArray = (description: string): JSONObject => ({
   type: "array",
-  items: { oneOf: [{ type: "string", minLength: 1 }, { type: "number" }] },
+  items: { type: ["string", "number"], minLength: 1 },
   minItems: 1,
   maxItems: MAX_BULK_PHOTO_IDS,
   description,
@@ -551,18 +551,30 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreview",
     description:
-      "JPEG image with current Develop edits (raw supported). cull for culling: about 650 tokens; detail for inspecting details: about 2.5k tokens. Costs are earlier Claude estimates, vary by image/model, and repeat each turn in history. See size for edge/fallback rules; width and height are actual.",
+      "Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the source request. See size for cost/edge rules.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         size: {
-          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller.",
+          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller. cull is for culling (about 650 tokens), detail for inspecting details (about 2.5k tokens): earlier Claude estimates, varying by image/model and repeated each turn in history.",
           oneOf: [
             { type: "number", minimum: 64, maximum: 2048 },
             { type: "string", enum: Object.keys(PREVIEW_SIZES) },
           ],
+        },
+        region: {
+          type: "object",
+          additionalProperties: false,
+          description: "Rectangle within the rendered preview, including its develop crop and displayed orientation. Pixel bounds round outward. Region calls request a larger source by dividing size by the longest normalized side, capped at 2048; requested_size reports that source request.",
+          properties: {
+            x: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+            y: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+            width: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+            height: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+          },
+          required: ["x", "y", "width", "height"],
         },
       },
       required: ["photo_id"],
@@ -1678,12 +1690,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.createGradientMask",
     description:
-      "Place a linear or radial gradient (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. Starts without adjustments. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
+      "Place a linear or radial gradient (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Sliders for a new mask, using unprefixed names such as exposure; not allowed with mask_id",
+        },
         shape: { type: "string", enum: ["linear", "radial"], description: "Gradient type" },
         ...gradientGeometryProperties,
         mask_id: {
@@ -1702,6 +1721,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Name of a new mask; not allowed together with mask_id",
         },
       },
+      allOf: [{ if: { required: ["mask_id"] }, then: { properties: { adjustments: false } } }],
       required: ["photo_id", "shape"],
     },
   },
@@ -1729,12 +1749,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.createBrushMask",
     description:
-      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. Starts without adjustments. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
+      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Sliders for a new mask, using unprefixed names such as exposure; not allowed with mask_id",
+        },
         ...brushStrokeProperties,
         mask_id: {
           type: "string",
@@ -1747,6 +1774,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Name of a new mask; not allowed together with mask_id",
         },
       },
+      allOf: [{ if: { required: ["mask_id"] }, then: { properties: { adjustments: false } } }],
       required: ["photo_id", "strokes"],
     },
   },
@@ -1774,12 +1802,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRangeMasks.createRangeMask",
     description:
-      "Create a luminance, color or depth range (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC and refuses the full 0..1 scene. Luminance/depth bands must be at least 0.01 wide; falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). Instead of color.sample, copy_sample_from takes mask_id, tool_id and optional photo_id: copies one color sample verbatim, preserving its displayed pin and amount unless color.amount overrides it. Other range types, unknown ids, a tool outside that mask or multiple samples fail unchanged. Cross-photo copies select similarly ranked pixels, which match colors only for identical pixel content; different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. Starts without adjustments. Returns mask_id, tool_id, type and stored range; verifies a rangeMask with the requested subtype.",
+      "Create a luminance, color or depth range (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC and refuses the full 0..1 scene. Luminance/depth bands must be at least 0.01 wide; falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). Instead of color.sample, copy_sample_from takes mask_id, tool_id and optional photo_id: copies one color sample verbatim, preserving its displayed pin and amount unless color.amount overrides it. Other range types, unknown ids, a tool outside that mask or multiple samples fail unchanged. Cross-photo copies select similarly ranked pixels, which match colors only for identical pixel content; different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and stored range; verifies a rangeMask with the requested subtype.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Sliders for a new mask, using unprefixed names such as exposure; not allowed with mask_id",
+        },
         type: { type: "string", enum: ["luminance", "color", "depth"], description: "Kind of range mask" },
         luminance: {
           type: "object",
@@ -1867,6 +1902,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Name of a new mask; not allowed together with mask_id",
         },
       },
+      allOf: [{ if: { required: ["mask_id"] }, then: { properties: { adjustments: false } } }],
       required: ["photo_id", "type"],
     },
   },

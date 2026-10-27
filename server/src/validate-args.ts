@@ -1,4 +1,5 @@
 import { Ajv, type ValidateFunction } from "ajv";
+import type { PreviewArgs } from "./preview-region.js";
 import {
   developSettingKeysValidationSchema,
   developSettingsValidationSchema,
@@ -33,10 +34,12 @@ const validators = new Map<string, ValidateFunction>(
 
 function describe(error: { instancePath?: string; message?: string; params?: unknown }): string {
   const field = error.instancePath ? error.instancePath.replace(/^\//, "").replace(/\//g, ".") : "";
-  const params = error.params as { additionalProperty?: string } | undefined;
+  const params = error.params as { additionalProperty?: string; type?: string[] } | undefined;
   const extra = params?.additionalProperty;
   if (extra) return `unknown property "${extra}"`;
-  const what = error.message ?? "is invalid";
+  const what = Array.isArray(params?.type)
+    ? `must be ${params.type.join(" or ")}`
+    : error.message ?? "is invalid";
   return field ? `${field} ${what}` : what;
 }
 
@@ -56,6 +59,12 @@ export function validateToolArgs(name: string, args: unknown): string | null {
     if (name === "get_photo_metadata"
       && (params.photo_id !== undefined) === (params.photo_ids !== undefined)) {
       return `Invalid arguments for ${name}: provide exactly one of photo_id or photo_ids`;
+    }
+    if (name === "get_photo_preview") {
+      const region = (args as PreviewArgs).region;
+      if (region && (region.x + region.width > 1 || region.y + region.height > 1)) {
+        return "Invalid arguments for get_photo_preview: region must fit within the rendered frame";
+      }
     }
     return null;
   }
