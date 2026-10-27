@@ -174,7 +174,7 @@ If you'd rather drop the plugin in by hand:
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright + develop settings for one photo. |
+| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright for one photo; add `sections: ["developSettings"]` for develop settings. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
 | `get_photo_preview` | JPEG preview of one photo (raw files too). `size: "cull"` requests 512 for culling; `"detail"` requests 1024 for inspecting details. Numeric sizes 64–2048 and the default 512 remain supported. |
 | `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
@@ -206,7 +206,7 @@ If you'd rather drop the plugin in by hand:
 | `import_photos` | Import a file or folder into the catalog. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |
-| `list_develop_presets` | Discover Lightroom-visible presets and plugin checkpoints. |
+| `list_develop_presets` | Discover presets and plugin checkpoints by name (`query`) or exact `folder`, with `limit` (default 100) and `offset`. Returns `name`, `folder`, `scope`, `uuid`, total `count` and `has_more`; use `get_develop_preset` for `file`. |
 | `get_develop_preset` | Read settings and backing-file metadata for one exact preset. |
 | `compare_develop_presets` | Diff an approved historical preset against a candidate. |
 | `create_develop_preset` | Capture explicit settings from a photo as a versioned plugin checkpoint. |

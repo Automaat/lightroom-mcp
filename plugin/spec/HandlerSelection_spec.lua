@@ -51,10 +51,15 @@ describe("HandlerSelection.getSelectedPhotos", function()
         local r = Handler.getSelectedPhotos({})
         local p = r.photos[1]
         assert.are.equal("42", p.id)
-        assert.are.equal("/x.jpg", p.path)
+        assert.is_nil(p.path)
         assert.are.equal("x.jpg", p.filename)
         assert.are.equal(4, p.rating)
         assert.are.equal("2026-05-06", p.dateTimeOriginal)
+        assert.are.same(r, Handler.getSelectedPhotos({ include_path = false }))
+        local full = Handler.getSelectedPhotos({ include_path = true })
+        assert.are.equal("/x.jpg", full.photos[1].path)
+        full.photos[1].path = nil
+        assert.are.same(r, full)
     end)
 
     it("paginates via limit and offset", function()

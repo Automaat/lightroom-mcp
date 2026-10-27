@@ -293,7 +293,7 @@ async function main() {
     const destinationDir = path.join(outputRoot, checkpointName);
 
     await run("find a source photo without changing it", async () => {
-      const r = await c.callTool("search_photos", { limit: 1 });
+      const r = await c.callTool("search_photos", { limit: 1, include_path: true });
       checkTrue("not error", !r.isError, r.text);
       ctx.firstPhoto = r.parsed.photos?.[0];
       checkTrue("photo exists", !!ctx.firstPhoto, "catalog appears empty");
@@ -404,6 +404,7 @@ async function main() {
       if (!ctx.firstPhoto) throw new Error("no photo to test against");
       const r = await c.callTool("get_photo_metadata", {
         photo_id: String(ctx.firstPhoto.id),
+        sections: ["developSettings"],
       });
       checkTrue("not error", !r.isError, r.text);
       checkTrue("has filename", typeof r.parsed.filename === "string");
@@ -422,6 +423,9 @@ async function main() {
       const r = await c.callTool("list_develop_presets", {});
       checkTrue("not error", !r.isError, r.text);
       checkTrue("count is number", typeof r.parsed.count === "number");
+      checkTrue("page is bounded", r.parsed.presets.length <= 100);
+      checkEq("has_more matches total", r.parsed.has_more, r.parsed.presets.length < r.parsed.count);
+      checkTrue("list omits backing files", r.parsed.presets.every((preset) => !("file" in preset)));
       ctx.presets = r.parsed.presets;
       ctx.exactPresets = r.parsed.presets.filter((preset) =>
         exactPresetSelector(preset, r.parsed.presets));
@@ -568,6 +572,7 @@ async function main() {
         checkTrue("first not error", !r1.isError, r1.text);
         const meta = await c.callTool("get_photo_metadata", {
           photo_id: String(ctx.firstPhoto.id),
+          sections: ["developSettings"],
         });
         checkTrue("exposure ~0.5", Math.abs((meta.parsed.developSettings.exposure ?? 0) - 0.5) < 1e-6,
           `got ${meta.parsed.developSettings.exposure}`);
@@ -613,6 +618,7 @@ async function main() {
         checkEq("copied", cp.parsed.copied, 1);
         const dstMeta = await c.callTool("get_photo_metadata", {
           photo_id: String(dst.id),
+          sections: ["developSettings"],
         });
         checkEq("dst contrast", dstMeta.parsed.developSettings.contrast, 42);
         // restore source
@@ -632,9 +638,9 @@ async function main() {
     // Phase 7b — export to /tmp, verify file + dimensions.
     // Prefer a real photo (rating>=1 typically means actual catalog content,
     // skipping test fixtures like synthetic PNGs that LR refuses to render).
-    let search = await c.callTool("search_photos", { rating: 5, limit: 1 });
+    let search = await c.callTool("search_photos", { rating: 5, limit: 1, include_path: true });
     if (search.isError || !search.parsed.photos?.length) {
-      search = await c.callTool("search_photos", { limit: 1 });
+      search = await c.callTool("search_photos", { limit: 1, include_path: true });
     }
     const photo = search.parsed.photos?.[0];
     if (photo) {

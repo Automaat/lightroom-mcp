@@ -28,6 +28,34 @@ describe("HandlerSearch.searchPhotos", function()
         assert.is_false(result.has_more)
     end)
 
+    it("omits paths by default and includes them only on request", function()
+        local slim = Handler.searchPhotos({ limit = 1 })
+        local full = Handler.searchPhotos({ limit = 1, include_path = true })
+        local explicit = Handler.searchPhotos({ limit = 1, include_path = false })
+
+        assert.are.same({ id = "1", filename = "sunset.jpg", rating = 5,
+            dateTimeOriginal = "2024-06-01" }, slim.photos[1])
+        assert.are.same(slim, explicit)
+        assert.are.equal("/a/sunset.jpg", full.photos[1].path)
+        full.photos[1].path = nil
+        assert.are.same(slim, full)
+    end)
+
+    it("encodes a default 100-row page within 65 percent of rows with paths", function()
+        local photos = {}
+        for i = 1, 100 do
+            photos[i] = helper.fakePhoto({ id = tostring(i), path = "/" .. string.rep("a", 48) .. "/sunset.jpg",
+                fileName = "sunset.jpg", rating = 5, dateTimeOriginal = "2024-06-01" })
+        end
+        catalog = helper.fakeCatalog({ photos = photos })
+        local JSON = require 'JSON'
+
+        local slim = JSON:encode(Handler.searchPhotos({}))
+        local full = JSON:encode(Handler.searchPhotos({ include_path = true }))
+
+        assert.is_true(#slim <= #full * 0.65)
+    end)
+
     it("filters by rating", function()
         local result = Handler.searchPhotos({ rating = 5 })
         assert.are.equal(2, result.count)
@@ -247,7 +275,7 @@ describe("HandlerSearch.searchPhotos pagination", function()
             end
         end
 
-        local r = Handler.searchPhotos({ limit = 50, offset = 100 })
+        local r = Handler.searchPhotos({ limit = 50, offset = 100, include_path = true })
 
         assert.are.equal(50, #r.photos)
         assert.are.same({
