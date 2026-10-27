@@ -137,6 +137,88 @@ describe('client-compatible metadata selectors', () => {
 });
 
 describe('createCallToolHandler', () => {
+  const deletionFields = ['photo_id', 'photo_ids', 'mask_ids', 'tool_ids', 'all'] as const;
+  const deletionValues: Record<(typeof deletionFields)[number], unknown> = {
+    photo_id: 914, photo_ids: [914], mask_ids: ['m'], tool_ids: ['t'], all: true,
+  };
+  const deletionCombinations = Array.from({ length: 32 }, (_, bits) => {
+    const fields = deletionFields.filter((_, i) => bits & (1 << i));
+    const args: Record<string, unknown> = Object.fromEntries(fields.map(field => [field, deletionValues[field]]));
+    const targets = fields.filter(field => ['mask_ids', 'tool_ids', 'all'].includes(field));
+    const valid = fields.includes('photo_ids')
+      ? fields.length === 1
+      : fields.includes('photo_id') && targets.length === 1;
+    return { args, valid };
+  });
+
+  it.each(deletionCombinations)('enforces private delete_masks selectors before dispatch (%#)', async ({ args, valid }) => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(Boolean(result.isError)).toBe(!valid);
+    expect(calls).toBe(valid ? 1 : 0);
+  });
+
+  it.each([
+    {},
+    { photo_ids: [] },
+    { photo_ids: [914], photo_id: 914 },
+    { photo_ids: [914], mask_ids: ['m'] },
+    { photo_ids: [914], tool_ids: ['t'] },
+    { photo_ids: [914], all: true },
+    { photo_ids: [914], photo_id: 914, all: true },
+    { photo_id: 914, mask_ids: ['m'], empty: true },
+  ])('rejects ambiguous delete_masks selectors before dispatch (%#)', async args => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for delete_masks');
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    { photo_id: 914, mask_ids: ['m'] },
+    { photo_id: 914, tool_ids: ['t'] },
+    { photo_id: 914, all: true },
+    { photo_ids: [914, '/a.dng'] },
+  ])('dispatches each delete_masks mode unchanged (%#)', async args => {
+    let captured: unknown;
+    await makeHandler({ call: async (_action, params) => {
+      captured = params;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(captured).toEqual(args);
+  });
+
+  it.each([
+    { photo_id: 1, type: 'people', parts: ['hair', 'hair'] },
+    { photo_id: 1, type: 'people', parts: ['ears'] },
+    { photo_id: 1, type: 'people' },
+    { photo_id: 1, type: 'people', parts: [] },
+    { photo_id: 1, type: 'landscape' },
+    { photo_id: 1, type: 'landscape', categories: [] },
+    { photo_id: 1, type: 'landscape', categories: ['lava'] },
+    { photo_id: 1, type: 'landscape', categories: ['sky', 'sky'] },
+    { photo_id: 1, type: 'sky', parts: ['hair'] },
+    { photo_id: 1, type: 'subject', categories: ['sky'] },
+    { photo_id: 1, type: 'background', parts: ['hair'] },
+    { photo_id: 1, type: 'people', parts: ['hair'], categories: ['sky'] },
+    { photo_id: 1, type: 'landscape', categories: ['sky'], parts: ['hair'] },
+    { photo_id: 1, type: 'people', parts: ['hair'], adjustments: {} },
+    { photo_id: 1, type: 'landscape', categories: ['sky'], adjustments: {} },
+  ])('rejects invalid create_mask selectors before plugin dispatch: %j', async (args) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => { calls++; return { id: '1', result: {} }; } });
+    const result = await handler('create_mask', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for create_mask');
+    expect(calls).toBe(0);
+  });
   it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };
     let captured: unknown;

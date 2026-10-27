@@ -415,7 +415,7 @@ describe("HandlerMaskCreate.createMask", function()
             { { type = "sky" }, "photo_id is required" },
             { { photo_id = "", type = "sky" }, "photo_id is required" },
             { { photo_id = "10" }, "type must be one of: subject, sky, background" },
-            { { photo_id = "10", type = "people" }, "type must be one of: subject, sky, background" },
+            { { photo_id = "10", type = "unknown" }, "type must be one of: subject, sky, background" },
             { { photo_id = "10", type = "sky", adjustments = "bright" }, "adjustments must be an object" },
             { { photo_id = "10", type = "sky", adjustments = { gamma = 1 } }, "Unknown adjustment gamma" },
             { { photo_id = "10", type = "sky", adjustments = { exposure = "1" } }, "exposure must be a number between -4 and 4" },

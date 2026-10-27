@@ -30,7 +30,8 @@
       ],
       "env": {
         "LIGHTROOM_MCP_REQUEST_PORT": "${user_config.request_port}",
-        "LIGHTROOM_MCP_RESPONSE_PORT": "${user_config.response_port}"
+        "LIGHTROOM_MCP_RESPONSE_PORT": "${user_config.response_port}",
+        "LIGHTROOM_MCP_TOOLSETS": "${user_config.toolsets}"
       }
     }
   },
@@ -249,11 +250,7 @@
     },
     {
       "name": "delete_masks",
-      "description": "Delete masks, or component tools of masks, from a photo by id, or all masks on it."
-    },
-    {
-      "name": "delete_empty_masks",
-      "description": "Delete all empty masks from a list of photos."
+      "description": "Delete masks or components on one photo, or empty masks from a photo list."
     },
     {
       "name": "set_mask_adjustments",
@@ -269,19 +266,11 @@
     },
     {
       "name": "create_mask",
-      "description": "Create a Subject, Sky or Background mask on a photo, with optional local adjustments."
+      "description": "Create Subject, Sky, Background, People parts or Landscape category masks"
     },
     {
       "name": "create_mask_batch",
       "description": "Add the same Subject, Sky or Background mask to many photos, each recomputed for its own photo."
-    },
-    {
-      "name": "create_people_mask",
-      "description": "Create People masks for chosen parts such as skin, hair, eyes, lips or clothes, covering all people."
-    },
-    {
-      "name": "create_landscape_mask",
-      "description": "Create Landscape masks for chosen categories such as sky, water, vegetation or mountains."
     },
     {
       "name": "set_mask_curves",
@@ -333,6 +322,13 @@
     }
   ],
   "user_config": {
+    "toolsets": {
+      "type": "string",
+      "title": "Enabled toolsets",
+      "description": "Core catalog tools are always enabled. Add develop, masks, develop,masks, or all. Restart the server after changing this setting.",
+      "default": "core",
+      "required": false
+    },
     "request_port": {
       "type": "string",
       "title": "Plugin request port",

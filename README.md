@@ -170,6 +170,10 @@ If you'd rather drop the plugin in by hand:
 
 ## Tools
 
+By default, the server exposes only core catalog and metadata tools. Set `LIGHTROOM_MCP_TOOLSETS` in your MCP client’s server environment to `develop`, `masks`, `develop,masks`, or `all` to add those tools. Core stays enabled. Restart the server after changing the setting; its tool list stays fixed for the session, and disabled tools cannot be called. In the desktop bundle, use **Enabled toolsets**.
+
+The Develop toolset includes presets, settings, snapshots, virtual copies, style summaries, Lens Blur, Denoise and Remove spots. The masks toolset includes all local mask tools. The table below lists every tool, including opt-in tools.
+
 | Tool | What it does |
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
@@ -234,15 +238,12 @@ If you'd rather drop the plugin in by hand:
 | `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
 | `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
-| `delete_masks` | Delete masks or component tools by id, or all masks, from a photo (LrC 11+); an unknown id deletes nothing; briefly opens the photo in Develop. |
-| `delete_empty_masks` | Delete all empty masks from many photos and report how many photos changed (LrC 14+); no Develop switch. |
+| `delete_masks` | With `photo_id`, delete masks or components by id, or all masks (LrC 11+); unknown ids delete nothing; briefly opens Develop. With only `photo_ids`, delete empty masks from up to 1000 photos without opening Develop or changing selection (LrC 14+). |
 | `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ...) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |
 | `get_mask` | Read local adjustments, curves and Point Color in one Develop session; optional `kinds` selects `adjustments`, `curves` or `point_colors` (default all). Returns supported kinds and named errors for unsupported versions. |
 | `invert_mask` | Invert a mask by id, in place or as an inverted copy that keeps the original (LrC 11.4+); briefly opens the photo in Develop. |
-| `create_mask` | Create a Subject, Sky or Background mask with optional local adjustments and get its id (LrC 11+); briefly opens the photo in Develop. |
+| `create_mask` | Create Subject/Sky/Background masks (LrC 11+) with optional adjustments, or People parts/Landscape categories (guarded LrC 15.6 / process 15.4) with `type: "people", parts: [...]` or `type: "landscape", categories: [...]`. Returns mask ids; missing AI parts leave no new masks. People/Landscape reject `adjustments`; use `set_mask_adjustments` afterwards. A single person cannot be chosen. |
 | `create_mask_batch` | Add the same Subject, Sky or Background mask with the same adjustments to up to 200 photos, each mask recomputed for its own photo; opens only the first photo in Develop; guarded write, LrC 15.6 only. |
-| `create_people_mask` | Create People masks for chosen parts (skin, hair, eyes, lips, clothes, ...) covering all people, and get their ids; one person cannot be chosen; guarded write, LrC 15.6 only; no Develop switch; fails and leaves nothing if there is no person or part. |
-| `create_landscape_mask` | Create Landscape masks for chosen categories (sky, water, vegetation, mountains, ...) and get their ids; same guarded write and no-leftover rule; no Develop switch. |
 | `set_mask_curves` | Set a mask's local tone curve per channel (main, red, green, blue) by mask id (LrC 12.3+); briefly opens the photo in Develop. |
 | `edit_mask_point_colors` | Add, update, delete or clear a mask's local Point Color swatches by mask id (LrC 13.2+); briefly opens the photo in Develop. |
 | `combine_mask` | Add, subtract or intersect a Subject, Sky or Background component on an existing mask by id and get the component's id (LrC 11+); briefly opens the photo in Develop. |
@@ -381,6 +382,7 @@ Env vars:
 | --- | --- | --- |
 | `LIGHTROOM_MCP_REQUEST_PORT` | `58763` | Plugin request port. |
 | `LIGHTROOM_MCP_RESPONSE_PORT` | `58764` | Plugin response port. |
+| `LIGHTROOM_MCP_TOOLSETS` | `core` | Comma-separated `core`, `develop`, `masks`, or `all`; core is always enabled. |
 | `LIGHTROOM_MCP_TOKEN_PATH` | `~/.config/lightroom-mcp/token` | Auth token file. |
 
 If you change ports on the server side, change them in **Plug-in Manager → Lightroom MCP** to match.

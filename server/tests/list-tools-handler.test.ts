@@ -76,14 +76,11 @@ const EXPECTED_TOOL_NAMES = [
   'add_brush_strokes',
   'create_range_mask',
   'delete_masks',
-  'delete_empty_masks',
   'set_mask_adjustments',
   'get_mask',
   'invert_mask',
   'create_mask',
   'create_mask_batch',
-  'create_people_mask',
-  'create_landscape_mask',
   'set_mask_curves',
   'edit_mask_point_colors',
   'combine_mask',
@@ -108,8 +105,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 74 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(74);
+  it('contains exactly 71 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(71);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -228,13 +225,13 @@ describe('published schema compatibility', () => {
 
 describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
-    const result = listToolsHandler();
+    const result = listToolsHandler(new Set(['core', 'develop', 'masks']));
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
 
   it('keeps repeated tool lists byte-identical and in contract order', () => {
-    expect(JSON.stringify(listToolsHandler())).toBe(JSON.stringify(listToolsHandler()));
-    expect(listToolsHandler().tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+    expect(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks'])))).toBe(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks']))));
+    expect(listToolsHandler(new Set(['core', 'develop', 'masks'])).tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
   });
 
   it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(
@@ -310,15 +307,11 @@ describe('tool required fields', () => {
     ['create_brush_mask', ['photo_id', 'strokes']],
     ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
     ['create_range_mask', ['photo_id', 'type']],
-    ['delete_masks', ['photo_id']],
-    ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
     ['get_mask', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
     ['create_mask_batch', ['photo_ids', 'type']],
-    ['create_people_mask', ['photo_id', 'parts']],
-    ['create_landscape_mask', ['photo_id', 'categories']],
     ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
     ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
     ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
@@ -333,12 +326,30 @@ describe('tool required fields', () => {
     'list_keywords',
     'list_develop_presets',
     'get_develop_preset',
+    'delete_masks',
   ])(
     '%s has no required fields',
     (name) => {
       expect(toolRequired(name)).toBeUndefined();
     },
   );
+});
+
+describe('delete_masks schema', () => {
+  it('keeps root selector unions private for client compatibility', () => {
+    const schema = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!.inputSchema;
+    for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(schema).not.toHaveProperty(keyword);
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toHaveProperty('photo_id');
+    expect(schema.properties).toHaveProperty('photo_ids');
+  });
+
+  it('is smaller than the two deletion definitions it replaces', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!;
+    expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(936);
+    expect(JSON.stringify(tool).length).toBeLessThan(1887);
+    expect(TOOL_DEFINITIONS.some(tool => tool.name === 'delete_empty_masks')).toBe(false);
+  });
 });
 
 describe('set_keywords schema', () => {
@@ -374,7 +385,7 @@ describe('photo array schema', () => {
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
     ['match_photo_style', 'target_ids'],
-    ['delete_empty_masks', 'photo_ids'],
+    ['delete_masks', 'photo_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
     const properties = tool?.inputSchema.properties as Record<
@@ -550,21 +561,42 @@ describe('mask curve schema', () => {
 });
 
 describe('AI mask types', () => {
+  it('replaces two AI entry points with one smaller create_mask definition', () => {
+    const create = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_mask');
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_people_mask');
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_landscape_mask');
+    expect(JSON.stringify(create).length).toBeLessThan(4997);
+    expect(JSON.stringify(create?.inputSchema).length).toBeLessThan(2872);
+  });
+
   function typeEnumOf(toolName: string): string[] {
     const contract = TOOL_CONTRACTS.find((c) => c.name === toolName);
     const properties = contract?.inputSchema.properties as Record<string, { enum?: string[] }>;
     return properties.type.enum ?? [];
   }
 
-  it('offers the types the Lua type table knows to create_mask and combine_mask alike', () => {
+  it('keeps original SDK types on batch/combine and adds guarded AI types only to create_mask', () => {
     const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskTypes.lua');
     const source = fs.readFileSync(luaPath, 'utf8');
     const namesBlock = source.match(/MaskTypes\.NAMES = \{([^}]*)\}/)?.[1] ?? '';
     const luaNames = [...namesBlock.matchAll(/"(\w+)"/g)].map((m) => m[1]);
 
     expect(luaNames.length).toBeGreaterThan(0);
-    expect(typeEnumOf('create_mask')).toEqual(luaNames);
+    expect(typeEnumOf('create_mask_batch')).toEqual(luaNames);
+    expect(typeEnumOf('create_mask')).toEqual([...luaNames, 'people', 'landscape']);
     expect(typeEnumOf('combine_mask')).toEqual(luaNames);
+  });
+
+  it('publishes the People parts and Landscape categories accepted by the guarded Lua path', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'AiMaskParts.lua'), 'utf8');
+    const contract = TOOL_CONTRACTS.find((tool) => tool.name === 'create_mask');
+    const properties = contract?.inputSchema.properties as Record<string, { items: { enum: string[] } }>;
+    for (const [field, table] of [['parts', 'PEOPLE_PARTS'], ['categories', 'LANDSCAPE_CATEGORIES']]) {
+      const block = source.match(new RegExp(`local ${table} = \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+      const names = [...block.matchAll(/name = "(\w+)"/g)].map((match) => match[1]);
+      expect(names.length).toBeGreaterThan(0);
+      expect(properties[field].items.enum).toEqual(names);
+    }
   });
 });
 

@@ -1,4 +1,5 @@
 import type { Tool } from "@modelcontextprotocol/server";
+import type { Toolset } from "./toolsets.js";
 import { TOOL_CONTRACTS } from "./tool-contracts.js";
 
 export function publishedInputSchema(schema: Tool["inputSchema"]): Tool["inputSchema"] {
@@ -21,6 +22,6 @@ export const TOOL_DEFINITIONS: Tool[] = TOOL_CONTRACTS.map(
   }),
 );
 
-export function listToolsHandler(): { tools: Tool[] } {
-  return { tools: TOOL_DEFINITIONS };
+export function listToolsHandler(toolsets: ReadonlySet<Toolset> = new Set(["core"])): { tools: Tool[] } {
+  return { tools: TOOL_DEFINITIONS.filter((_tool, index) => toolsets.has(TOOL_CONTRACTS[index].toolset)) };
 }

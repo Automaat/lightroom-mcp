@@ -7,6 +7,7 @@ import { PluginSocket } from "./plugin-socket.js";
 import { Dispatcher } from "./dispatcher.js";
 import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
+import { parseToolsets, type Toolset } from "./toolsets.js";
 import { createMcpServer } from "./create-server.js";
 import { createCallToolHandler, NOT_CONNECTED_DETAILS, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
 import { Bridge, type Leader } from "./bridge.js";
@@ -89,9 +90,11 @@ async function main() {
     return;
   }
 
+  let toolsets: readonly Toolset[];
   let REQUEST_PORT: number;
   let RESPONSE_PORT: number;
   try {
+    toolsets = parseToolsets(process.env.LIGHTROOM_MCP_TOOLSETS);
     REQUEST_PORT = requestPort();
     RESPONSE_PORT = responsePort();
   } catch (err) {
@@ -110,7 +113,7 @@ async function main() {
     lockHolder: () => lockHolder(REQUEST_PORT, RESPONSE_PORT),
   });
 
-  const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) });
+  const server = createMcpServer({ callTool: (name, args, options) => bridge.callTool(name, args, options) }, { toolsets });
   server.oninitialized = () => void bridge.start();
 
   const transport = new StdioServerTransport();
