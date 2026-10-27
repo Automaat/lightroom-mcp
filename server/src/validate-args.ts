@@ -60,6 +60,10 @@ export function validateToolArgs(name: string, args: unknown): string | null {
       && (params.photo_id !== undefined) === (params.photo_ids !== undefined)) {
       return `Invalid arguments for ${name}: provide exactly one of photo_id or photo_ids`;
     }
+    if (["create_gradient_mask", "create_brush_mask", "create_range_mask"].includes(name)
+      && params.mask_id !== undefined && params.adjustments !== undefined) {
+      return `Invalid arguments for ${name}: adjustments cannot be used with mask_id`;
+    }
     if (name === "get_photo_preview") {
       const region = (args as PreviewArgs).region;
       if (region && (region.x + region.width > 1 || region.y + region.height > 1)) {

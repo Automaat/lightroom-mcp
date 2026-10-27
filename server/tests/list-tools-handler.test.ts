@@ -121,7 +121,7 @@ describe('TOOL_DEFINITIONS', () => {
     expect(names).not.toContain('set_flag');
   });
 
-  it.each(['set_rating_and_flag', 'get_photo_metadata'])(
+  it.each(['set_rating_and_flag', 'get_photo_metadata', 'create_gradient_mask', 'create_brush_mask', 'create_range_mask'])(
     'publishes %s without root unions rejected by Claude Code', name => {
       const schema = TOOL_DEFINITIONS.find(tool => tool.name === name)!.inputSchema;
       expect(schema.type).toBe('object');

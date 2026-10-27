@@ -1,7 +1,7 @@
 # Unreleased
 
 - `set_rating` and `set_flag` are replaced by `set_rating_and_flag`. Pass `photo_ids` and `rating`, `flag`, or both; both fields are saved in one write. Rating `0` clears stars and flag `"none"` clears the pick flag. Omitted fields stay unchanged. Results contain `success`, `updated` and `missing`.
-- `set_rating_and_flag` and `get_photo_metadata` publish plain object schemas for Claude Code. Rating-or-flag and exclusive single/batch photo selectors are enforced before dispatch; metadata handlers, sections and results are unchanged.
+- `set_rating_and_flag`, `get_photo_metadata` and the three mask creation tools publish plain object schemas for Claude Code. Rating-or-flag, exclusive single/batch photo selectors and the mask-id/creation-adjustments exclusion are enforced before dispatch; handlers, sections, geometry, sliders and results are unchanged.
 - Readiness failures now return one short line with the cause and next action. Full port diagnoses remain in stderr logs.
 - Invalid photo IDs now produce one type-validation clause. Handler errors omit the leading Lua source position; error conditions and accepted ID values are unchanged.
 
