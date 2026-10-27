@@ -31,9 +31,8 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   remove_keyword_subtree: 'destructive',
   list_keywords: 'read-only',
   rename_keyword: 'destructive',
-  set_rating: 'destructive',
+  set_rating_and_flag: 'destructive',
   undo_last_step: 'destructive',
-  set_flag: 'destructive',
   remove_photos_from_catalog: 'destructive',
   set_color_label: 'destructive',
   import_photos: 'additive',
@@ -187,10 +186,10 @@ describe('createMcpServer', () => {
     }
   });
 
-  it('loads only four hot catalog tools upfront over the wire', async () => {
+  it('loads only three hot catalog tools upfront over the wire', async () => {
     pair = await connect();
     const { tools } = await pair.client.listTools();
-    const hotNames = ['search_photos', 'get_photo_preview', 'set_rating', 'set_flag'];
+    const hotNames = ['search_photos', 'get_photo_preview', 'set_rating_and_flag'];
     expect(tools.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => tool.name)).toEqual(hotNames);
     for (const tool of tools) {
       if (hotNames.includes(tool.name)) expect(tool._meta).toEqual({ 'anthropic/alwaysLoad': true });
@@ -293,10 +292,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 77 tools', async () => {
+    it('returns all 76 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(77);
+      expect(tools).toHaveLength(76);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
@@ -443,7 +442,7 @@ describe('createMcpServer', () => {
         call: async () => { throw new Error('Failed to send request to plugin (socket dropped)'); },
       });
       const result = asToolResult(await pair.client.callTool({
-        name: 'set_rating',
+        name: 'set_rating_and_flag',
         arguments: { photo_ids: [914], rating: 3 },
       }));
       expect(result.isError).toBe(true);

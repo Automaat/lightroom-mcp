@@ -45,7 +45,7 @@
     },
     {
       "name": "get_photo_metadata",
-      "description": "Detailed metadata for a photo; pass sections: [\"developSettings\"] for develop settings."
+      "description": "Detailed metadata for one photo_id or up to 100 photo_ids; sections: [\"developSettings\"] includes develop settings for each."
     },
     {
       "name": "get_photo_preview",
@@ -140,12 +140,8 @@
       "description": "Undo one shared Lightroom history step, including user actions, with confirm: true."
     },
     {
-      "name": "set_rating",
-      "description": "Set star rating on photos."
-    },
-    {
-      "name": "set_flag",
-      "description": "Flag photos as pick or reject, or remove the flag."
+      "name": "set_rating_and_flag",
+      "description": "Set star rating, pick flag, or both on photos."
     },
     {
       "name": "remove_photos_from_catalog",

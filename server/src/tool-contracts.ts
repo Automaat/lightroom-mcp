@@ -1,4 +1,5 @@
 import type { JSONObject, Tool } from "@modelcontextprotocol/server";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 type InputSchema = Tool["inputSchema"];
 
@@ -17,6 +18,7 @@ export interface ToolContract {
 }
 
 const MAX_BULK_PHOTO_IDS = 1000;
+const MAX_METADATA_PHOTO_IDS = 100;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
@@ -362,13 +364,13 @@ const stringArray = (description: string, maxItems?: number) => ({
  * numbers. Accept both rather than making every caller stringify.
  */
 const photoIdSchema = (description: string): JSONObject => ({
-  oneOf: [{ type: "string", minLength: 1 }, { type: "number" }],
+  type: ["string", "number"], minLength: 1,
   description,
 });
 
 const photoIdArray = (description: string): JSONObject => ({
   type: "array",
-  items: { oneOf: [{ type: "string", minLength: 1 }, { type: "number" }] },
+  items: { type: ["string", "number"], minLength: 1 },
   minItems: 1,
   maxItems: MAX_BULK_PHOTO_IDS,
   description,
@@ -527,19 +529,22 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read photo keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
+        photo_id: photoIdSchema("One photo ID or file path; supply photo_id or photo_ids, never both"),
+        photo_ids: {
+          ...photoIdArray("1 to 100 photo IDs or file paths; returns photos in request order and missing identifiers separately. Repeated identifiers produce repeated entries."),
+          maxItems: MAX_METADATA_PHOTO_IDS,
+        },
         sections: {
           type: "array",
           items: { type: "string", enum: ["developSettings"] },
-          description: "Optional metadata sections to include. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
+          description: "Optional metadata sections to include for each photo. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
         },
       },
-      required: ["photo_id"],
     },
   },
   {
@@ -549,17 +554,30 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreview",
     description:
-      "Render a JPEG image with current Develop settings, including raw files. size is the minimum acceptable longest edge; Lightroom returns its smallest preview meeting it, often larger. Above 3.5 MB or 2000px, uses the next smaller preview. Returns actual width/height.",
+      "Lightroom-rendered JPEG with Develop edits (raw supported). region crops the rendered frame after develop crop/rotation: normalized x/y/width/height, origin top-left, x right, y down. width/height/bytes are actual; requested_size is the source request. See size for cost/edge rules.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         size: {
-          type: "number",
-          description: "Minimum longest edge in pixels (64-2048, default 512)",
-          minimum: 64,
-          maximum: 2048,
+          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller. cull is for culling (about 650 tokens), detail for inspecting details (about 2.5k tokens): earlier Claude estimates, varying by image/model and repeated each turn in history.",
+          oneOf: [
+            { type: "number", minimum: 64, maximum: 2048 },
+            { type: "string", enum: Object.keys(PREVIEW_SIZES) },
+          ],
+        },
+        region: {
+          type: "object",
+          additionalProperties: false,
+          description: "Rectangle within the rendered preview, including its develop crop and displayed orientation. Pixel bounds round outward. Region calls request a larger source by dividing size by the longest normalized side, capped at 2048; requested_size reports that source request.",
+          properties: {
+            x: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+            y: { type: "number", minimum: 0, exclusiveMaximum: 1 },
+            width: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+            height: { type: "number", exclusiveMinimum: 0, maximum: 1 },
+          },
+          required: ["x", "y", "width", "height"],
         },
       },
       required: ["photo_id"],
@@ -631,7 +649,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setGps",
     description:
-      "Set the GPS position of photos in decimal degrees, replacing any position they already have. Altitude is left unchanged unless altitude is given or clear_altitude is true.",
+      "Replace GPS coordinates in decimal degrees. Altitude stays unless altitude or clear_altitude is given. Returns success, updated and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -669,7 +687,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setLocation",
     description:
-      "Set the IPTC location fields of photos (sublocation, city, state/province, country, ISO country code), as get_photo_metadata reports them. Fields left out are unchanged; an empty string clears a field. Give at least one field. GPS is not touched (use set_gps).",
+      "Set IPTC location fields from get_photo_metadata; at least one is required. Omitted fields stay, empty strings clear. GPS stays (use set_gps). Returns success, updated, fields and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -696,7 +714,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.setMetadata",
     description:
-      "Set IPTC title/caption/headline, creator, copyright notice/usage terms/info URL, creator website and accessibility alt text/extended description, as get_photo_metadata reports. Accessibility requires LrC 13.2+. At least one field; omitted fields stay, empty strings clear. Copyright status is unwritable.",
+      "Set IPTC text from get_photo_metadata. Accessibility needs LrC 13.2+. At least one field; omitted fields stay, empty strings clear. Copyright status is unwritable. Returns success, updated, fields and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -802,7 +820,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Create collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.createCollection",
-    description: "Create a new collection",
+    description: "Create a collection; returns success and its path.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -822,7 +840,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Create smart collection",
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.createSmartCollection",
-    description: "Save intersecting search_photos filters as a smart collection that updates as photos change. Requires at least one filter. Missing parent collection sets are created; an existing sibling name is rejected.",
+    description: "Save intersecting search_photos filters as an auto-updating smart collection; at least one filter. Creates missing parent sets; rejects existing sibling names. Returns success and path.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -841,7 +859,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerCollections.addToCollection",
     description:
-      "Add photos to a collection. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+      "Add photos to a collection; returns success, added count and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -885,7 +903,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.removeFromCollection",
     description:
-      "Remove photos from a collection. They stay in the catalog and in any other collection. Smart collections cannot be edited this way. removed counts unique photos that were in the collection. Use a path from list_collections when names repeat.",
+      "Remove photos from a regular collection; catalog and other memberships stay. Returns success, removed (unique members), not_in_collection and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -906,7 +924,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerCollections.deleteCollection",
     description:
-      "Delete a collection. Its photos stay in the catalog. Use a path from list_collections when names repeat; an ambiguous bare name is rejected.",
+      "Delete a collection; photos stay in the catalog. Returns success, photo_count and that reminder.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -926,7 +944,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setKeywords",
     description:
-      "Add/remove keyword names or parent-first '|' paths (e.g. Places|Europe|Paris; see list_keywords). Case-insensitive matching. Missing names create top-level keywords; paths create missing levels unless create_missing=false.",
+      "Add/remove keyword names or parent-first '|' paths from list_keywords, ignoring case. Missing names create top-level keywords; paths create missing levels unless create_missing=false. Returns success and updated count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1010,7 +1028,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerKeywords.renameKeyword",
     description:
-      "Rename in place; tagged photos update, parent/children/synonyms stay. keyword: unique plain name or 'Parent|Child' path from list_keywords. Case-insensitive sibling conflicts fail (no merging); case-only renames work.",
+      "Rename in place; tagged photos update, parent/children/synonyms stay. Case-insensitive sibling conflicts fail; case-only renames work. Returns success, old_path, new_path and photo_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1018,7 +1036,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         keyword: {
           type: "string",
           minLength: 1,
-          description: "Keyword to rename: a plain name or a 'Parent|Child' path",
+          description: "Keyword from list_keywords: a unique plain name or a 'Parent|Child' path",
         },
         new_name: {
           type: "string",
@@ -1050,12 +1068,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
-    name: "set_rating",
+    name: "set_rating_and_flag",
     alwaysLoad: true,
-    title: "Set rating",
+    title: "Set rating and flag",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    luaHandler: "HandlerOrganization.setRating",
-    description: "Set star rating for photos",
+    luaHandler: "HandlerOrganization.setRatingAndFlag",
+    description: "Set rating, flag, or both in one write. Returns success, updated and missing; get_photo_metadata reports rating and pickStatus (pick 1, reject -1, none 0).",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1063,34 +1081,17 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_ids: photoIdArray("Array of photo IDs or file paths"),
         rating: {
           type: "number",
-          description: "Star rating (0-5)",
+          description: "Star rating (0-5); supply rating, flag, or both",
           minimum: 0,
           maximum: 5,
         },
-      },
-      required: ["photo_ids", "rating"],
-    },
-  },
-  {
-    name: "set_flag",
-    alwaysLoad: true,
-    title: "Set flag",
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    luaHandler: "HandlerOrganization.setFlag",
-    description:
-      "Set the pick flag of photos: pick, reject, or none to remove the flag. get_photo_metadata reports it as pickStatus (1, -1 or 0).",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_ids: photoIdArray("Array of photo IDs or file paths"),
         flag: {
           type: "string",
           enum: ["pick", "reject", "none"],
           description: "pick, reject, or none (unflagged)",
         },
       },
-      required: ["photo_ids", "flag"],
+      required: ["photo_ids"],
     },
   },
   {
@@ -1099,7 +1100,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setColorLabel",
     description:
-      "Set the color label of photos to red, yellow, green, blue, purple, or none to clear it. get_photo_metadata reports it as colorLabel.",
+      "Set a color label or none to clear; get_photo_metadata reports colorLabel. Returns success, updated and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1137,12 +1138,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerImport.importPhotos",
     description:
-      "Import a photo, or every photo in a folder and its subfolders, into the Lightroom catalog. Folder imports take camera raw (CR3, RAF, ORF, RW2, NEF, ARW, DNG and other Camera Raw formats), JPEG, HEIC/HEIF, AVIF, JPEG XL, TIFF, PNG and PSD/PSB files; other files are skipped and counted by extension in the reply.",
+      "Import a photo or a folder recursively. Returns success, imported/skipped counts, skipped_by_extension, complete and remaining_paths. Only unsupported-extension notes remain in message.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
-        source_path: { type: "string", description: "Path to photo or folder to import" },
+        source_path: { type: "string", description: "Photo or folder to import. Folder imports accept camera raw (CR3, RAF, ORF, RW2, NEF, ARW, DNG and other Camera Raw formats), JPEG, HEIC/HEIF, AVIF, JPEG XL, TIFF, PNG and PSD/PSB; other files are skipped by extension." },
         collection_name: {
           type: "string",
           description: "Collection to add imported photos to (optional)",
@@ -1160,7 +1161,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Export photos",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
-    description: "Export photos from Lightroom",
+    description: "Export photos; returns success, exported count, destination, complete and remaining_ids to retry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1196,7 +1197,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotoMetadata",
     description:
-      "Export up to 1000 photos to disk JSON: file/capture time/dimensions/rating/title/caption/GPS/location/keywords/keywordPaths, excluding develop settings. Omitted photo_ids uses selection, or filmstrip if none. Prefer over per-photo get_photo_metadata.",
+      "Export up to 1000 photos to disk JSON: file/capture time/dimensions/rating/title/caption/GPS/location/keywords/keywordPaths, no develop settings. Omitted photo_ids uses selection, or filmstrip if none. Prefer over per-photo get_photo_metadata. Returns success, exported, destination and missing IDs.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1264,7 +1265,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerDevelop.createDevelopPreset",
     description:
-      "Create a versioned plugin-managed Develop preset checkpoint from selected settings on one photo. The checkpoint is hidden from the Develop panel; export it for handoff.",
+      "Capture selected settings as a versioned plugin Develop checkpoint, hidden from Develop; export for handoff. Returns success, preset identity/file, visible_in_develop:false and a checkpoint note.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1320,7 +1321,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDevelopPreset",
     description:
-      "Apply one exact Develop preset to photos. AI masks are recomputed per target on LrC 13.3+: ai_updated counts successes, ai_update_failed lists failed IDs. Earlier versions or presets without AI masks apply normally.",
+      "Apply an exact Develop preset; returns success, applied, resolved preset identity, missing IDs, ai_updated and ai_update_failed. AI masks recompute per target on LrC 13.3+; earlier versions or non-AI presets apply normally. message holds AI warnings only.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1349,7 +1350,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.copyDevelopSettings",
     description:
-      "Copy Develop settings from one photo to others. When the copied settings contain AI masks (copied when settings is omitted), Lightroom Classic 13.3+ recomputes each mask for every target photo after copying; ai_updated counts the photos recomputed and ai_update_failed lists the ids where the recompute failed. Earlier versions, and copies without AI masks, behave as before.",
+      "Copy Develop settings; omitted settings includes AI masks. LrC 13.3+ recomputes each AI mask per target; earlier versions and non-AI copies behave normally. Returns success, copied, missing IDs, ai_updated count, ai_update_failed IDs and AI warning message only.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1605,7 +1606,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDenoise",
     description:
-      "Enable/change AI Denoise amount through the Develop panel (Lightroom Classic 15+), not a plain develop key. Activates each photo; shared Develop restoration rules apply. Computation runs in background Activity Center. Same amount skips; other settings stay. Max 100 photos; stops near 240 s with complete:false and remaining_ids to retry.",
+      "Enable/change AI Denoise through Develop (LrC 15+), not a develop key. Activates each photo; shared restoration rules apply. Activity Center computes in background. Same amount skips; other settings stay. Max 100 photos; stops near 240 s. Returns success, counts, per-photo results, seconds, complete/remaining_ids and progress/retry guidance.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1693,12 +1694,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.createGradientMask",
     description:
-      "Place a linear or radial gradient (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. Starts without adjustments. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
+      "Place a linear or radial gradient (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Sliders for a new mask, using unprefixed names such as exposure; not allowed with mask_id",
+        },
         shape: { type: "string", enum: ["linear", "radial"], description: "Gradient type" },
         ...gradientGeometryProperties,
         mask_id: {
@@ -1744,12 +1752,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.createBrushMask",
     description:
-      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. Starts without adjustments. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
+      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Sliders for a new mask, using unprefixed names such as exposure; not allowed with mask_id",
+        },
         ...brushStrokeProperties,
         mask_id: {
           type: "string",
@@ -1789,12 +1804,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRangeMasks.createRangeMask",
     description:
-      "Create a luminance, color or depth range (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC and refuses the full 0..1 scene. Luminance/depth bands must be at least 0.01 wide; falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). Instead of color.sample, copy_sample_from takes mask_id, tool_id and optional photo_id: copies one color sample verbatim, preserving its displayed pin and amount unless color.amount overrides it. Other range types, unknown ids, a tool outside that mask or multiple samples fail unchanged. Cross-photo copies select similarly ranked pixels, which match colors only for identical pixel content; different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. Starts without adjustments. Returns mask_id, tool_id, type and stored range; verifies a rangeMask with the requested subtype.",
+      "Create a luminance, color or depth range (Lightroom Classic 15.6 only; shared guarded-write and coordinate rules apply). Luminance selects min..max (0 black, 1 white), fading over falloff on each side, clipped at 0 and 1. Depth uses device depth (0 nearest, 1 farthest), requires a depth photo such as iPhone Portrait HEIC and refuses the full 0..1 scene. Luminance/depth bands must be at least 0.01 wide; falloff may be 0. Color takes exactly one sample: l, a, b in 0..1 plus x, y for the pin. A second sample point is rejected because Lightroom crashes on it. l, a, b are per-photo Lightroom rankings, not sRGB or computable from RGB: lightness darkest to brightest, green to red, blue to yellow. The same color has different rankings in different photos; develop edits leave them unchanged. Selection follows l, a, b, not the pin. Obtain them through list_masks after clicking Tools > Create New Mask > Color Range in Lightroom, or supply your own ranking (e.g. l 0.9, a 0.95 for brightest reds). Instead of color.sample, copy_sample_from takes mask_id, tool_id and optional photo_id: copies one color sample verbatim, preserving its displayed pin and amount unless color.amount overrides it. Other range types, unknown ids, a tool outside that mask or multiple samples fail unchanged. Cross-photo copies select similarly ranked pixels, which match colors only for identical pixel content; different photos can select different colors. Returns copied_from. amount is >0 to 1 (default 0.5), narrow to broad. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract; intersect is unsupported. invert selects outside the range. New masks start neutral. Returns mask_id, tool_id, type and stored range; verifies a rangeMask with the requested subtype.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        adjustments: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: MASK_ADJUSTMENT_PROPERTIES,
+          description: "Sliders for a new mask, using unprefixed names such as exposure; not allowed with mask_id",
+        },
         type: { type: "string", enum: ["luminance", "color", "depth"], description: "Kind of range mask" },
         luminance: {
           type: "object",
