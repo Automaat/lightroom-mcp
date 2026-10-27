@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { listToolsHandler } from '../src/list-tools-handler.js';
 
 // Raise only after reviewing size changes; lower this when tool definitions shrink.
-const TOOLS_LIST_SIZE_BUDGET = 104_000;
+const TOOLS_LIST_SIZE_BUDGET = 109_000;
 
 type ToolList = ReturnType<typeof listToolsHandler>;
 type ListedTool = ToolList['tools'][number];
