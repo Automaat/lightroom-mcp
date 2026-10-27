@@ -83,8 +83,6 @@ const EXPECTED_TOOL_NAMES = [
   'invert_mask',
   'create_mask',
   'create_mask_batch',
-  'create_people_mask',
-  'create_landscape_mask',
   'set_mask_curves',
   'get_mask_curves',
   'edit_mask_point_colors',
@@ -108,8 +106,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 77 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(77);
+  it('contains exactly 75 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(75);
   });
 
   it('tool names are unique', () => {
@@ -230,8 +228,6 @@ describe('tool required fields', () => {
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
     ['create_mask_batch', ['photo_ids', 'type']],
-    ['create_people_mask', ['photo_id', 'parts']],
-    ['create_landscape_mask', ['photo_id', 'categories']],
     ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
     ['get_mask_curves', ['photo_id', 'mask_id']],
     ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
@@ -466,21 +462,42 @@ describe('mask curve schema', () => {
 });
 
 describe('AI mask types', () => {
+  it('replaces two AI entry points with one smaller create_mask definition', () => {
+    const create = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_mask');
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_people_mask');
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_landscape_mask');
+    expect(JSON.stringify(create).length).toBeLessThan(4997);
+    expect(JSON.stringify(create?.inputSchema).length).toBeLessThan(2872);
+  });
+
   function typeEnumOf(toolName: string): string[] {
     const contract = TOOL_CONTRACTS.find((c) => c.name === toolName);
     const properties = contract?.inputSchema.properties as Record<string, { enum?: string[] }>;
     return properties.type.enum ?? [];
   }
 
-  it('offers the types the Lua type table knows to create_mask and combine_mask alike', () => {
+  it('keeps original SDK types on batch/combine and adds guarded AI types only to create_mask', () => {
     const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskTypes.lua');
     const source = fs.readFileSync(luaPath, 'utf8');
     const namesBlock = source.match(/MaskTypes\.NAMES = \{([^}]*)\}/)?.[1] ?? '';
     const luaNames = [...namesBlock.matchAll(/"(\w+)"/g)].map((m) => m[1]);
 
     expect(luaNames.length).toBeGreaterThan(0);
-    expect(typeEnumOf('create_mask')).toEqual(luaNames);
+    expect(typeEnumOf('create_mask_batch')).toEqual(luaNames);
+    expect(typeEnumOf('create_mask')).toEqual([...luaNames, 'people', 'landscape']);
     expect(typeEnumOf('combine_mask')).toEqual(luaNames);
+  });
+
+  it('publishes the People parts and Landscape categories accepted by the guarded Lua path', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'AiMaskParts.lua'), 'utf8');
+    const contract = TOOL_CONTRACTS.find((tool) => tool.name === 'create_mask');
+    const properties = contract?.inputSchema.properties as Record<string, { items: { enum: string[] } }>;
+    for (const [field, table] of [['parts', 'PEOPLE_PARTS'], ['categories', 'LANDSCAPE_CATEGORIES']]) {
+      const block = source.match(new RegExp(`local ${table} = \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+      const names = [...block.matchAll(/name = "(\w+)"/g)].map((match) => match[1]);
+      expect(names.length).toBeGreaterThan(0);
+      expect(properties[field].items.enum).toEqual(names);
+    }
   });
 });
 

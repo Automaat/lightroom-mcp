@@ -75,8 +75,6 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   invert_mask: 'destructive',
   create_mask: 'additive',
   create_mask_batch: 'additive',
-  create_people_mask: 'additive',
-  create_landscape_mask: 'additive',
   set_mask_curves: 'destructive',
   get_mask_curves: 'read-only',
   edit_mask_point_colors: 'destructive',
@@ -138,8 +136,8 @@ describe('createMcpServer', () => {
     const oldLengths: Record<string, number> = {
       create_range_mask: 4488, create_brush_mask: 2483, create_gradient_mask: 2184,
       create_mask_batch: 1751, combine_mask: 1578, edit_mask_point_colors: 1505,
-      create_people_mask: 1446, set_mask_curves: 1445, set_mask_adjustments: 1367,
-      create_mask: 1289, create_landscape_mask: 1274, invert_mask: 1201,
+      set_mask_curves: 1445, set_mask_adjustments: 1367,
+      create_mask: 1289, invert_mask: 1201,
       add_brush_strokes: 1052,
     };
     for (const tool of TOOL_CONTRACTS) {
@@ -159,10 +157,8 @@ describe('createMcpServer', () => {
     const instructions = pair.client.getInstructions() ?? '';
     const required: Record<string, string[]> = {
       create_range_mask: ['sRGB', 'copy_sample_from', 'second sample point', 'Lightroom crashes', '0.01', 'different colors'],
-      create_mask: ['No sky detected', 'modal alert', 'OK', 'omitted slider'],
+      create_mask: ['No sky detected', 'modal alert', 'OK', 'omitted slider', 'AI process is running', 'single-person', '120'],
       create_mask_batch: ['No sky detected', 'not_attempted', 'remaining_ids', '230'],
-      create_people_mask: ['AI process is running', 'OK', 'single-person', '120'],
-      create_landscape_mask: ['AI process is running', '120'],
       invert_mask: ['only one component', 'returned mask_id'],
       combine_mask: ['intersect', 'inverted true', 'No sky detected'],
     };
@@ -267,10 +263,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 77 tools', async () => {
+    it('returns all 75 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(77);
+      expect(tools).toHaveLength(75);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

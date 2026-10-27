@@ -47,6 +47,30 @@ function makeHandler(opts: {
 }
 
 describe('createCallToolHandler', () => {
+  it.each([
+    { photo_id: 1, type: 'people', parts: ['hair', 'hair'] },
+    { photo_id: 1, type: 'people', parts: ['ears'] },
+    { photo_id: 1, type: 'people' },
+    { photo_id: 1, type: 'people', parts: [] },
+    { photo_id: 1, type: 'landscape' },
+    { photo_id: 1, type: 'landscape', categories: [] },
+    { photo_id: 1, type: 'landscape', categories: ['lava'] },
+    { photo_id: 1, type: 'landscape', categories: ['sky', 'sky'] },
+    { photo_id: 1, type: 'sky', parts: ['hair'] },
+    { photo_id: 1, type: 'subject', categories: ['sky'] },
+    { photo_id: 1, type: 'background', parts: ['hair'] },
+    { photo_id: 1, type: 'people', parts: ['hair'], categories: ['sky'] },
+    { photo_id: 1, type: 'landscape', categories: ['sky'], parts: ['hair'] },
+    { photo_id: 1, type: 'people', parts: ['hair'], adjustments: {} },
+    { photo_id: 1, type: 'landscape', categories: ['sky'], adjustments: {} },
+  ])('rejects invalid create_mask selectors before plugin dispatch: %j', async (args) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => { calls++; return { id: '1', result: {} }; } });
+    const result = await handler('create_mask', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for create_mask');
+    expect(calls).toBe(0);
+  });
   it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };
     let captured: unknown;

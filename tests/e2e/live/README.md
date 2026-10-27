@@ -49,7 +49,7 @@ Downloaded (`manifest.json`, `fetch-samples.mjs [--verify]`): both from raw.pixl
 
 | Key | File | Purpose |
 |---|---|---|
-| `arw_14bit` | `_DSC0009.ARW` (Sony ILCE-7M3, 6000x4000) | Real raw with sky and trees: `create_mask` sky/subject/background, `create_landscape_mask`, batch source, denoise. |
+| `arw_14bit` | `_DSC0009.ARW` (Sony ILCE-7M3, 6000x4000) | Real raw with sky and trees: `create_mask` sky/subject/background, `create_mask` with `type: "landscape"`, batch source, denoise. |
 | `arw_12bit` | `_DSC0010.ARW` | Same scene, 12-bit: second raw for batch and multi-photo checks. |
 
 Supplied by you (never committed; the setup script imports whichever env var is set, checks skip when absent):
@@ -58,7 +58,7 @@ Supplied by you (never committed; the setup script imports whichever env var is 
 |---|---|
 | `LRMCP_LIVE_DEPTH_HEIC` | Depth range. Must be a real iPhone Portrait HEIC that carries a device depth map. Synthetic disparity files are ignored by Lightroom, so there is no generated stand-in. The Lightroom Killer Tips sample has no stated license, so it is not downloaded. |
 | `LRMCP_LIVE_SUBJECT_PHOTO` | Subject/object mask on a clear foreground subject. |
-| `LRMCP_LIVE_PEOPLE_PHOTO` | `create_people_mask` (needs a person). |
+| `LRMCP_LIVE_PEOPLE_PHOTO` | `create_mask` with `type: "people"` (needs a person). |
 
 Other env vars: `LRMCP_LIVE_FIXTURES_DIR`, `LRMCP_LIVE_THROWAWAY_CATALOG`, and the usual `LIGHTROOM_MCP_REQUEST_PORT` / `LIGHTROOM_MCP_RESPONSE_PORT`.
 
@@ -116,8 +116,8 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `create_range_mask` depth | `LRMCP_LIVE_DEPTH_HEIC` | Range on near vs far regions of the depth map. Fails cleanly and leaves the photo unchanged on any photo without depth. Skip the check when the env var is unset. |
 | `create_mask` subject/sky/background | `arw_14bit`, `arw_12bit`, `LRMCP_LIVE_SUBJECT_PHOTO` | Sky mask covers the sky region of the preview. "No X detected" modal blocks Develop until dismissed via AX. |
 | `create_mask_batch` | `batch.ids` (200) | Budget: at most 200 photos per call, a call stops after about 230 s with `complete: false` and `remaining_ids`; repeat with the remainder until `complete`. First photo opens in Develop, so a "No X detected" on it stops the batch. Masks of earlier photos are kept. |
-| `create_people_mask` | `LRMCP_LIVE_PEOPLE_PHOTO` | Mask per detected person. Skip when absent. |
-| `create_landscape_mask` | `arw_14bit` | Mask of the chosen landscape category appears on the right region. |
+| `create_mask` with `type: "people"` | `LRMCP_LIVE_PEOPLE_PHOTO` | One mask per selected part; a single person cannot be chosen. Skip when absent. |
+| `create_mask` with `type: "landscape"` | `arw_14bit` | Mask of the chosen landscape category appears on the right region. |
 | `combine_mask` | `wide_plain` | Intersect pixel check: only pixels inside both shapes change (IoU against the intersection of two analytic ellipses). Add and subtract against the union and difference. |
 | `invert_mask` | `wide_plain` | Changed region is the complement of the shape. Inverting twice restores the original diff. |
 | `set_mask_adjustments`, `get_mask_adjustments` | `wide_plain`, `ramp256` | Settle-after-adjust: the call returns after saving the sliders; the preview is stable only after about 3.5 s, so use `measureChange`. Stored row after `readFlushedSettings`: `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
