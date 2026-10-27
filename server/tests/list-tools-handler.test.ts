@@ -117,12 +117,13 @@ describe('TOOL_DEFINITIONS', () => {
 
   it('is generated from tool contracts', () => {
     expect(TOOL_DEFINITIONS).toEqual(
-      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema }) => ({
+      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema, alwaysLoad }) => ({
         name,
         title,
         annotations,
         description,
         inputSchema,
+        ...(alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
       })),
     );
   });
@@ -139,6 +140,18 @@ describe('listToolsHandler', () => {
     const result = listToolsHandler();
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
+
+  it('keeps repeated tool lists byte-identical and in contract order', () => {
+    expect(JSON.stringify(listToolsHandler())).toBe(JSON.stringify(listToolsHandler()));
+    expect(listToolsHandler().tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+  });
+
+  it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(
+    'upfront tool %s stays within the 4096-character description limit', (_name, description) => {
+      expect(description).toBeDefined();
+      expect(description!.length).toBeLessThanOrEqual(4096);
+    },
+  );
 });
 
 describe('photo list schemas', () => {

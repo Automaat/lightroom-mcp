@@ -13,6 +13,7 @@ export interface ToolContract {
   description: string;
   luaHandler: string;
   inputSchema: InputSchema;
+  alwaysLoad?: true;
 }
 
 const MAX_BULK_PHOTO_IDS = 1000;
@@ -470,6 +471,7 @@ const searchFilterProperties = {
 export const TOOL_CONTRACTS: ToolContract[] = [
   {
     name: "search_photos",
+    alwaysLoad: true,
     title: "Search photos",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerSearch.searchPhotos",
@@ -542,6 +544,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "get_photo_preview",
+    alwaysLoad: true,
     title: "Get photo preview",
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreview",
@@ -1048,6 +1051,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_rating",
+    alwaysLoad: true,
     title: "Set rating",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setRating",
@@ -1069,6 +1073,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
   },
   {
     name: "set_flag",
+    alwaysLoad: true,
     title: "Set flag",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setFlag",

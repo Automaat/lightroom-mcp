@@ -187,6 +187,32 @@ describe('createMcpServer', () => {
     }
   });
 
+  it('loads only four hot catalog tools upfront over the wire', async () => {
+    pair = await connect();
+    const { tools } = await pair.client.listTools();
+    const hotNames = ['search_photos', 'get_photo_preview', 'set_rating', 'set_flag'];
+    expect(tools.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => tool.name)).toEqual(hotNames);
+    for (const tool of tools) {
+      if (hotNames.includes(tool.name)) expect(tool._meta).toEqual({ 'anthropic/alwaysLoad': true });
+      else expect(tool).not.toHaveProperty('_meta');
+    }
+  });
+
+  it('keeps tool lists byte-identical across calls and fresh servers', async () => {
+    pair = await connect();
+    const first = await pair.client.listTools();
+    const repeated = await pair.client.listTools();
+    const second = await connect();
+    try {
+      expect(JSON.stringify(repeated)).toBe(JSON.stringify(first));
+      expect(JSON.stringify(await second.client.listTools())).toBe(JSON.stringify(first));
+      expect(first.tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+    } finally {
+      await second.client.close();
+      await second.server.close();
+    }
+  });
+
 
   it('sends progress to the connected client without resolving the tool early', async () => {
     pair = await connect({ call: async (_action, _params, _timeout, options) => {
