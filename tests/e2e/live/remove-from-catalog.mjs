@@ -23,7 +23,7 @@ try {
     fs.copyFileSync(source, file);
     const imported = await session.toolOrThrow("import_photos", { source_path: file });
     assert.equal(imported.data.imported, 1);
-    const found = await session.toolOrThrow("search_photos", { filename: path.basename(file), limit: 100 });
+    const found = await session.toolOrThrow("search_photos", { filename: path.basename(file), limit: 100, include_path: true });
     const photo = found.data.photos.find((photo) => photo.path === file);
     assert.ok(photo, `imported copy missing: ${file}`);
     copies.push({ id: photo.id, file });
