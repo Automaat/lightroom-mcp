@@ -94,6 +94,9 @@ describe('createCallToolHandler', () => {
     const result = await handler('list_collections', {});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/not connected/i);
+    expect(result.content[0].text).not.toMatch(/[\r\n]/);
+    expect(result.content[0].text.length).toBeLessThan(160);
+    expect(result.content[0].text).toMatch(/bring Lightroom to the front|Start Server/);
   });
 
   it('forwards action and args to dispatcher', async () => {

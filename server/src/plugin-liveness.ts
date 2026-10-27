@@ -17,6 +17,9 @@
 export type PluginLivenessState = "unknown" | "responsive" | "unresponsive";
 
 export const SHADOW_BRIDGE_MESSAGE =
+  "Plugin ports connected but unresponsive; another bridge may hold the client slot. Restart the plug-in in Lightroom's Plug-in Manager.";
+
+export const SHADOW_BRIDGE_DETAILS =
   "Connected to the Lightroom plugin's ports, but it is not answering. " +
   "The plugin serves one client at a time, so another lightroom-mcp process " +
   "is most likely holding the connection. Quit any other MCP client or stale " +

@@ -4,6 +4,17 @@ import { createCallToolHandler } from '../src/tool-handler.js';
 import type { Dispatcher } from '../src/dispatcher.js';
 
 describe('validateToolArgs', () => {
+  it('reports a single photo_id type clause', () => {
+    expect(validateToolArgs('get_photo_metadata', { photo_id: true })).toBe(
+      'Invalid arguments for get_photo_metadata: photo_id must be string or number',
+    );
+    expect(validateToolArgs('set_rating', { photo_ids: [true], rating: 3 })).toBe(
+      'Invalid arguments for set_rating: photo_ids.0 must be string or number',
+    );
+    expect(validateToolArgs('get_photo_metadata', { photo_id: '' })).toContain('photo_id');
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
+  });
+
   describe.each([
     ['create_gradient_mask', { photo_id: 1, shape: 'radial', center: { x: 0.5, y: 0.5 }, width: 0.4, height: 0.6 }],
     ['create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0.5, y: 0.5 }] }] }],

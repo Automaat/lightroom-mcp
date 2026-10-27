@@ -34,10 +34,12 @@ const validators = new Map<string, ValidateFunction>(
 
 function describe(error: { instancePath?: string; message?: string; params?: unknown }): string {
   const field = error.instancePath ? error.instancePath.replace(/^\//, "").replace(/\//g, ".") : "";
-  const params = error.params as { additionalProperty?: string } | undefined;
+  const params = error.params as { additionalProperty?: string; type?: string[] } | undefined;
   const extra = params?.additionalProperty;
   if (extra) return `unknown property "${extra}"`;
-  const what = error.message ?? "is invalid";
+  const what = Array.isArray(params?.type)
+    ? `must be ${params.type.join(" or ")}`
+    : error.message ?? "is invalid";
   return field ? `${field} ${what}` : what;
 }
 
