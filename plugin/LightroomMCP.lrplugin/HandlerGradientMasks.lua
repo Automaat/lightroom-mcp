@@ -7,6 +7,7 @@ local GradientGeometry = require 'GradientGeometry'
 local GuardedMaskWrite = require 'GuardedMaskWrite'
 local ImageFrame = require 'ImageFrame'
 local Log = require 'Log'
+local MaskCreationAdjustments = require 'MaskCreationAdjustments'
 local PhotoLookup = require 'PhotoLookup'
 
 local GradientMaskHandler = {}
@@ -94,6 +95,7 @@ local function addGradient(entries, request, placement)
     if request.maskId == nil then
         local name = request.name or component.MaskName
         entries[#entries + 1] = GuardedMaskWrite.newCorrection(name, { component })
+        MaskCreationAdjustments.write(entries[#entries], request.adjustments)
         return { entry = #entries, component = 1 }
     end
     local index, entry = GuardedMaskWrite.findCorrection(entries, request.maskId)
@@ -107,6 +109,7 @@ end
 function GradientMaskHandler.createGradientMask(args)
     local photoId = requirePhotoId(args.photo_id)
     local request = GradientGeometry.parseCreate(args)
+    request.adjustments = MaskCreationAdjustments.parse(args)
     DevelopSession.requireMaskApi("create_gradient_mask")
 
     local catalog = LrApplication.activeCatalog()
@@ -118,6 +121,7 @@ function GradientMaskHandler.createGradientMask(args)
     local location
     local toolType = GradientGeometry.TOOL_TYPE_OF_SHAPE[request.shape]
     local written = DevelopSession.withPhoto("create_gradient_mask", catalog, photo, function()
+        MaskCreationAdjustments.requireLiveRanges(request.adjustments)
         return GuardedMaskWrite.apply(catalog, photo, {
             description = "Create gradient mask",
             build = function(entries)
@@ -127,7 +131,9 @@ function GradientMaskHandler.createGradientMask(args)
             crossCheck = function(actual)
                 local entry = actual[location.entry]
                 local component = entry.CorrectionMasks[location.component]
-                return problemUnlessListed(entry.CorrectionID, component.MaskID, toolType)
+                local problem = problemUnlessListed(entry.CorrectionID, component.MaskID, toolType)
+                if problem then return problem end
+                MaskCreationAdjustments.confirm(photoId, entry.CorrectionID, request.adjustments)
             end,
         })
     end)
