@@ -1,8 +1,10 @@
 {
   "name": "lightroom",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Lightroom Classic tools and a RAW photo preset workflow.",
-  "author": { "name": "Marcin Skalski" },
+  "author": {
+    "name": "Marcin Skalski"
+  },
   "homepage": "https://github.com/Automaat/lightroom-mcp#readme",
   "repository": "https://github.com/Automaat/lightroom-mcp",
   "license": "MIT"

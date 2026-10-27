@@ -6,12 +6,12 @@
     "url": "https://github.com/Automaat/lightroom-mcp",
     "source": "github"
   },
-  "version": "0.25.0",
+  "version": "0.26.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@mskalski/lightroom-mcp",
-      "version": "0.25.0",
+      "version": "0.26.0",
       "transport": {
         "type": "stdio"
       },
