@@ -36,6 +36,15 @@ describe('validateToolArgs', () => {
       expect(dispatch).not.toHaveBeenCalled();
     });
   });
+  it.each([{}, { limit: 0 }, { limit: 10.5, offset: 2.5, query: 'vi', folder: 'User Presets' }])(
+    'list_develop_presets accepts paging and filters %p', (args) => {
+      expect(validateToolArgs('list_develop_presets', args)).toBeNull();
+    });
+
+  it.each([{ limit: -1 }, { offset: -1 }, { query: '' }, { folder: '' }, { scope: 'plugin' }, { extra: true }])(
+    'list_develop_presets rejects invalid arguments %p', (args) => {
+      expect(validateToolArgs('list_develop_presets', args)).not.toBeNull();
+    });
 
   it.each(['Circle', 'SoapBubble', 'Blade', 'Ring', 'Anamorphic'])('set_lens_blur accepts %s bokeh', (bokeh) => {
     expect(validateToolArgs('set_lens_blur', { photo_id: 914, bokeh })).toBeNull();
