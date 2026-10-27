@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from '@jest/globals';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createMcpServer } from '../src/create-server.js';
+import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
 import type { CallOptions, PluginResponse } from '../src/dispatcher.js';
 
 const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
@@ -114,6 +115,69 @@ async function connect(opts: { ready?: boolean; call?: CallFn } = {}): Promise<P
 
 describe('createMcpServer', () => {
   let pair: Pair | null = null;
+
+  it('returns static shared instructions to the client on initialize', async () => {
+    pair = await connect();
+    const instructions = pair.client.getInstructions();
+    for (const phrase of [
+      'Develop-driving calls run one at a time', 'a second call is rejected',
+      'Lightroom Classic 15.6', 'process version 15.4', 'read back', 'roll back',
+      'normalized 0 to 1', 'top-left', 'uncropped', 'y increasing down',
+      'rotated or mirrored', 'crop does not move the origin',
+    ]) expect(instructions).toContain(phrase);
+    const second = await connect();
+    try {
+      expect(second.client.getInstructions()).toBe(instructions);
+    } finally {
+      await second.client.close();
+      await second.server.close();
+    }
+  });
+
+  it('keeps instructions shared and descriptions within the issue budgets', () => {
+    const oldLengths: Record<string, number> = {
+      create_range_mask: 4488, create_brush_mask: 2483, create_gradient_mask: 2184,
+      create_mask_batch: 1751, combine_mask: 1578, edit_mask_point_colors: 1505,
+      create_people_mask: 1446, set_mask_curves: 1445, set_mask_adjustments: 1367,
+      create_mask: 1289, create_landscape_mask: 1274, invert_mask: 1201,
+      add_brush_strokes: 1052,
+    };
+    for (const tool of TOOL_CONTRACTS) {
+      expect(tool.description).not.toMatch(/Develop-driving|a second call is rejected|One call runs at a time/);
+      expect(tool.description.length).toBeLessThan(4096);
+    }
+    for (const [name, oldLength] of Object.entries(oldLengths)) {
+      const tool = TOOL_CONTRACTS.find((entry) => entry.name === name);
+      expect(tool).toBeDefined();
+      expect(tool?.description.length).toBeLessThanOrEqual(Math.floor(oldLength / 2));
+    }
+    expect(TOOL_CONTRACTS.reduce((sum, tool) => sum + tool.description.length, 0)).toBeLessThanOrEqual(25000);
+  });
+
+  it('keeps load-bearing tool guidance reachable alongside instructions', async () => {
+    pair = await connect();
+    const instructions = pair.client.getInstructions() ?? '';
+    const required: Record<string, string[]> = {
+      create_range_mask: ['sRGB', 'copy_sample_from', 'second sample point', 'Lightroom crashes', '0.01', 'different colors'],
+      create_mask: ['No sky detected', 'modal alert', 'OK', 'omitted slider'],
+      create_mask_batch: ['No sky detected', 'not_attempted', 'remaining_ids', '230'],
+      create_people_mask: ['AI process is running', 'OK', 'single-person', '120'],
+      create_landscape_mask: ['AI process is running', '120'],
+      invert_mask: ['only one component', 'returned mask_id'],
+      combine_mask: ['intersect', 'inverted true', 'No sky detected'],
+    };
+    for (const [name, phrases] of Object.entries(required)) {
+      const tool = TOOL_CONTRACTS.find((entry) => entry.name === name);
+      expect(tool).toBeDefined();
+      const reachable = `${tool?.description} ${JSON.stringify(tool?.inputSchema)} ${instructions}`;
+      for (const phrase of phrases) expect(reachable).toContain(phrase);
+    }
+    for (const name of ['create_gradient_mask', 'update_gradient_mask', 'create_brush_mask', 'add_brush_strokes', 'create_range_mask']) {
+      const tool = TOOL_CONTRACTS.find((entry) => entry.name === name);
+      expect(tool?.description).toContain('coordinate rules');
+      expect(instructions).toContain('Photo coordinates');
+    }
+  });
 
   afterEach(async () => {
     if (pair) {
