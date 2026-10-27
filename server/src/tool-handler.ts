@@ -3,6 +3,7 @@ import { validateToolArgs } from "./validate-args.js";
 import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
 import { getPhotoStats } from "./photo-stats.js";
 import { cropPreview, regionRenderArgs, type PreviewArgs } from "./preview-region.js";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 export interface ToolHandlerDeps {
   dispatcher: Pick<Dispatcher, "call">;
@@ -93,6 +94,12 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     }
 
     try {
+      if (name === "get_photo_preview") {
+        const previewArgs = args as { photo_id: number | string; size?: number | keyof typeof PREVIEW_SIZES };
+        if (typeof previewArgs.size === "string") {
+          args = { ...previewArgs, size: PREVIEW_SIZES[previewArgs.size] };
+        }
+      }
       if (name === "find_duplicate_groups") {
         return { content: successContent(await findDuplicateGroups(deps.dispatcher, args as DuplicateGroupArgs, options)) };
       }

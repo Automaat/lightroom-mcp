@@ -12,6 +12,52 @@ local function setup(photos)
 end
 
 describe("HandlerMetadata.getPhotoMetadata", function()
+    it("returns ordered single-photo metadata for mixed ids and paths, including repeats", function()
+        local first = helper.fakePhoto({ id = 1, path = "/first.jpg", title = "First",
+            developSettings = { Exposure2012 = 0.5 } })
+        local second = helper.fakePhoto({ id = 2, path = "/second.jpg", rating = 4,
+            developSettings = { Contrast2012 = 25 } })
+        local catalog, Handler = setup({ first, second })
+        for _, sections in ipairs({ {}, { "developSettings" } }) do
+            local a = Handler.getPhotoMetadata({ photo_id = 1, sections = sections })
+            local b = Handler.getPhotoMetadata({ photo_id = 2, sections = sections })
+            local result = Handler.getPhotoMetadata({ photo_ids = { 2, "missing", "/first.jpg", 2, "999999999" },
+                sections = sections })
+            assert.are.same({ b, a, b }, result.photos)
+            assert.are.same({ "missing", "999999999" }, result.missing)
+        end
+        assert.is_false(catalog:getQueriedInsideReadAccess())
+    end)
+
+    it("returns empty photos for an all-missing batch and empty missing for found photos", function()
+        local _, Handler = setup({ helper.fakePhoto({ id = 1 }) })
+        assert.are.same({ photos = {}, missing = { "missing" } },
+            Handler.getPhotoMetadata({ photo_ids = { "missing" } }))
+        assert.are.same({}, Handler.getPhotoMetadata({ photo_ids = { 1 } }).missing)
+    end)
+
+    it("accepts the batch cap and never reads unrequested develop settings", function()
+        local photos, ids = {}, {}
+        for i = 1, 100 do
+            photos[i] = helper.fakePhoto({ id = i })
+            photos[i].getDevelopSettings = function() error("unrequested develop read") end
+            ids[i] = i
+        end
+        local _, Handler = setup(photos)
+        assert.are.equal(100, #Handler.getPhotoMetadata({ photo_ids = ids }).photos)
+    end)
+
+    it("rejects missing, conflicting and out-of-bounds batch selectors before catalog queries", function()
+        local catalog, Handler = setup({})
+        local tooMany = {}
+        for i = 1, 101 do tooMany[i] = i end
+        for _, args in ipairs({ {}, { photo_id = 1, photo_ids = { 1 } },
+            { photo_ids = {} }, { photo_ids = tooMany }, { photo_ids = "1" } }) do
+            assert.has_error(function() Handler.getPhotoMetadata(args) end)
+        end
+        assert.is_false(catalog:getQueriedInsideReadAccess())
+    end)
+
     it("omits develop settings by default and with empty sections without calling the getter", function()
         local photo = helper.fakePhoto({ id = "1", rating = 5, title = "Keep" })
         photo.getDevelopSettings = function() error("unrequested develop read") end

@@ -29,7 +29,7 @@ function SelectionHandler.getSelectedPhotos(args)
     Log.info(string.format("getSelectedPhotos: getTargetPhotos returned %d", total))
 
     local last = math.min(offset + limit, total)
-    local results = PhotoSummary.page(catalog, matches, offset + 1, last)
+    local results = PhotoSummary.page(catalog, matches, offset + 1, last, args.include_path == true)
 
     Log.info(string.format("getSelectedPhotos: returning %d (offset=%d, limit=%d)",
         #results, offset, limit))

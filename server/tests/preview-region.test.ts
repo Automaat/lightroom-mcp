@@ -71,6 +71,18 @@ describe('get_photo_preview region', () => {
     ]);
   });
 
+  it.each([
+    { size: 'cull', expected: 1024 },
+    { size: 'detail', expected: 2048 },
+  ])('normalizes named size $size before applying region source scaling', async ({ size, expected }) => {
+    const { handler, call } = makeHandler();
+    const result = await handler('get_photo_preview', {
+      photo_id: 914, size, region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+    });
+    expect(result.isError).toBeUndefined();
+    expect(call).toHaveBeenCalledWith('get_photo_preview', { photo_id: 914, size: expected });
+  });
+
   it('rounds a subpixel region outward to at least one pixel', async () => {
     const { handler } = makeHandler();
     const result = await handler('get_photo_preview', {
