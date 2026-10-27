@@ -133,10 +133,10 @@ function ImportHandler.importPhotos(args, context)
 
     Log.info(string.format("Imported %d photos from: %s (skipped %d)", importedCount, args.source_path, skippedCount))
 
-    local message = string.format("Imported %d photos", importedCount)
+    local message
     if skippedCount > 0 then
-        message = string.format("%s; skipped %d files with unsupported extensions (%s)",
-            message, skippedCount, describeSkipped(skippedByExtension))
+        message = string.format("Skipped %d files with unsupported extensions (%s)",
+            skippedCount, describeSkipped(skippedByExtension))
     end
     return {
         success = true,

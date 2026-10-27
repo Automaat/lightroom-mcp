@@ -276,7 +276,6 @@ function OrganizationHandler.setKeywords(args)
     return {
         success = true,
         updated = updatedCount,
-        message = string.format("Updated keywords for %d photos", updatedCount)
     }
 end
 
@@ -345,8 +344,6 @@ function OrganizationHandler.removeKeywordSubtree(args)
         updated = updated,
         removed = removed,
         missing = missing,
-        message = string.format("Removed %d keyword assignments from %d photos (%d ids not found)",
-            removed, updated, #missing),
     }
 end
 
@@ -397,10 +394,7 @@ function OrganizationHandler.setRating(args)
     return {
         success = true,
         updated = updatedCount,
-        rating = args.rating,
         missing = missingIds,
-        message = string.format("Set rating to %d for %d photos (%d ids not found)",
-            args.rating, updatedCount, missingCount)
     }
 end
 
@@ -443,10 +437,7 @@ function OrganizationHandler.setFlag(args)
     return {
         success = true,
         updated = updatedCount,
-        flag = args.flag,
         missing = missingIds,
-        message = string.format("Set flag to %s for %d photos (%d ids not found)",
-            args.flag, updatedCount, missingCount)
     }
 end
 
@@ -486,10 +477,7 @@ function OrganizationHandler.setColorLabel(args)
     return {
         success = true,
         updated = updatedCount,
-        label = args.label,
         missing = missingIds,
-        message = string.format("Set color label to %s for %d photos (%d ids not found)",
-            args.label, updatedCount, missingCount)
     }
 end
 

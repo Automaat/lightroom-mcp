@@ -206,7 +206,6 @@ function KeywordsHandler.renameKeyword(args)
         old_path = oldPath,
         new_path = newPath,
         photo_count = photoCount,
-        message = string.format("Renamed keyword '%s' to '%s' (%d photos)", oldPath, newPath, photoCount)
     }
 end
 

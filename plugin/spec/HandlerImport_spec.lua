@@ -143,7 +143,7 @@ describe("HandlerImport.importPhotos", function()
         assert.are.equal(10, r.imported)
         assert.are.equal(0, r.skipped)
         assert.is_nil(r.skipped_by_extension)
-        assert.are.equal("Imported 10 photos", r.message)
+        assert.is_nil(r.message)
     end)
 
     it("reports the files it skipped by extension", function()
@@ -161,7 +161,7 @@ describe("HandlerImport.importPhotos", function()
         assert.are.equal(4, r.skipped)
         assert.are.same({ xmp = 2, txt = 1, [""] = 1 }, r.skipped_by_extension)
         assert.are.equal(
-            "Imported 1 photos; skipped 4 files with unsupported extensions ((none): 1, txt: 1, xmp: 2)",
+            "Skipped 4 files with unsupported extensions ((none): 1, txt: 1, xmp: 2)",
             r.message)
     end)
 

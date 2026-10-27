@@ -391,6 +391,8 @@ describe("HandlerDevelop.createDevelopPreset", function()
 
         assert.is_true(r.success)
         assert.is_false(r.visible_in_develop)
+        assert.is_nil(r.source_photo_id)
+        assert.is_nil(r.settings)
         assert.are.equal("plugin", r.scope)
         assert.are.equal(1, #state.pluginPresets)
         assert.are.same({
@@ -529,6 +531,7 @@ describe("HandlerDevelop.applyDevelopPreset", function()
 
         assert.is_true(r.success)
         assert.are.equal(2, r.applied)
+        assert.is_nil(r.message)
         assert.are.equal("Vibrant", r.preset)
         assert.are.equal("User", r.folder)
         assert.are.equal(preset, p1.getRawMetadata(p1, "__appliedPreset"))
@@ -690,7 +693,8 @@ describe("HandlerDevelop numeric photo ids", function()
 
         assert.are.equal(1, r.copied)
         assert.are.same({ "ghost" }, r.missing)
-        assert.is_not_nil(r.message:find("1 ids not found", 1, true))
+        assert.is_nil(r.message)
+        assert.is_nil(r.source)
     end)
 
     it("still rejects ids that are neither a number nor a non-empty string", function()
@@ -759,6 +763,8 @@ describe("HandlerDevelop.copyDevelopSettings", function()
 
         assert.is_true(r.success)
         assert.are.equal(2, r.copied)
+        assert.is_nil(r.source)
+        assert.is_nil(r.message)
         assert.are.same(
             { Exposure2012 = 1.0, Contrast2012 = 25, WhiteBalance = "Custom" },
             t1.getRawMetadata(t1, "__appliedSettings")
@@ -1343,6 +1349,8 @@ describe("HandlerDevelop.applyDenoise", function()
         assert.is_true(r.success)
         assert.is_true(r.complete)
         assert.are.equal(2, r.applied)
+        assert.is_nil(r.amount)
+        assert.truthy(r.message:find("Activity Center", 1, true))
         assert.are.same({ "develop", "library" }, calls.modules)
         assert.are.same({
             { id = "1", name = "denoise", on = true, amount = 45 },
