@@ -292,6 +292,14 @@ describe("PluginInfoProvider server task", function()
             assert.are.equal("photo_ids is required", dispatchError("photo_ids is required", 1))
         end)
 
+        it("removes abbreviated Lua source paths containing spaces", function()
+            local handler = assert(load('error("photo_ids is required")',
+                "@/Users/person/Documents/Lightroom Plug-ins/LightroomMCP.lrplugin/HandlerOrganization.lua"))
+            local _, message = pcall(handler)
+            assert.is_not_nil(message:match("^%.%.%."))
+            assert.are.equal("photo_ids is required", dispatchError(message, 0))
+        end)
+
         it("keeps plain messages and embedded Lua file names unchanged", function()
             for _, message in ipairs({ "photo_ids is required", "Cannot read settings.lua:42: invalid file", "file.jpg:42: missing" }) do
                 assert.are.equal(message, dispatchError(message, 0))

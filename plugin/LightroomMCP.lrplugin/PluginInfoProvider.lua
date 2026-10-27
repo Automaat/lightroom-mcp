@@ -442,7 +442,7 @@ local function dispatchAction(request)
         local message = tostring(resultOrErr)
         local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
         if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
-            or source:match("^%a:[/\\]")) then
+            or source:match("^%a:[/\\]") or source:match("^%.%.%.")) then
             message = detail
         end
         sendResponse({ id = id, error = message })
