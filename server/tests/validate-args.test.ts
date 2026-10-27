@@ -541,11 +541,19 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('set_mask_adjustments', { ...ok, extra: 1 })).toContain('unknown property "extra"');
   });
 
-  it('requires photo and mask for get_mask_adjustments', () => {
-    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914, mask_id: 'm-1' })).toBeNull();
-    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914 })).toContain('mask_id');
-    expect(validateToolArgs('get_mask_adjustments', { mask_id: 'm-1' })).toContain('photo_id');
-    expect(validateToolArgs('get_mask_adjustments', { photo_id: 914, mask_id: 7 })).toContain('mask_id');
+  it('requires photo and mask for get_mask', () => {
+    expect(validateToolArgs('get_mask', { photo_id: 914, mask_id: 'm-1' })).toBeNull();
+    expect(validateToolArgs('get_mask', { photo_id: 914 })).toContain('mask_id');
+    expect(validateToolArgs('get_mask', { mask_id: 'm-1' })).toContain('photo_id');
+    expect(validateToolArgs('get_mask', { photo_id: 914, mask_id: 7 })).toContain('mask_id');
+    const base = { photo_id: 914, mask_id: 'm-1' };
+    expect(validateToolArgs('get_mask', { ...base, kinds: ['curves'] })).toBeNull();
+    expect(validateToolArgs('get_mask', { ...base, kinds: ['adjustments', 'point_colors'] })).toBeNull();
+    for (const kinds of [[], ['curves', 'curves'], ['unknown'], 'curves', [1]]) {
+      expect(validateToolArgs('get_mask', { ...base, kinds })).toContain('kinds');
+    }
+    expect(validateToolArgs('get_mask', { ...base, extra: 1 })).toContain('unknown property "extra"');
+
   });
 
   it('requires a photo, a mask id and a mode for invert_mask', () => {
@@ -645,8 +653,6 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0, 256, 255] } })).toContain('curves.main');
     expect(validateToolArgs('set_mask_curves', { ...base, curves: { main: [0, 0, 12.5, 255] } })).toContain('curves.main');
     expect(validateToolArgs('set_mask_curves', { photo_id: 914, curves: { main: [0, 0, 255, 255] } })).toContain('mask_id');
-    expect(validateToolArgs('get_mask_curves', base)).toBeNull();
-    expect(validateToolArgs('get_mask_curves', { photo_id: 914 })).toContain('mask_id');
   });
 
   it('validates edit_mask_point_colors actions, indexes and swatch fields', () => {
@@ -682,8 +688,6 @@ describe('validateToolArgs', () => {
       index: 1,
       swatch: { HueRange: { LowerNone: 0 } },
     })).toContain('swatch.HueRange');
-    expect(validateToolArgs('get_mask_point_colors', base)).toBeNull();
-    expect(validateToolArgs('get_mask_point_colors', { mask_id: 'm-1' })).toContain('photo_id');
   });
 
   it('validates combine_mask operation and type', () => {

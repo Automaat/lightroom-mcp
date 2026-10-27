@@ -78,16 +78,14 @@ const EXPECTED_TOOL_NAMES = [
   'delete_masks',
   'delete_empty_masks',
   'set_mask_adjustments',
-  'get_mask_adjustments',
+  'get_mask',
   'invert_mask',
   'create_mask',
   'create_mask_batch',
   'create_people_mask',
   'create_landscape_mask',
   'set_mask_curves',
-  'get_mask_curves',
   'edit_mask_point_colors',
-  'get_mask_point_colors',
   'combine_mask',
 ] as const;
 
@@ -110,8 +108,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 76 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(76);
+  it('contains exactly 74 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(74);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -134,6 +132,16 @@ describe('TOOL_DEFINITIONS', () => {
   it('tool names are unique', () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('replaces three mask readers with one smaller definition', () => {
+    const names = TOOL_DEFINITIONS.map((tool) => tool.name);
+    for (const removed of ['get_mask_adjustments', 'get_mask_curves', 'get_mask_point_colors']) {
+      expect(names).not.toContain(removed);
+    }
+    const combined = TOOL_DEFINITIONS.find((tool) => tool.name === 'get_mask');
+    expect(combined).toBeDefined();
+    expect(JSON.stringify(combined).length).toBeLessThan(2193);
   });
 
   it.each(EXPECTED_TOOL_NAMES)('"%s" is present', (name) => {
@@ -256,16 +264,14 @@ describe('tool required fields', () => {
     ['delete_masks', ['photo_id']],
     ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
-    ['get_mask_adjustments', ['photo_id', 'mask_id']],
+    ['get_mask', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
     ['create_mask_batch', ['photo_ids', 'type']],
     ['create_people_mask', ['photo_id', 'parts']],
     ['create_landscape_mask', ['photo_id', 'categories']],
     ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
-    ['get_mask_curves', ['photo_id', 'mask_id']],
     ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
-    ['get_mask_point_colors', ['photo_id', 'mask_id']],
     ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
