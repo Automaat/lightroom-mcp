@@ -86,6 +86,15 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 ## Verification matrix
 
+For `get_photo_preview.region`, compare one `chart80` patch with the same pixels
+from a full-frame preview at the source size reported by `requested_size`.
+Require mean RGB differences within 0.03 per channel and a flat patch interior.
+On `orient_6`, crop a displayed corner and compare with
+`expectedDisplayedCorners(6)`. Record full-frame, small-preview and region
+dimensions and image-token estimates: a region requests a larger source before
+cropping, capped at size 2048. Verify omitted-region bytes and metadata retain
+their full-frame behavior, and malformed regions fail before rendering.
+
 `node tests/e2e/live/duplicate-groups.mjs` reads the two ARW fixtures and `wide_plain`, derives the raw capture gap from `find_duplicate_groups.photos`, and checks that only the ARWs group at that gap. It verifies ratings, flags, keyword paths and reported collections stay unchanged. `get_photo_metadata.dateTimeOriginal` remains a display string and is never parsed. The script reads the marked throwaway catalog without changing its shared fixtures.
 
 `node tests/e2e/live/photo-stats.mjs` checks `get_photo_stats` on untouched `ramp256` and `wide_plain`: each ramp quarter holds 25 percent of the histogram mass within 5 points; plain gray has mean luminance 110 within 4 and no clipping. The script only reads the marked throwaway catalog.

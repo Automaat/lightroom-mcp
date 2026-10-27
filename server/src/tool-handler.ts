@@ -2,6 +2,7 @@ import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { validateToolArgs } from "./validate-args.js";
 import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
 import { getPhotoStats } from "./photo-stats.js";
+import { cropPreview, regionRenderArgs, type PreviewArgs } from "./preview-region.js";
 import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 export interface ToolHandlerDeps {
@@ -106,16 +107,19 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
         const { photo_ids } = args as { photo_ids: (string | number)[] };
         return { content: successContent(await getPhotoStats(deps.dispatcher, photo_ids, options)) };
       }
+      const region = name === "get_photo_preview" ? (args as PreviewArgs).region : undefined;
+      const params = region ? regionRenderArgs(args as PreviewArgs) : args;
       const resp = options
-        ? await deps.dispatcher.call(name, args, undefined, options)
-        : await deps.dispatcher.call(name, args);
+        ? await deps.dispatcher.call(name, params, undefined, options)
+        : await deps.dispatcher.call(name, params);
       if (resp.error) {
         return {
           content: [{ type: "text", text: `Error: ${resp.error}` }],
           isError: true,
         };
       }
-      return { content: successContent(resp.result) };
+      if (region && options?.signal?.aborted) throw new Error("Request cancelled");
+      return { content: successContent(region ? cropPreview(resp.result, region) : resp.result) };
     } catch (e) {
       return {
         content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],

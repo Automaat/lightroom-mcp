@@ -95,10 +95,13 @@ const EXPECTED_TOOL_NAMES = [
 describe('TOOL_DEFINITIONS', () => {
   it('get_photo_preview describes named uses and approximate token costs', () => {
     const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
-    expect(tool?.description).toMatch(/cull.*culling.*650 tokens/);
-    expect(tool?.description).toMatch(/detail.*details.*2\.5k tokens/);
-    expect(tool?.description).toContain('earlier Claude estimates');
-    expect(tool?.description).toContain('width and height');
+    const sizeSchema = tool?.inputSchema.properties?.size as { description: string };
+    const guidance = `${tool?.description} ${sizeSchema.description}`;
+    expect(guidance).toMatch(/cull.*culling.*650 tokens/);
+    expect(guidance).toMatch(/detail.*details.*2\.5k tokens/);
+    expect(guidance).toContain('earlier Claude estimates');
+    expect(guidance).toContain('width/height/bytes');
+    expect(guidance).toContain('each turn in history');
     const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
     for (const size of ['cull', 'detail', 64, 1024, 2048]) {
       expect(validate({ photo_id: 914, size })).toBe(true);

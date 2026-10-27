@@ -1,4 +1,5 @@
 import { Ajv, type ValidateFunction } from "ajv";
+import type { PreviewArgs } from "./preview-region.js";
 import {
   developSettingKeysValidationSchema,
   developSettingsValidationSchema,
@@ -47,7 +48,15 @@ function describe(error: { instancePath?: string; message?: string; params?: unk
 export function validateToolArgs(name: string, args: unknown): string | null {
   const validate = validators.get(name);
   if (!validate) return null;
-  if (validate(args ?? {})) return null;
+  if (validate(args ?? {})) {
+    if (name === "get_photo_preview") {
+      const region = (args as PreviewArgs).region;
+      if (region && (region.x + region.width > 1 || region.y + region.height > 1)) {
+        return "Invalid arguments for get_photo_preview: region must fit within the rendered frame";
+      }
+    }
+    return null;
+  }
 
   const problems = (validate.errors ?? []).map(error =>
     name === "get_photo_preview" && error.instancePath === "/size"
