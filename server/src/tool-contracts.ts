@@ -767,7 +767,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerAiMetadata.setAiMetadata",
     description:
-      "Store an AI score and reason in private per-photo plug-in metadata in this catalog. Score is an integer from 0 to 100; reason is at most 1024 characters. Omitted fields stay unchanged; an empty string clears a field. Does not change IPTC, XMP, keywords, or export metadata.",
+      "Store an AI score and reason in private per-photo plug-in metadata in this catalog. Provide score, reason or both. Score is an integer from 0 to 100; reason is at most 1024 characters. Omitted fields stay unchanged; an empty string clears a field. Does not change IPTC, XMP, keywords, or export metadata.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1347,7 +1347,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerDevelop.exportDevelopPreset",
     description:
-      "Copy one exact custom or plugin-managed Develop preset backing file to a destination directory. Existing files are never overwritten; built-in presets without backing files cannot be exported.",
+      "Copy one exact custom or plugin-managed Develop preset backing file to a destination directory. Provide preset_uuid or preset_name. Existing files are never overwritten; built-in presets without backing files cannot be exported.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1375,7 +1375,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.applyDevelopPreset",
     description:
-      "Apply an exact Develop preset; returns success, applied, resolved preset identity, missing IDs, ai_updated and ai_update_failed. AI masks recompute per target on LrC 13.3+; earlier versions or non-AI presets apply normally. message holds AI warnings only.",
+      "Apply an exact Develop preset; provide preset_uuid or preset_name. Returns success, applied, resolved preset identity, missing IDs, ai_updated and ai_update_failed. AI masks recompute per target on LrC 13.3+; earlier versions or non-AI presets apply normally. message holds AI warnings only.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

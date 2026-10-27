@@ -3,6 +3,7 @@ import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createMcpServer } from '../src/create-server.js';
 import { parseToolsets } from '../src/toolsets.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
+import { publishedInputSchema } from '../src/list-tools-handler.js';
 import type { CallOptions, PluginResponse } from '../src/dispatcher.js';
 
 const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
@@ -203,6 +204,7 @@ describe('createMcpServer', () => {
       ['develop,masks', 71, ['core', 'develop', 'masks']],
       ['all', 71, ['core', 'develop', 'masks']],
     ] as const)('toolset %s preserves contract order and definitions', async (toolsets, count, groups) => {
+      const privateContracts = structuredClone(TOOL_CONTRACTS);
       pair = await connect({ toolsets });
       const first = await pair.client.listTools();
       const contracts = TOOL_CONTRACTS.filter((tool) => groups.some((group) => group === tool.toolset));
@@ -210,8 +212,9 @@ describe('createMcpServer', () => {
       expect(first.tools.map((tool) => tool.name)).toEqual(contracts.map((tool) => tool.name));
       first.tools.forEach((tool, index) => {
         expect(tool.description).toBe(contracts[index].description);
-        expect(tool.inputSchema).toEqual(contracts[index].inputSchema);
+        expect(tool.inputSchema).toEqual(publishedInputSchema(contracts[index].inputSchema));
       });
+      expect(TOOL_CONTRACTS).toEqual(privateContracts);
       expect(JSON.stringify(await pair.client.listTools())).toBe(JSON.stringify(first));
       expect(pair.client.getServerCapabilities()?.tools).not.toHaveProperty('listChanged');
     });

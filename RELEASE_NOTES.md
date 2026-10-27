@@ -1,5 +1,6 @@
 # Unreleased
 
+- All advertised tools now publish Claude Code-compatible root schemas. Cross-field selector rules remain enforced before dispatch, and nested schema constraints are unchanged.
 - `delete_empty_masks` is removed. Use `delete_masks` with only `photo_ids` to delete empty masks on up to 1000 photos (LrC 14+), preserving module and selection. Existing `photo_id` calls with `mask_ids`, `tool_ids` or `all` keep their behavior (LrC 11+). The two forms cannot be mixed; each retains its result fields.
 - The default tool list now contains only core catalog and metadata tools. Enable `LIGHTROOM_MCP_TOOLSETS=develop`, `masks`, `develop,masks`, or `all` in your MCP server environment to restore Develop or mask tools after upgrading. Desktop bundle users can set **Enabled toolsets**. Core is always enabled. Restart the server to apply a change; hidden tools are also refused when called. Develop includes `create_virtual_copies` and `summarize_develop_settings`.
 
