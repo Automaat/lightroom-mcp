@@ -24,7 +24,7 @@ try {
   }
   original = (await session.toolOrThrow("get_photo_metadata", { photo_id: photoId })).data;
   originalReason = (await session.toolOrThrow("get_ai_metadata", { photo_ids: [photoId] })).data.photos[0].reason ?? "";
-  await session.toolOrThrow("set_flag", { photo_ids: [photoId], flag: "reject" });
+  await session.toolOrThrow("set_rating_and_flag", { photo_ids: [photoId], flag: "reject" });
   await session.toolOrThrow("set_color_label", { photo_ids: [photoId], label: "yellow" });
   await session.toolOrThrow("set_ai_metadata", { photo_ids: [photoId], reason: "Live batch-preview cull verification" });
   const metadata = (await session.toolOrThrow("get_photo_metadata", { photo_id: photoId })).data;
@@ -36,7 +36,7 @@ try {
 } finally {
   try {
     if (original && originalReason !== undefined) {
-      await session.toolOrThrow("set_flag", { photo_ids: [photoId], flag: ({ "-1": "reject", "1": "pick" })[original.pickStatus] ?? "none" });
+      await session.toolOrThrow("set_rating_and_flag", { photo_ids: [photoId], flag: ({ "-1": "reject", "1": "pick" })[original.pickStatus] ?? "none" });
       await session.toolOrThrow("set_color_label", { photo_ids: [photoId], label: labelForRestore(original.colorLabel) });
       await session.toolOrThrow("set_ai_metadata", { photo_ids: [photoId], reason: originalReason });
       const restored = (await session.toolOrThrow("get_photo_metadata", { photo_id: photoId })).data;

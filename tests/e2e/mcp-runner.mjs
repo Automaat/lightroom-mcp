@@ -293,7 +293,7 @@ async function main() {
     const destinationDir = path.join(outputRoot, checkpointName);
 
     await run("find a source photo without changing it", async () => {
-      const r = await c.callTool("search_photos", { limit: 1 });
+      const r = await c.callTool("search_photos", { limit: 1, include_path: true });
       checkTrue("not error", !r.isError, r.text);
       ctx.firstPhoto = r.parsed.photos?.[0];
       checkTrue("photo exists", !!ctx.firstPhoto, "catalog appears empty");
@@ -366,9 +366,9 @@ async function main() {
   }
 
   if (mode === "read" || mode === "all") {
-    await run("tools/list returns 50 tools", async () => {
+    await run("tools/list returns 76 tools", async () => {
       const tools = await c.listTools();
-      checkEq("tool count", tools.tools.length, 50);
+      checkEq("tool count", tools.tools.length, 76);
     });
 
     await run("list_collections smoke", async () => {
@@ -489,8 +489,8 @@ async function main() {
       });
 
       const originalRating = ctx.firstPhoto.rating ?? 0;
-      await run("set_rating to 3", async () => {
-        const r = await c.callTool("set_rating", {
+      await run("set_rating_and_flag to 3", async () => {
+        const r = await c.callTool("set_rating_and_flag", {
           photo_ids: [String(ctx.firstPhoto.id)],
           rating: 3,
         });
@@ -505,8 +505,8 @@ async function main() {
         checkEq("rating", r.parsed.rating, 3);
       });
 
-      await run(`set_rating restore to ${originalRating}`, async () => {
-        const r = await c.callTool("set_rating", {
+      await run(`set_rating_and_flag restore to ${originalRating}`, async () => {
+        const r = await c.callTool("set_rating_and_flag", {
           photo_ids: [String(ctx.firstPhoto.id)],
           rating: originalRating,
         });
@@ -638,9 +638,9 @@ async function main() {
     // Phase 7b — export to /tmp, verify file + dimensions.
     // Prefer a real photo (rating>=1 typically means actual catalog content,
     // skipping test fixtures like synthetic PNGs that LR refuses to render).
-    let search = await c.callTool("search_photos", { rating: 5, limit: 1 });
+    let search = await c.callTool("search_photos", { rating: 5, limit: 1, include_path: true });
     if (search.isError || !search.parsed.photos?.length) {
-      search = await c.callTool("search_photos", { limit: 1 });
+      search = await c.callTool("search_photos", { limit: 1, include_path: true });
     }
     const photo = search.parsed.photos?.[0];
     if (photo) {
@@ -717,8 +717,8 @@ async function main() {
       checkEq("isError", r.isError, true);
     });
 
-    await run("set_rating out-of-range returns isError", async () => {
-      const r = await c.callTool("set_rating", { photo_ids: ["1"], rating: 9 });
+    await run("set_rating_and_flag out-of-range returns isError", async () => {
+      const r = await c.callTool("set_rating_and_flag", { photo_ids: ["1"], rating: 9 });
       checkEq("isError", r.isError, true);
     });
 

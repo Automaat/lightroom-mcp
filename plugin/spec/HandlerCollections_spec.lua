@@ -78,7 +78,7 @@ describe("HandlerCollections.listCollections", function()
         local r = Handler.listCollections({})
         assert.are.equal(1, r.count)
         assert.are.equal("Outer / Inside", r.collections[1].name)
-        assert.are.equal("Outer", r.collections[1].parent)
+        assert.is_nil(r.collections[1].parent)
     end)
 end)
 
@@ -134,7 +134,7 @@ describe("HandlerCollections.createCollection", function()
         local listed = Handler.listCollections({})
         assert.are.equal(1, listed.count)
         assert.are.equal("Trips / 2026 / Coast / City", listed.collections[1].name)
-        assert.are.equal("Coast", listed.collections[1].parent)
+        assert.is_nil(listed.collections[1].parent)
     end)
 
     it("reuses existing collection sets instead of duplicating them", function()
@@ -768,9 +768,16 @@ describe("HandlerCollections.getCollectionPhotos", function()
         assert.are.equal(2, r.count)
         assert.is_false(r.has_more)
         assert.are.same({
-            id = "1", path = "/p1.jpg", filename = "p1.jpg", rating = 1, dateTimeOriginal = "2026-01-02",
+            id = "1", filename = "p1.jpg", rating = 1, dateTimeOriginal = "2026-01-02",
         }, r.photos[1])
         assert.are.equal("2", r.photos[2].id)
+        assert.are.same(r, Handler.getCollectionPhotos({ collection_name = "Trip", include_path = false }))
+        local full = Handler.getCollectionPhotos({ collection_name = "Trip", include_path = true })
+        assert.are.equal("/p1.jpg", full.photos[1].path)
+        assert.are.equal("/p2.jpg", full.photos[2].path)
+        full.photos[1].path = nil
+        full.photos[2].path = nil
+        assert.are.same(r, full)
     end)
 
     it("finds a collection nested two sets deep, by bare name or listed path", function()
@@ -780,7 +787,10 @@ describe("HandlerCollections.getCollectionPhotos", function()
             collectionSets = { set("Outer", {}, { set("Inner", { deep }) }) } })
 
         assert.are.equal(1, Handler.getCollectionPhotos({ collection_name = "Deep" }).count)
-        local listed = Handler.listCollections({}).collections[1].name
+        local row = Handler.listCollections({}).collections[1]
+        assert.are.same({ name = "Outer / Inner / Deep", type = "LrCollection",
+            isSmartCollection = false, photoCount = 1 }, row)
+        local listed = row.name
         assert.are.equal("Outer / Inner / Deep", listed)
         assert.are.equal("1", Handler.getCollectionPhotos({ collection_name = listed }).photos[1].id)
     end)

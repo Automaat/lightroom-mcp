@@ -11,7 +11,7 @@ Read results, write effects, arguments and errors stay the same.
 | `delete_collection` | Keep `photo_count`; `message` only reminds that photos stay in the catalog. |
 | `set_keywords`, `remove_keyword_subtree` | Omit count-only `message`; keep updated/removed counts and missing IDs where provided. |
 | `rename_keyword` | Omit the summary sentence; keep `old_path`, `new_path` and `photo_count`. |
-| `set_rating`, `set_flag`, `set_color_label` | Omit `rating`, `flag` or `label` echoes and count-only `message`. |
+| `set_color_label` | Omit the `label` echo and count-only `message`. |
 | `set_gps` | Omit `latitude`, `longitude`, `altitude`, `altitude_cleared` and count-only `message`; keep `updated` and `missing`. |
 | `set_location`, `set_metadata` | Omit count-only `message`; keep `updated`, `fields` and `missing`. |
 | `import_photos` | Omit the imported-count sentence. Keep unsupported-extension notes, counts and unfinished paths. |
@@ -25,3 +25,7 @@ Read results, write effects, arguments and errors stay the same.
 
 Use returned counts and IDs to handle outcomes. Read photo or mask metadata when
 the workflow needs stored values; an echoed request was not a readback.
+
+`set_rating_and_flag` already returns `success`, `updated` and `missing`.
+Its result stays unchanged; the retired `set_rating` and `set_flag` tools are not
+reintroduced.

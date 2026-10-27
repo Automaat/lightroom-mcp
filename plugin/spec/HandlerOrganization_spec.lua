@@ -16,12 +16,12 @@ local function setup(opts)
     return catalog, require 'HandlerOrganization'
 end
 
-describe("HandlerOrganization.setRating", function()
+describe("HandlerOrganization.setRatingAndFlag rating path", function()
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
         local catalog, Handler = setup({ photos = { p1 } })
 
-        Handler.setRating({ photo_ids = { "1" }, rating = 4 })
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 4 })
 
         assert.is_false(catalog.getQueriedInsideWriteAccess())
     end)
@@ -31,7 +31,7 @@ describe("HandlerOrganization.setRating", function()
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", rating = 0 })
         local _, Handler = setup({ photos = { p1, p2 } })
 
-        local r = Handler.setRating({ photo_ids = { "1", "2" }, rating = 4 })
+        local r = Handler.setRatingAndFlag({ photo_ids = { "1", "2" }, rating = 4 })
 
         assert.is_true(r.success)
         assert.are.equal(2, r.updated)
@@ -43,21 +43,21 @@ describe("HandlerOrganization.setRating", function()
 
     it("validates rating range", function()
         local _, Handler = setup({})
-        assert.has_error(function() Handler.setRating({ photo_ids = { "1" }, rating = 6 }) end)
-        assert.has_error(function() Handler.setRating({ photo_ids = { "1" }, rating = -1 }) end)
+        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 6 }) end)
+        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = -1 }) end)
     end)
 
     it("requires photo_ids and rating", function()
         local _, Handler = setup({})
-        assert.has_error(function() Handler.setRating({ rating = 3 }) end)
-        assert.has_error(function() Handler.setRating({ photo_ids = { "1" } }) end)
+        assert.has_error(function() Handler.setRatingAndFlag({ rating = 3 }) end)
+        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" } }) end)
     end)
 
     it("reports unknown photos instead of claiming a silent success", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 0 })
         local _, Handler = setup({ photos = { p1 } })
 
-        local r = Handler.setRating({ photo_ids = { "1", "missing" }, rating = 2 })
+        local r = Handler.setRatingAndFlag({ photo_ids = { "1", "missing" }, rating = 2 })
 
         assert.are.equal(1, r.updated)
         assert.are.same({ "missing" }, r.missing)
@@ -67,17 +67,17 @@ describe("HandlerOrganization.setRating", function()
     it("rejects a rating that is not a number", function()
         local _, Handler = setup({})
         assert.has_error(
-            function() Handler.setRating({ photo_ids = { "1" }, rating = "3" }) end,
+            function() Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = "3" }) end,
             "rating must be a number between 0 and 5")
     end)
 end)
 
-describe("HandlerOrganization.setFlag", function()
+describe("HandlerOrganization.setRatingAndFlag flag path", function()
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 0 })
         local catalog, Handler = setup({ photos = { p1 } })
 
-        Handler.setFlag({ photo_ids = { "1" }, flag = "pick" })
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = "pick" })
 
         assert.is_false(catalog.getQueriedInsideWriteAccess())
     end)
@@ -87,18 +87,17 @@ describe("HandlerOrganization.setFlag", function()
         local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", pickStatus = 1 })
         local _, Handler = setup({ photos = { p1, p2 } })
 
-        local r = Handler.setFlag({ photo_ids = { "1", "2" }, flag = "reject" })
+        local r = Handler.setRatingAndFlag({ photo_ids = { "1", "2" }, flag = "reject" })
         assert.is_true(r.success)
         assert.are.equal(2, r.updated)
         assert.is_nil(r.flag)
-        assert.is_nil(r.message)
         assert.are.equal(-1, p1:getRawMetadata("pickStatus"))
         assert.are.equal(-1, p2:getRawMetadata("pickStatus"))
 
-        Handler.setFlag({ photo_ids = { "1" }, flag = "pick" })
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = "pick" })
         assert.are.equal(1, p1:getRawMetadata("pickStatus"))
 
-        Handler.setFlag({ photo_ids = { "1" }, flag = "none" })
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = "none" })
         assert.are.equal(0, p1:getRawMetadata("pickStatus"))
     end)
 
@@ -106,12 +105,12 @@ describe("HandlerOrganization.setFlag", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 1 })
         local catalog, Handler = setup({ photos = { p1 } })
 
-        assert.has_error(function() Handler.setFlag({ flag = "pick" }) end, "photo_ids is required")
-        assert.has_error(function() Handler.setFlag({ photo_ids = { "1" } }) end,
+        assert.has_error(function() Handler.setRatingAndFlag({ flag = "pick" }) end, "photo_ids is required")
+        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" } }) end,
+            "rating or flag is required")
+        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = "rejected" }) end,
             "flag must be one of: pick, reject, none")
-        assert.has_error(function() Handler.setFlag({ photo_ids = { "1" }, flag = "rejected" }) end,
-            "flag must be one of: pick, reject, none")
-        assert.has_error(function() Handler.setFlag({ photo_ids = { "1" }, flag = 1 }) end,
+        assert.has_error(function() Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = 1 }) end,
             "flag must be one of: pick, reject, none")
 
         assert.are.equal(0, catalog.getQueryCount())
@@ -122,11 +121,63 @@ describe("HandlerOrganization.setFlag", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", pickStatus = 0 })
         local _, Handler = setup({ photos = { p1 } })
 
-        local r = Handler.setFlag({ photo_ids = { "1", "missing" }, flag = "pick" })
+        local r = Handler.setRatingAndFlag({ photo_ids = { "1", "missing" }, flag = "pick" })
 
         assert.are.equal(1, r.updated)
         assert.are.same({ "missing" }, r.missing)
         assert.is_nil(r.message)
+    end)
+end)
+
+describe("HandlerOrganization.setRatingAndFlag combined path", function()
+    it("sets both fields in one write and resolves ids and paths before the gate", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", rating = 1, pickStatus = -1 })
+        local p2 = helper.fakePhoto({ id = "2", path = "/b.jpg", rating = 2, pickStatus = 0 })
+        local catalog, Handler = setup({ photos = { p1, p2 } })
+
+        local result = Handler.setRatingAndFlag({
+            photo_ids = { "1", "/b.jpg", "missing", "1" }, rating = 3, flag = "pick",
+        })
+
+        assert.are.same({ success = true, updated = 3, missing = { "missing" } }, result)
+        assert.are.equal(1, catalog.getWriteAccessCount())
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+        for _, photo in ipairs({ p1, p2 }) do
+            assert.are.equal(3, photo:getRawMetadata("rating"))
+            assert.are.equal(1, photo:getRawMetadata("pickStatus"))
+        end
+    end)
+
+    it("leaves omitted fields unchanged and clears rating and flag together", function()
+        local photo = helper.fakePhoto({ id = "1", rating = 5, pickStatus = -1 })
+        local _, Handler = setup({ photos = { photo } })
+
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 2 })
+        assert.are.equal(2, photo:getRawMetadata("rating"))
+        assert.are.equal(-1, photo:getRawMetadata("pickStatus"))
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, flag = "pick" })
+        assert.are.equal(2, photo:getRawMetadata("rating"))
+        assert.are.equal(1, photo:getRawMetadata("pickStatus"))
+        Handler.setRatingAndFlag({ photo_ids = { "1" }, rating = 0, flag = "none" })
+        assert.is_nil(photo:getRawMetadata("rating"))
+        assert.are.equal(0, photo:getRawMetadata("pickStatus"))
+    end)
+
+    it("rejects an invalid field before resolving or writing the other valid field", function()
+        for _, fields in ipairs({
+            {}, { rating = 3, flag = "invalid" }, { rating = 6, flag = "pick" },
+            { rating = "3", flag = "pick" }, { rating = false, flag = "pick" },
+            { rating = 3, flag = false },
+        }) do
+            local photo = helper.fakePhoto({ id = "1", rating = 5, pickStatus = -1 })
+            local catalog, Handler = setup({ photos = { photo } })
+            fields.photo_ids = { "1" }
+            assert.has_error(function() Handler.setRatingAndFlag(fields) end)
+            assert.are.equal(0, catalog.getQueryCount())
+            assert.are.equal(0, catalog.getWriteAccessCount())
+            assert.are.equal(5, photo:getRawMetadata("rating"))
+            assert.are.equal(-1, photo:getRawMetadata("pickStatus"))
+        end
     end)
 end)
 
