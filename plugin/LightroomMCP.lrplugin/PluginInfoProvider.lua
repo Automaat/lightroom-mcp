@@ -234,9 +234,8 @@ local DISPATCH = {
     remove_keyword_subtree = HandlerOrganization.removeKeywordSubtree,
     list_keywords = HandlerKeywords.listKeywords,
     rename_keyword = HandlerKeywords.renameKeyword,
-    set_rating = HandlerOrganization.setRating,
+    set_rating_and_flag = HandlerOrganization.setRatingAndFlag,
     undo_last_step = HandlerUndo.undoLastStep,
-    set_flag = HandlerOrganization.setFlag,
     remove_photos_from_catalog = HandlerRemoveFromCatalog.removePhotos,
     set_color_label = HandlerOrganization.setColorLabel,
     import_photos = HandlerImport.importPhotos,
@@ -438,7 +437,13 @@ local function dispatchAction(request)
         sendResponse({ id = id, result = resultOrErr })
     else
         addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
-        sendResponse({ id = id, error = tostring(resultOrErr) })
+        local message = tostring(resultOrErr)
+        local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
+        if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
+            or source:match("^%a:[/\\]") or source:match("^%.%.%.")) then
+            message = detail
+        end
+        sendResponse({ id = id, error = message })
     end
     pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
 end

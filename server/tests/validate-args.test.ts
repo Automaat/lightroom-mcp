@@ -1,8 +1,83 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
+import type { Dispatcher } from '../src/dispatcher.js';
 
 describe('validateToolArgs', () => {
+  it('reports a single photo_id type clause', () => {
+    expect(validateToolArgs('get_photo_metadata', { photo_id: true })).toBe(
+      'Invalid arguments for get_photo_metadata: photo_id must be string or number',
+    );
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [true], rating: 3 })).toBe(
+      'Invalid arguments for set_rating_and_flag: photo_ids.0 must be string or number',
+    );
+    expect(validateToolArgs('get_photo_metadata', { photo_id: '' })).toContain('photo_id');
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
+  });
+
+  describe.each([
+    ['create_gradient_mask', { photo_id: 1, shape: 'radial', center: { x: 0.5, y: 0.5 }, width: 0.4, height: 0.6 }],
+    ['create_brush_mask', { photo_id: 1, strokes: [{ points: [{ x: 0.5, y: 0.5 }] }] }],
+    ['create_range_mask', { photo_id: 1, type: 'luminance', luminance: { min: 0.3, max: 0.6 } }],
+  ])('%s creation adjustments', (name, base) => {
+    it('accepts shared unprefixed sliders and preserves calls without adjustments', () => {
+      expect(validateToolArgs(name, base)).toBeNull();
+      expect(validateToolArgs(name, { ...base, adjustments: { exposure: 1, noise: -20, contrast: 0 } })).toBeNull();
+      expect(validateToolArgs(name, { ...base, mask_id: 'existing' })).toBeNull();
+    });
+
+    it.each([{}, { exposure: 5 }, { contrast: -101 }, { exposure: '1' }, { local_Exposure: 1 }, { unknown: 1 }])(
+      'rejects invalid adjustments before dispatch: %p', async (adjustments) => {
+        const dispatch = jest.fn<Dispatcher['call']>();
+        const result = await createCallToolHandler({ dispatcher: { call: dispatch }, isReady: () => true })(
+          name, { ...base, adjustments },
+        );
+        expect(result.isError).toBe(true);
+        expect(dispatch).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rejects adjustments on an existing mask before dispatch', async () => {
+      const dispatch = jest.fn<Dispatcher['call']>();
+      const result = await createCallToolHandler({ dispatcher: { call: dispatch }, isReady: () => true })(
+        name, { ...base, mask_id: 'existing', adjustments: { exposure: 1 } },
+      );
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain('adjustments');
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+  });
+  describe('get_photo_metadata batches', () => {
+    it('accepts mixed selectors, repeats and the cap with shared sections', () => {
+      for (const photo_ids of [[914, '/a.jpg', 914], Array.from({ length: 100 }, (_, i) => i + 1)]) {
+        expect(validateToolArgs('get_photo_metadata', { photo_ids })).toBeNull();
+        expect(validateToolArgs('get_photo_metadata', { photo_ids, sections: ['developSettings'] })).toBeNull();
+      }
+    });
+
+    it.each([
+      {}, { photo_id: 1, photo_ids: [1] }, { photo_ids: [] },
+      { photo_ids: Array.from({ length: 101 }, () => 1) },
+      { photo_ids: [null] }, { photo_ids: [''] }, { photo_ids: [true] },
+      { photo_ids: [1], sections: ['unknown'] }, { photo_ids: [1], extra: true },
+    ])('rejects invalid selectors before dispatch: %p', async (args) => {
+      const call = jest.fn((_action: string, _params: unknown) => Promise.resolve({ id: 'test', result: {} }));
+      const handler = createCallToolHandler({ dispatcher: { call }, isReady: () => true });
+      const result = await handler('get_photo_metadata', args);
+      expect(result.isError).toBe(true);
+      expect(call).not.toHaveBeenCalled();
+      expect(result.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('Invalid arguments for get_photo_metadata') });
+    });
+  });
+
+  it.each(['cull', 'detail', 64, 512.5, 1024, 2048])('get_photo_preview accepts size %s', size => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toBeNull();
+  });
+
+  it.each(['huge', 5000])('get_photo_preview explains accepted sizes for %s', size => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toMatch(/cull.*detail.*64.*2048/);
+  });
+
   it.each([{}, { limit: 0 }, { limit: 10.5, offset: 2.5, query: 'vi', folder: 'User Presets' }])(
     'list_develop_presets accepts paging and filters %p', (args) => {
       expect(validateToolArgs('list_develop_presets', args)).toBeNull();
@@ -126,7 +201,7 @@ describe('validateToolArgs', () => {
     expect(invalidSection).toContain('sections');
     expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
-    expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 3 })).toBeNull();
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: 3 })).toBeNull();
     expect(validateToolArgs('search_photos', {})).toBeNull();
   });
 
@@ -643,8 +718,8 @@ describe('validateToolArgs', () => {
   });
 
   it('enforces documented ranges and types', () => {
-    expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 99 })).toContain('rating');
-    expect(validateToolArgs('set_rating', { photo_ids: [914], rating: '3' })).toContain('rating');
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: 99 })).toContain('rating');
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: '3' })).toContain('rating');
     expect(validateToolArgs('search_photos', { limit: 'many' })).toContain('limit');
     expect(validateToolArgs('export_photos', {
       photo_ids: [914],
@@ -671,10 +746,10 @@ describe('validateToolArgs', () => {
   it('accepts only pick, reject or none as a flag', () => {
     const base = { photo_ids: [914] };
 
-    expect(validateToolArgs('set_flag', { ...base, flag: 'pick' })).toBeNull();
-    expect(validateToolArgs('set_flag', { ...base, flag: 'none' })).toBeNull();
-    expect(validateToolArgs('set_flag', { ...base, flag: 'rejected' })).toContain('flag');
-    expect(validateToolArgs('set_flag', { ...base, flag: -1 })).toContain('flag');
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: 'pick' })).toBeNull();
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: 'none' })).toBeNull();
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: 'rejected' })).toContain('flag');
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: -1 })).toContain('flag');
   });
 
   it('accepts IPTC location strings and rejects other types or unknown fields', () => {
@@ -725,14 +800,15 @@ describe('validateToolArgs', () => {
   });
 
   it('reports a missing required field', () => {
-    const msg = validateToolArgs('set_rating', { photo_ids: [914] });
+    const msg = validateToolArgs('set_rating_and_flag', { photo_ids: [914] });
 
-    expect(msg).toContain("required property 'rating'");
+    expect(msg).toContain("rating");
+    expect(msg).toContain("flag");
   });
 
   it('treats missing arguments as an empty object', () => {
     expect(validateToolArgs('search_photos', undefined)).toBeNull();
-    expect(validateToolArgs('set_rating', undefined)).toContain('required property');
+    expect(validateToolArgs('set_rating_and_flag', undefined)).toContain('required property');
   });
 
   it('reports a violation that has no field path', () => {

@@ -8,7 +8,7 @@ import { Dispatcher } from "./dispatcher.js";
 import { readToken, tokenFilePath } from "./token.js";
 import { requestPort, responsePort } from "./ports.js";
 import { createMcpServer } from "./create-server.js";
-import { createCallToolHandler, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
+import { createCallToolHandler, NOT_CONNECTED_DETAILS, NOT_CONNECTED_MESSAGE } from "./tool-handler.js";
 import { Bridge, type Leader } from "./bridge.js";
 import { brokerPath } from "./broker.js";
 import { parseCli, helpText } from "./cli.js";
@@ -248,7 +248,11 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   const callTool = createCallToolHandler({
     dispatcher,
     isReady: () => socketsConnected() && liveness.isUsable(),
-    notReadyMessage: () => (socketsConnected() ? unresponsive.current() : NOT_CONNECTED_MESSAGE),
+    notReadyMessage: () => {
+      if (socketsConnected()) return unresponsive.current();
+      console.error(`[plugin] ${NOT_CONNECTED_DETAILS}`);
+      return NOT_CONNECTED_MESSAGE;
+    },
     settleReadiness: async () => {
       await waitUntil(socketsConnected, STARTUP_GRACE_MS, CONNECT_POLL_MS);
       await liveness.settled();
