@@ -93,6 +93,21 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
+  it('get_photo_preview describes named uses and approximate token costs', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
+    expect(tool?.description).toMatch(/cull.*culling.*650 tokens/);
+    expect(tool?.description).toMatch(/detail.*details.*2\.5k tokens/);
+    expect(tool?.description).toContain('earlier Claude estimates');
+    expect(tool?.description).toContain('width and height');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    for (const size of ['cull', 'detail', 64, 1024, 2048]) {
+      expect(validate({ photo_id: 914, size })).toBe(true);
+    }
+    for (const size of ['huge', 5000]) {
+      expect(validate({ photo_id: 914, size })).toBe(false);
+    }
+  });
+
   it('contains exactly 77 tools', () => {
     expect(TOOL_DEFINITIONS).toHaveLength(77);
   });

@@ -4,6 +4,7 @@ import {
   developSettingsValidationSchema,
   TOOL_CONTRACTS,
 } from "./tool-contracts.js";
+import { PREVIEW_SIZE_ERROR } from "./preview-sizes.js";
 
 /**
  * The tool contracts publish a JSON Schema per tool, but nothing enforced it:
@@ -48,7 +49,10 @@ export function validateToolArgs(name: string, args: unknown): string | null {
   if (!validate) return null;
   if (validate(args ?? {})) return null;
 
-  const problems = (validate.errors ?? []).map(describe);
+  const problems = (validate.errors ?? []).map(error =>
+    name === "get_photo_preview" && error.instancePath === "/size"
+      ? PREVIEW_SIZE_ERROR
+      : describe(error));
   const unique = [...new Set(problems)];
   return `Invalid arguments for ${name}: ${unique.join("; ")}`;
 }

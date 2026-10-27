@@ -1,4 +1,5 @@
 import type { JSONObject, Tool } from "@modelcontextprotocol/server";
+import { PREVIEW_SIZES } from "./preview-sizes.js";
 
 type InputSchema = Tool["inputSchema"];
 
@@ -546,17 +547,18 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerPreview.getPhotoPreview",
     description:
-      "Render a JPEG image with current Develop settings, including raw files. size is the minimum acceptable longest edge; Lightroom returns its smallest preview meeting it, often larger. Above 3.5 MB or 2000px, uses the next smaller preview. Returns actual width/height.",
+      "JPEG image with current Develop edits (raw supported). cull for culling: about 650 tokens; detail for inspecting details: about 2.5k tokens. Costs are earlier Claude estimates, vary by image/model, and repeat each turn in history. See size for edge/fallback rules; width and height are actual.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         size: {
-          type: "number",
-          description: "Minimum longest edge in pixels (64-2048, default 512)",
-          minimum: 64,
-          maximum: 2048,
+          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller.",
+          oneOf: [
+            { type: "number", minimum: 64, maximum: 2048 },
+            { type: "string", enum: Object.keys(PREVIEW_SIZES) },
+          ],
         },
       },
       required: ["photo_id"],
