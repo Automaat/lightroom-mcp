@@ -47,6 +47,40 @@ function makeHandler(opts: {
 }
 
 describe('createCallToolHandler', () => {
+  it.each([
+    {},
+    { photo_ids: [] },
+    { photo_ids: [914], photo_id: 914 },
+    { photo_ids: [914], mask_ids: ['m'] },
+    { photo_ids: [914], tool_ids: ['t'] },
+    { photo_ids: [914], all: true },
+    { photo_ids: [914], photo_id: 914, all: true },
+    { photo_id: 914, mask_ids: ['m'], empty: true },
+  ])('rejects ambiguous delete_masks selectors before dispatch (%#)', async args => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for delete_masks');
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    { photo_id: 914, mask_ids: ['m'] },
+    { photo_id: 914, tool_ids: ['t'] },
+    { photo_id: 914, all: true },
+    { photo_ids: [914, '/a.dng'] },
+  ])('dispatches each delete_masks mode unchanged (%#)', async args => {
+    let captured: unknown;
+    await makeHandler({ call: async (_action, params) => {
+      captured = params;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(captured).toEqual(args);
+  });
+
   it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };
     let captured: unknown;

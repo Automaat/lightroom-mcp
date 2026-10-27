@@ -348,7 +348,7 @@ local function reopenTool(previousTool)
     LrTasks.pcall(function() LrDevelopController.selectTool(previousTool) end)
 end
 
-function MaskDeleteHandler.deleteMasks(args)
+local function deletePhotoMasks(args)
     local photoId = requirePhotoId(args.photo_id)
     local target = parseTarget(args)
     requireDeleteApi("delete_masks")
@@ -399,11 +399,11 @@ local function countGroups(catalog, photos)
     return counts
 end
 
-function MaskDeleteHandler.deleteEmptyMasks(args)
+local function deleteEmptyMasks(args)
     local photoIds = requirePhotoIdArray(args.photo_ids)
     local catalog = LrApplication.activeCatalog()
     if type(catalog.deleteAllEmptyMasks) ~= "function" then
-        error("delete_empty_masks needs " .. DELETE_EMPTY_MINIMUM_VERSION .. " or later")
+        error("delete_masks with photo_ids needs " .. DELETE_EMPTY_MINIMUM_VERSION .. " or later")
     end
 
     local resolved = PhotoLookup.resolveMany(catalog, photoIds)
@@ -440,6 +440,18 @@ function MaskDeleteHandler.deleteEmptyMasks(args)
         photos_checked = #photos,
         missing = missingIds,
     }
+end
+
+function MaskDeleteHandler.deleteMasks(args)
+    if args.photo_ids ~= nil then
+        for _, field in ipairs({ "photo_id", "mask_ids", "tool_ids", "all" }) do
+            if args[field] ~= nil then
+                error("photo_ids must be given alone; use photo_id with mask_ids, tool_ids or all")
+            end
+        end
+        return deleteEmptyMasks(args)
+    end
+    return deletePhotoMasks(args)
 end
 
 return MaskDeleteHandler
