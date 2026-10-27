@@ -23,6 +23,18 @@ const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
 const MAX_MASK_BATCH_PHOTO_IDS = 200;
 
+// Keep the client schema flat while enforcing exclusive selectors before dispatch.
+export const deleteMasksValidationSchema = {
+  oneOf: [
+    {
+      required: ["photo_id"],
+      not: { required: ["photo_ids"] },
+      oneOf: [{ required: ["mask_ids"] }, { required: ["tool_ids"] }, { required: ["all"] }],
+    },
+    { required: ["photo_ids"], maxProperties: 1 },
+  ],
+};
+
 const MASK_TYPES = ["subject", "sky", "background"] as const;
 const MASK_COMBINE_OPERATIONS = ["add", "subtract", "intersect"] as const;
 
@@ -1932,14 +1944,6 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         photo_ids: photoIdArray("Empty masks only: photo IDs or paths"),
       },
-      oneOf: [
-        {
-          required: ["photo_id"],
-          not: { required: ["photo_ids"] },
-          oneOf: [{ required: ["mask_ids"] }, { required: ["tool_ids"] }, { required: ["all"] }],
-        },
-        { required: ["photo_ids"], maxProperties: 1 },
-      ],
     },
   },
   {

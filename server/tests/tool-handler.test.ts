@@ -47,6 +47,30 @@ function makeHandler(opts: {
 }
 
 describe('createCallToolHandler', () => {
+  const deletionFields = ['photo_id', 'photo_ids', 'mask_ids', 'tool_ids', 'all'] as const;
+  const deletionValues: Record<(typeof deletionFields)[number], unknown> = {
+    photo_id: 914, photo_ids: [914], mask_ids: ['m'], tool_ids: ['t'], all: true,
+  };
+  const deletionCombinations = Array.from({ length: 32 }, (_, bits) => {
+    const fields = deletionFields.filter((_, i) => bits & (1 << i));
+    const args: Record<string, unknown> = Object.fromEntries(fields.map(field => [field, deletionValues[field]]));
+    const targets = fields.filter(field => ['mask_ids', 'tool_ids', 'all'].includes(field));
+    const valid = fields.includes('photo_ids')
+      ? fields.length === 1
+      : fields.includes('photo_id') && targets.length === 1;
+    return { args, valid };
+  });
+
+  it.each(deletionCombinations)('enforces private delete_masks selectors before dispatch (%#)', async ({ args, valid }) => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(Boolean(result.isError)).toBe(!valid);
+    expect(calls).toBe(valid ? 1 : 0);
+  });
+
   it.each([
     {},
     { photo_ids: [] },

@@ -257,6 +257,14 @@ describe('tool required fields', () => {
 });
 
 describe('delete_masks schema', () => {
+  it('keeps root selector unions private for client compatibility', () => {
+    const schema = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!.inputSchema;
+    for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(schema).not.toHaveProperty(keyword);
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toHaveProperty('photo_id');
+    expect(schema.properties).toHaveProperty('photo_ids');
+  });
+
   it('is smaller than the two deletion definitions it replaces', () => {
     const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!;
     expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(936);
