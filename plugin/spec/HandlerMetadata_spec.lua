@@ -12,6 +12,52 @@ local function setup(photos)
 end
 
 describe("HandlerMetadata.getPhotoMetadata", function()
+    it("returns ordered single-photo metadata for mixed ids and paths, including repeats", function()
+        local first = helper.fakePhoto({ id = 1, path = "/first.jpg", title = "First",
+            developSettings = { Exposure2012 = 0.5 } })
+        local second = helper.fakePhoto({ id = 2, path = "/second.jpg", rating = 4,
+            developSettings = { Contrast2012 = 25 } })
+        local catalog, Handler = setup({ first, second })
+        for _, sections in ipairs({ {}, { "developSettings" } }) do
+            local a = Handler.getPhotoMetadata({ photo_id = 1, sections = sections })
+            local b = Handler.getPhotoMetadata({ photo_id = 2, sections = sections })
+            local result = Handler.getPhotoMetadata({ photo_ids = { 2, "missing", "/first.jpg", 2, "999999999" },
+                sections = sections })
+            assert.are.same({ b, a, b }, result.photos)
+            assert.are.same({ "missing", "999999999" }, result.missing)
+        end
+        assert.is_false(catalog:getQueriedInsideReadAccess())
+    end)
+
+    it("returns empty photos for an all-missing batch and empty missing for found photos", function()
+        local _, Handler = setup({ helper.fakePhoto({ id = 1 }) })
+        assert.are.same({ photos = {}, missing = { "missing" } },
+            Handler.getPhotoMetadata({ photo_ids = { "missing" } }))
+        assert.are.same({}, Handler.getPhotoMetadata({ photo_ids = { 1 } }).missing)
+    end)
+
+    it("accepts the batch cap and never reads unrequested develop settings", function()
+        local photos, ids = {}, {}
+        for i = 1, 100 do
+            photos[i] = helper.fakePhoto({ id = i })
+            photos[i].getDevelopSettings = function() error("unrequested develop read") end
+            ids[i] = i
+        end
+        local _, Handler = setup(photos)
+        assert.are.equal(100, #Handler.getPhotoMetadata({ photo_ids = ids }).photos)
+    end)
+
+    it("rejects missing, conflicting and out-of-bounds batch selectors before catalog queries", function()
+        local catalog, Handler = setup({})
+        local tooMany = {}
+        for i = 1, 101 do tooMany[i] = i end
+        for _, args in ipairs({ {}, { photo_id = 1, photo_ids = { 1 } },
+            { photo_ids = {} }, { photo_ids = tooMany }, { photo_ids = "1" } }) do
+            assert.has_error(function() Handler.getPhotoMetadata(args) end)
+        end
+        assert.is_false(catalog:getQueriedInsideReadAccess())
+    end)
+
     it("omits develop settings by default and with empty sections without calling the getter", function()
         local photo = helper.fakePhoto({ id = "1", rating = 5, title = "Keep" })
         photo.getDevelopSettings = function() error("unrequested develop read") end
@@ -446,6 +492,7 @@ describe("HandlerMetadata.setGps", function()
 
         assert.is_true(r.success)
         assert.are.equal(2, r.updated)
+        assert.is_nil(r.message)
         assert.are.same({ latitude = 48.5818, longitude = 7.7509 }, p1:getRawMetadata("gps"))
         assert.are.same({ latitude = 48.5818, longitude = 7.7509 }, p2:getRawMetadata("gps"))
     end)
@@ -459,7 +506,10 @@ describe("HandlerMetadata.setGps", function()
 
         local r = Handler.setGps({ photo_ids = { "1" }, latitude = 0, longitude = 0, altitude = 140.5 })
         assert.are.equal(140.5, p1:getRawMetadata("gpsAltitude"))
-        assert.are.equal(140.5, r.altitude)
+        assert.is_nil(r.altitude)
+        assert.is_nil(r.latitude)
+        assert.is_nil(r.longitude)
+        assert.is_nil(r.message)
     end)
 
     it("clears altitude with clear_altitude", function()
@@ -469,7 +519,7 @@ describe("HandlerMetadata.setGps", function()
         local r = Handler.setGps({ photo_ids = { "1" }, latitude = 54.4, longitude = 18.6, clear_altitude = true })
 
         assert.is_nil(p1:getRawMetadata("gpsAltitude"))
-        assert.is_true(r.altitude_cleared)
+        assert.is_nil(r.altitude_cleared)
         assert.is_nil(r.altitude)
     end)
 
@@ -556,6 +606,7 @@ describe("HandlerMetadata.setLocation", function()
         assert.is_true(r.success)
         assert.are.equal(2, r.updated)
         assert.are.same({ "sublocation", "city", "state_province", "country", "iso_country_code" }, r.fields)
+        assert.is_nil(r.message)
         for _, p in ipairs({ p1, p2 }) do
             assert.are.equal("Nelson-Atkins Museum of Art", p:getRawMetadata("location"))
             assert.are.equal("Kansas City", p:getRawMetadata("city"))
@@ -701,6 +752,7 @@ describe("HandlerMetadata.setMetadata", function()
         assert.are.equal(2, r.updated)
         assert.are.same({ "title", "caption", "headline", "creator", "copyright",
             "rights_usage_terms", "copyright_info_url", "creator_url" }, r.fields)
+        assert.is_nil(r.message)
         for _, p in ipairs({ p1, p2 }) do
             assert.are.equal("Dunluce Castle", p:getRawMetadata("title"))
             assert.are.equal("Ruins on the Causeway Coast", p:getRawMetadata("caption"))

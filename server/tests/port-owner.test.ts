@@ -2,6 +2,7 @@ import net from 'node:net';
 import { describe, it, expect, jest } from '@jest/globals';
 import {
   describeUnresponsive,
+  describeUnresponsiveDetails,
   diagnoseUnresponsive,
   findPortClients,
   findPortListener,
@@ -183,6 +184,21 @@ function owned(listener: PortListener | null, otherClients: PortListener[] | nul
 }
 
 describe('describeUnresponsive', () => {
+  it('keeps each cause distinct, actionable and on one short line', () => {
+    const messages = [
+      describeUnresponsive(owned(null, null)),
+      describeUnresponsive(owned(LIGHTROOM, [])),
+      describeUnresponsive(owned(LIGHTROOM, [MIDI2LR_APP])),
+      describeUnresponsive(owned(FOREIGN, [])),
+    ];
+    expect(new Set(messages).size).toBe(4);
+    for (const message of messages) {
+      expect(message).not.toMatch(/[\r\n]/);
+      expect(message.length).toBeLessThan(160);
+      expect(message).toMatch(/Restart|Quit/);
+    }
+  });
+
   it.each([
     ['owners are unknown', owned(null, null), SHADOW_BRIDGE_MESSAGE],
     ['clients cannot be listed', owned(LIGHTROOM, null), SHADOW_BRIDGE_MESSAGE],
@@ -193,11 +209,11 @@ describe('describeUnresponsive', () => {
 
   it('points at a same-port plugin such as MIDI2LR when Lightroom owns the ports', () => {
     expect(STALE_LISTENER_MESSAGE).toContain('MIDI2LR');
-    expect(STALE_LISTENER_MESSAGE).toContain('LIGHTROOM_MCP_REQUEST_PORT');
+    expect(describeUnresponsiveDetails(owned(LIGHTROOM, []))).toContain('LIGHTROOM_MCP_REQUEST_PORT');
   });
 
   it('names connected processes, deduplicated across ports, with both remedies', () => {
-    const message = describeUnresponsive(owned(LIGHTROOM, [MIDI2LR_APP]));
+    const message = describeUnresponsiveDetails(owned(LIGHTROOM, [MIDI2LR_APP]));
 
     expect(message.match(/MIDI2LR \(pid 555\)/g)).toHaveLength(1);
     expect(message).toContain('pgrep -fl lightroom-mcp');
@@ -205,7 +221,7 @@ describe('describeUnresponsive', () => {
   });
 
   it('names the foreign process holding a plugin port', () => {
-    const message = describeUnresponsive([
+    const message = describeUnresponsiveDetails([
       { port: 58763, listener: LIGHTROOM, otherClients: [] },
       { port: 58764, listener: FOREIGN, otherClients: [] },
     ]);
@@ -216,7 +232,7 @@ describe('describeUnresponsive', () => {
   });
 
   it('still reports a foreign listener whose name is unknown', () => {
-    const message = describeUnresponsive([{ port: 58764, listener: { pid: 9 }, otherClients: [] }]);
+    const message = describeUnresponsiveDetails([{ port: 58764, listener: { pid: 9 }, otherClients: [] }]);
 
     expect(message).toContain('port 58764 is held by an unknown process (pid 9)');
   });
@@ -231,11 +247,29 @@ describe('diagnoseUnresponsive', () => {
       otherClients: () => Promise.resolve([]),
     });
 
-    expect(message).toContain('port 58764 is held by python3.13');
+    expect(message.details).toContain('port 58764 is held by python3.13');
   });
 });
 
 describe('UnresponsiveReporter', () => {
+  it('logs full details on fresh and cached reports while exposing the short message', async () => {
+    const diagnosis = await diagnoseUnresponsive([58763], {
+      listener: () => Promise.resolve(FOREIGN),
+      otherClients: () => Promise.resolve([]),
+    });
+    const log = jest.fn<(msg: string) => void>();
+    const reporter = new UnresponsiveReporter({ diagnose: () => Promise.resolve(diagnosis), log });
+    reporter.report();
+    await reporter.settled();
+    reporter.report();
+    expect(reporter.current()).toBe(diagnosis.message);
+    expect(log).toHaveBeenCalledTimes(2);
+    expect(log).toHaveBeenLastCalledWith(diagnosis.details);
+    expect(diagnosis.details).toContain('python3.13 (pid 4242)');
+    expect(diagnosis.details).toContain('LIGHTROOM_MCP_REQUEST_PORT');
+    expect(diagnosis.details.length).toBeGreaterThan(diagnosis.message.length);
+  });
+
   function setup() {
     let clock = 0;
     const diagnose = jest.fn(() => Promise.resolve(`verdict ${diagnose.mock.calls.length}`));
@@ -339,7 +373,7 @@ describe('system inspection', () => {
 
       expect(listener === null || listener.pid === process.pid).toBe(true);
       expect(clients === null || clients.length === 0).toBe(true);
-      await expect(diagnoseUnresponsive([port])).resolves.toEqual(expect.any(String));
+      await expect(diagnoseUnresponsive([port])).resolves.toEqual({ message: expect.any(String), details: expect.any(String) });
     } finally {
       server.close();
     }

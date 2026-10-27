@@ -31,9 +31,8 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   remove_keyword_subtree: 'destructive',
   list_keywords: 'read-only',
   rename_keyword: 'destructive',
-  set_rating: 'destructive',
+  set_rating_and_flag: 'destructive',
   undo_last_step: 'destructive',
-  set_flag: 'destructive',
   remove_photos_from_catalog: 'destructive',
   set_color_label: 'destructive',
   import_photos: 'additive',
@@ -71,14 +70,12 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   delete_masks: 'destructive',
   delete_empty_masks: 'destructive',
   set_mask_adjustments: 'destructive',
-  get_mask_adjustments: 'read-only',
+  get_mask: 'read-only',
   invert_mask: 'destructive',
   create_mask: 'additive',
   create_mask_batch: 'additive',
   set_mask_curves: 'destructive',
-  get_mask_curves: 'read-only',
   edit_mask_point_colors: 'destructive',
-  get_mask_point_colors: 'read-only',
   combine_mask: 'destructive',
 };
 
@@ -183,6 +180,32 @@ describe('createMcpServer', () => {
     }
   });
 
+  it('loads only three hot catalog tools upfront over the wire', async () => {
+    pair = await connect();
+    const { tools } = await pair.client.listTools();
+    const hotNames = ['search_photos', 'get_photo_preview', 'set_rating_and_flag'];
+    expect(tools.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => tool.name)).toEqual(hotNames);
+    for (const tool of tools) {
+      if (hotNames.includes(tool.name)) expect(tool._meta).toEqual({ 'anthropic/alwaysLoad': true });
+      else expect(tool).not.toHaveProperty('_meta');
+    }
+  });
+
+  it('keeps tool lists byte-identical across calls and fresh servers', async () => {
+    pair = await connect();
+    const first = await pair.client.listTools();
+    const repeated = await pair.client.listTools();
+    const second = await connect();
+    try {
+      expect(JSON.stringify(repeated)).toBe(JSON.stringify(first));
+      expect(JSON.stringify(await second.client.listTools())).toBe(JSON.stringify(first));
+      expect(first.tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+    } finally {
+      await second.client.close();
+      await second.server.close();
+    }
+  });
+
 
   it('sends progress to the connected client without resolving the tool early', async () => {
     pair = await connect({ call: async (_action, _params, _timeout, options) => {
@@ -263,10 +286,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 75 tools', async () => {
+    it('returns all 72 tools', async () => {
       pair = await connect();
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(75);
+      expect(tools).toHaveLength(72);
     });
 
     it('includes search_photos and set_develop_settings', async () => {
@@ -413,7 +436,7 @@ describe('createMcpServer', () => {
         call: async () => { throw new Error('Failed to send request to plugin (socket dropped)'); },
       });
       const result = asToolResult(await pair.client.callTool({
-        name: 'set_rating',
+        name: 'set_rating_and_flag',
         arguments: { photo_ids: [914], rating: 3 },
       }));
       expect(result.isError).toBe(true);

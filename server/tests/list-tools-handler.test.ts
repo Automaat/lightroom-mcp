@@ -39,9 +39,8 @@ const EXPECTED_TOOL_NAMES = [
   'remove_keyword_subtree',
   'list_keywords',
   'rename_keyword',
-  'set_rating',
+  'set_rating_and_flag',
   'undo_last_step',
-  'set_flag',
   'remove_photos_from_catalog',
   'set_color_label',
   'import_photos',
@@ -79,24 +78,25 @@ const EXPECTED_TOOL_NAMES = [
   'delete_masks',
   'delete_empty_masks',
   'set_mask_adjustments',
-  'get_mask_adjustments',
+  'get_mask',
   'invert_mask',
   'create_mask',
   'create_mask_batch',
   'set_mask_curves',
-  'get_mask_curves',
   'edit_mask_point_colors',
-  'get_mask_point_colors',
   'combine_mask',
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
   it('get_photo_preview describes named uses and approximate token costs', () => {
     const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
-    expect(tool?.description).toMatch(/cull.*culling.*650 tokens/);
-    expect(tool?.description).toMatch(/detail.*details.*2\.5k tokens/);
-    expect(tool?.description).toContain('earlier Claude estimates');
-    expect(tool?.description).toContain('width and height');
+    const sizeSchema = tool?.inputSchema.properties?.size as { description: string };
+    const guidance = `${tool?.description} ${sizeSchema.description}`;
+    expect(guidance).toMatch(/cull.*culling.*650 tokens/);
+    expect(guidance).toMatch(/detail.*details.*2\.5k tokens/);
+    expect(guidance).toContain('earlier Claude estimates');
+    expect(guidance).toContain('width/height/bytes');
+    expect(guidance).toContain('each turn in history');
     const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
     for (const size of ['cull', 'detail', 64, 1024, 2048]) {
       expect(validate({ photo_id: 914, size })).toBe(true);
@@ -106,13 +106,40 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 75 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(75);
+  it('contains exactly 72 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(72);
   });
+
+  it('replaces the separate rating and flag tools', () => {
+    const names = TOOL_DEFINITIONS.map(tool => tool.name);
+    expect(names).toContain('set_rating_and_flag');
+    expect(names).not.toContain('set_rating');
+    expect(names).not.toContain('set_flag');
+  });
+
+  it.each(['set_rating_and_flag', 'get_photo_metadata', 'create_gradient_mask', 'create_brush_mask', 'create_range_mask'])(
+    'publishes %s without root unions rejected by Claude Code', name => {
+      const schema = TOOL_DEFINITIONS.find(tool => tool.name === name)!.inputSchema;
+      expect(schema.type).toBe('object');
+      expect(schema).not.toHaveProperty('anyOf');
+      expect(schema).not.toHaveProperty('oneOf');
+      expect(schema).not.toHaveProperty('allOf');
+    },
+  );
 
   it('tool names are unique', () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('replaces three mask readers with one smaller definition', () => {
+    const names = TOOL_DEFINITIONS.map((tool) => tool.name);
+    for (const removed of ['get_mask_adjustments', 'get_mask_curves', 'get_mask_point_colors']) {
+      expect(names).not.toContain(removed);
+    }
+    const combined = TOOL_DEFINITIONS.find((tool) => tool.name === 'get_mask');
+    expect(combined).toBeDefined();
+    expect(JSON.stringify(combined).length).toBeLessThan(2193);
   });
 
   it.each(EXPECTED_TOOL_NAMES)('"%s" is present', (name) => {
@@ -130,12 +157,13 @@ describe('TOOL_DEFINITIONS', () => {
 
   it('is generated from tool contracts', () => {
     expect(TOOL_DEFINITIONS).toEqual(
-      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema }) => ({
+      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema, alwaysLoad }) => ({
         name,
         title,
         annotations,
         description,
         inputSchema,
+        ...(alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
       })),
     );
   });
@@ -152,6 +180,18 @@ describe('listToolsHandler', () => {
     const result = listToolsHandler();
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
+
+  it('keeps repeated tool lists byte-identical and in contract order', () => {
+    expect(JSON.stringify(listToolsHandler())).toBe(JSON.stringify(listToolsHandler()));
+    expect(listToolsHandler().tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+  });
+
+  it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(
+    'upfront tool %s stays within the 4096-character description limit', (_name, description) => {
+      expect(description).toBeDefined();
+      expect(description!.length).toBeLessThanOrEqual(4096);
+    },
+  );
 });
 
 describe('photo list schemas', () => {
@@ -178,7 +218,6 @@ describe('tool required fields', () => {
   }
 
   it.each<[string, string[]]>([
-    ['get_photo_metadata', ['photo_id']],
     ['get_photo_preview', ['photo_id']],
     ['set_gps', ['photo_ids', 'latitude', 'longitude']],
     ['set_location', ['photo_ids']],
@@ -189,9 +228,8 @@ describe('tool required fields', () => {
     ['remove_from_collection', ['collection_name', 'photo_ids']],
     ['delete_collection', ['collection_name']],
     ['set_keywords', ['photo_ids']],
-    ['set_rating', ['photo_ids', 'rating']],
+    ['set_rating_and_flag', ['photo_ids']],
     ['undo_last_step', ['confirm']],
-    ['set_flag', ['photo_ids', 'flag']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
     ['import_photos', ['source_path']],
@@ -224,14 +262,12 @@ describe('tool required fields', () => {
     ['delete_masks', ['photo_id']],
     ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
-    ['get_mask_adjustments', ['photo_id', 'mask_id']],
+    ['get_mask', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
     ['create_mask_batch', ['photo_ids', 'type']],
     ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
-    ['get_mask_curves', ['photo_id', 'mask_id']],
     ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
-    ['get_mask_point_colors', ['photo_id', 'mask_id']],
     ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
@@ -278,8 +314,7 @@ describe('photo array schema', () => {
     ['set_location', 'photo_ids'],
     ['set_metadata', 'photo_ids'],
     ['set_keywords', 'photo_ids'],
-    ['set_rating', 'photo_ids'],
-    ['set_flag', 'photo_ids'],
+    ['set_rating_and_flag', 'photo_ids'],
     ['set_color_label', 'photo_ids'],
     ['export_photos', 'photo_ids'],
     ['export_photo_metadata', 'photo_ids'],
@@ -372,7 +407,7 @@ describe('develop setting schema', () => {
 
     expect(validateFor('get_photo_metadata')({ photo_id: 914 })).toBe(true);
     expect(validateFor('get_photo_metadata')({ photo_id: '914' })).toBe(true);
-    expect(validateFor('set_rating')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
     expect(validateFor('set_develop_settings')({
       photo_id: 914,
       settings: { Exposure2012: 0.5 },
@@ -380,8 +415,8 @@ describe('develop setting schema', () => {
     expect(validateFor('copy_develop_settings')({ source_id: 914, target_ids: [915] })).toBe(true);
 
     expect(validateFor('get_photo_metadata')({ photo_id: '' })).toBe(false);
-    expect(validateFor('set_rating')({ photo_ids: [], rating: 3 })).toBe(false);
-    expect(validateFor('set_rating')({ photo_ids: [true], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [true], rating: 3 })).toBe(false);
   });
 
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {

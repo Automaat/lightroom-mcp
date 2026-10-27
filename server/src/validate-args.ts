@@ -1,4 +1,5 @@
 import { Ajv, type ValidateFunction } from "ajv";
+import type { PreviewArgs } from "./preview-region.js";
 import {
   developSettingKeysValidationSchema,
   developSettingsValidationSchema,
@@ -33,10 +34,12 @@ const validators = new Map<string, ValidateFunction>(
 
 function describe(error: { instancePath?: string; message?: string; params?: unknown }): string {
   const field = error.instancePath ? error.instancePath.replace(/^\//, "").replace(/\//g, ".") : "";
-  const params = error.params as { additionalProperty?: string } | undefined;
+  const params = error.params as { additionalProperty?: string; type?: string[] } | undefined;
   const extra = params?.additionalProperty;
   if (extra) return `unknown property "${extra}"`;
-  const what = error.message ?? "is invalid";
+  const what = Array.isArray(params?.type)
+    ? `must be ${params.type.join(" or ")}`
+    : error.message ?? "is invalid";
   return field ? `${field} ${what}` : what;
 }
 
@@ -63,7 +66,28 @@ export function validateToolArgs(name: string, args: unknown): string | null {
   if (!validate) return null;
   const selectorProblem = name === "create_mask" ? maskSelectorProblem(args) : null;
   if (selectorProblem) return `Invalid arguments for ${name}: ${selectorProblem}`;
-  if (validate(args ?? {})) return null;
+  if (validate(args ?? {})) {
+    const params = (args ?? {}) as Record<string, unknown>;
+    // Keep root schemas compatible with Claude Code; enforce relations here.
+    if (name === "set_rating_and_flag" && params.rating === undefined && params.flag === undefined) {
+      return `Invalid arguments for ${name}: rating or flag is required`;
+    }
+    if (name === "get_photo_metadata"
+      && (params.photo_id !== undefined) === (params.photo_ids !== undefined)) {
+      return `Invalid arguments for ${name}: provide exactly one of photo_id or photo_ids`;
+    }
+    if (["create_gradient_mask", "create_brush_mask", "create_range_mask"].includes(name)
+      && params.mask_id !== undefined && params.adjustments !== undefined) {
+      return `Invalid arguments for ${name}: adjustments cannot be used with mask_id`;
+    }
+    if (name === "get_photo_preview") {
+      const region = (args as PreviewArgs).region;
+      if (region && (region.x + region.width > 1 || region.y + region.height > 1)) {
+        return "Invalid arguments for get_photo_preview: region must fit within the rendered frame";
+      }
+    }
+    return null;
+  }
 
   const problems = (validate.errors ?? []).map(error =>
     name === "get_photo_preview" && error.instancePath === "/size"

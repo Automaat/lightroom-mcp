@@ -4,7 +4,7 @@
   "display_name": "Lightroom Classic",
   "icon": "icon.png",
   "version": "0.25.0",
-  "description": "Bridge Claude to Adobe Lightroom Classic — search, organize, develop, export.",
+  "description": "Bridge Claude to Adobe Lightroom Classic \u2014 search, organize, develop, export.",
   "long_description": "Connects Claude to a running Adobe Lightroom Classic instance via a bundled Lua plugin. Tools cover catalog search, collections, ratings, keywords, develop presets and settings, import and export. The Lightroom plugin is auto-installed into Lightroom's Modules folder on first run; restart Lightroom once after install to load it.",
   "author": {
     "name": "Marcin Skalski"
@@ -45,7 +45,7 @@
     },
     {
       "name": "get_photo_metadata",
-      "description": "Detailed metadata for a photo; pass sections: [\"developSettings\"] for develop settings."
+      "description": "Detailed metadata for one photo_id or up to 100 photo_ids; sections: [\"developSettings\"] includes develop settings for each."
     },
     {
       "name": "get_photo_preview",
@@ -140,12 +140,8 @@
       "description": "Undo one shared Lightroom history step, including user actions, with confirm: true."
     },
     {
-      "name": "set_rating",
-      "description": "Set star rating on photos."
-    },
-    {
-      "name": "set_flag",
-      "description": "Flag photos as pick or reject, or remove the flag."
+      "name": "set_rating_and_flag",
+      "description": "Set star rating, pick flag, or both on photos."
     },
     {
       "name": "remove_photos_from_catalog",
@@ -264,8 +260,8 @@
       "description": "Change local adjustment sliders on an existing mask of a photo."
     },
     {
-      "name": "get_mask_adjustments",
-      "description": "Read the current local adjustment values of a mask on a photo."
+      "name": "get_mask",
+      "description": "Read selected local mask adjustments, curves and Point Color in one Develop session"
     },
     {
       "name": "invert_mask",
@@ -284,16 +280,8 @@
       "description": "Set the local tone curve of a mask on a photo, per channel."
     },
     {
-      "name": "get_mask_curves",
-      "description": "Read the local tone curve of a mask on a photo."
-    },
-    {
       "name": "edit_mask_point_colors",
       "description": "Add, update, delete or clear the local Point Color swatches of a mask."
-    },
-    {
-      "name": "get_mask_point_colors",
-      "description": "Read the local Point Color swatches of a mask on a photo."
     },
     {
       "name": "combine_mask",

@@ -11,7 +11,7 @@ Detect available tools at runtime because main can differ from the installed rel
 The integration adds the missing feedback loop:
 
 - `get_selected_photos`: identify representatives selected in Lightroom.
-- `get_photo_metadata`: read EXIF; pass `sections: ["developSettings"]` to read every Develop key supported by `set_develop_settings`.
+- `get_photo_metadata`: read EXIF for one `photo_id` or up to 100 `photo_ids`. Batch results contain `photos` in request order and `missing` identifiers; repeated identifiers return repeated entries. Pass `sections: ["developSettings"]` to read every Develop key supported by `set_develop_settings` for each photo. Single-photo results keep their existing shape.
 - `get_photo_preview`: inspect a Lightroom-rendered preview without exporting a file.
 - `set_develop_settings`: apply bounded global/HSL/detail settings.
 - `create_develop_snapshot`, `list_develop_snapshots`, `apply_develop_snapshot`, and `delete_develop_snapshot`: save and restore a photo's Develop state and manage its snapshots.
@@ -24,7 +24,7 @@ The integration adds the missing feedback loop:
 - `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.
 - `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks`, and `delete_empty_masks`: inspect and manage local masks.
 - `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: "people"` or `type: "landscape"`: create or edit mask geometry and AI parts on supported Lightroom versions.
-- `get_mask_adjustments`, `set_mask_adjustments`, `get_mask_curves`, `set_mask_curves`, `get_mask_point_colors`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color.
+- `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: ["adjustments"]`, `["curves"]` or `["point_colors"]` to read only selected kinds.
 
 This improves setting selection. It does not by itself create a canonical preset XMP.
 
