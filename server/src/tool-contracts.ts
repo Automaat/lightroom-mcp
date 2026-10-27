@@ -17,6 +17,7 @@ export interface ToolContract {
 }
 
 const MAX_BULK_PHOTO_IDS = 1000;
+const MAX_METADATA_PHOTO_IDS = 100;
 const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
@@ -526,19 +527,23 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read photo keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
+        photo_ids: {
+          ...photoIdArray("1 to 100 photo IDs or file paths; returns photos in request order and missing identifiers separately. Repeated identifiers produce repeated entries."),
+          maxItems: MAX_METADATA_PHOTO_IDS,
+        },
         sections: {
           type: "array",
           items: { type: "string", enum: ["developSettings"] },
-          description: "Optional metadata sections to include. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
+          description: "Optional metadata sections to include for each photo. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
         },
       },
-      required: ["photo_id"],
+      oneOf: [{ required: ["photo_id"] }, { required: ["photo_ids"] }],
     },
   },
   {
