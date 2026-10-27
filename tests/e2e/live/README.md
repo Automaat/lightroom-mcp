@@ -43,7 +43,7 @@ Generated (`generate-fixtures.mjs`, deterministic; PNG is pure JS, JPEG goes thr
 | `wide_plain` | 1000x600 JPEG | Flat gray 110 with 2 levels of noise. Any mask shape appears as a clean brightening, so IoU against an analytic shape works. |
 | `pano` | 2400x240 JPEG | 10:1. Hue sweep over the top 80 percent, gray ramp in the bottom 20 percent. Aspect-ratio checks for radial width/height fractions. |
 | `orient_1`..`orient_8` | 1000x600 JPEG | One asymmetric pattern (red, green, blue, yellow corner squares and a white F) stored once, EXIF orientation tag 1..8. A turned or mirrored result is detectable: `expectedDisplayedCorners(n)`, `classifyOrientation(sampleCorners(pixels))`. Orientations 5..8 display 600x1000. |
-| `batch/batch_001..200.jpg` | 1200x800 JPEG | `make-batch.mjs [count]`: distinct crops of the 14-bit CC0 raw, with sky. `import-batch.mjs` imports them into the open throwaway catalog and stores their ids under `batch.ids` in the marker file (about 4 minutes for 200). For `create_mask_batch` and `delete_empty_masks`. |
+| `batch/batch_001..200.jpg` | 1200x800 JPEG | `make-batch.mjs [count]`: distinct crops of the 14-bit CC0 raw, with sky. `import-batch.mjs` imports them into the open throwaway catalog and stores their ids under `batch.ids` in the marker file (about 4 minutes for 200). For `create_mask_batch` and `delete_masks` with only `photo_ids`. |
 
 Downloaded (`manifest.json`, `fetch-samples.mjs [--verify]`): both from raw.pixls.us, CC0 (the site lists them as Creative Commons 0 with the checksums used here). The manifest test rejects any non-CC0 sample or a bad hash, and the downloader only fetches URLs listed in `DOWNLOADABLE_URLS` in `lib/manifest.mjs`, so a new sample needs a code change as well as a manifest entry.
 
@@ -134,7 +134,7 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `set_mask_adjustments`, `get_mask` (`kinds: ["adjustments"]`) | `wide_plain`, `ramp256` | Settle-after-adjust: the call returns after saving the sliders; the preview is stable only after about 3.5 s, so use `measureChange`. Stored row after `readFlushedSettings`: `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
 | `set_mask_curves`, `get_mask` (`kinds: ["curves"]`) | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask` with `kinds: ["curves"]`. |
 | `edit_mask_point_colors`, `get_mask` (`kinds: ["point_colors"]`) | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask` with `kinds: ["point_colors"]`. |
-| `delete_masks`, `delete_empty_masks` | any, `batch.ids` | Remaining count matches, the photos stay in the catalog. `delete_empty_masks` is catalog-only: it does not open Develop and keeps the selection. |
+| `delete_masks` | any, `batch.ids` | With `photo_id` plus `mask_ids`, `tool_ids` or `all`, remaining count matches and the photo stays in the catalog. With only `photo_ids`, empty masks are removed, nonempty masks and photos remain, `photos_checked`/`photos_changed`/`missing` match, and module/selection stay unchanged without opening Develop. Mixed selector forms fail before dispatch. |
 
 Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
 

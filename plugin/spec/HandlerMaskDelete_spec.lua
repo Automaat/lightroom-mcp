@@ -492,7 +492,7 @@ describe("HandlerMaskDelete.deleteMasks", function()
     end)
 end)
 
-describe("HandlerMaskDelete.deleteEmptyMasks", function()
+describe("HandlerMaskDelete.deleteMasks with photo_ids", function()
     local function photosWithEmptyMasks()
         return {
             { id = "1", masks = { mask("a", { "t-1" }), mask("empty-a", {}) } },
@@ -502,10 +502,35 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
         }
     end
 
+    it("rejects mixing photo_ids with any single-photo deletion argument before access", function()
+        for _, field in ipairs({ "photo_id", "mask_ids", "tool_ids", "all" }) do
+            local Handler, calls, catalog, masksOf, photos = setup({ photos = photosWithEmptyMasks() })
+            local before = copyMasks(masksOf[photos[1]])
+            local args = { photo_ids = { "1" } }
+            args[field] = field == "photo_id" and "1" or field == "all" and false or { "a" }
+
+            assert.truthy(errorOf(function() Handler.deleteMasks(args) end):find("photo_ids must be given alone", 1, true))
+            assert.are.equal(0, catalog.getWriteAccessCount())
+            assert.are.equal(0, #calls.deleteAllEmpty)
+            assert.are.equal(0, #calls.modules)
+            assert.are.same(before, masksOf[photos[1]])
+        end
+    end)
+
+    it("does not require the Develop deletion API for empty-mask deletion", function()
+        local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteApi = true })
+
+        local result = Handler.deleteMasks({ photo_ids = { "1" } })
+
+        assert.are.equal(1, result.photos_changed)
+        assert.are.equal(0, #calls.modules)
+        assert.are.equal(0, #calls.selections)
+    end)
+
     it("deletes empty masks and counts the photos that changed", function()
         local Handler, _, _, masksOf, photos = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteEmptyMasks({ photo_ids = { "1", "2", "3", "4" } })
+        local r = Handler.deleteMasks({ photo_ids = { "1", "2", "3", "4" } })
 
         assert.is_true(r.success)
         assert.are.equal(2, r.photos_changed)
@@ -519,7 +544,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
     it("counts zero when no photo has an empty mask", function()
         local Handler = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteEmptyMasks({ photo_ids = { "2", "4" } })
+        local r = Handler.deleteMasks({ photo_ids = { "2", "4" } })
 
         assert.are.equal(0, r.photos_changed)
         assert.are.equal(2, r.photos_checked)
@@ -528,7 +553,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
     it("only touches the photos it was given", function()
         local Handler, _, _, masksOf, photos = setup({ photos = photosWithEmptyMasks() })
 
-        Handler.deleteEmptyMasks({ photo_ids = { "1" } })
+        Handler.deleteMasks({ photo_ids = { "1" } })
 
         assert.are.same({ "empty-b", "empty-c" }, idsOf(masksOf[photos[3]]))
     end)
@@ -536,7 +561,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
     it("accepts numeric ids and file paths and passes each photo once", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteEmptyMasks({ photo_ids = { 1, "/1.jpg", "3" } })
+        local r = Handler.deleteMasks({ photo_ids = { 1, "/1.jpg", "3" } })
 
         assert.are.equal(2, r.photos_changed)
         assert.are.equal(1, #calls.deleteAllEmpty)
@@ -546,7 +571,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
     it("reports unknown ids and still processes the known photos", function()
         local Handler = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteEmptyMasks({ photo_ids = { "1", "404" } })
+        local r = Handler.deleteMasks({ photo_ids = { "1", "404" } })
 
         assert.are.equal(1, r.photos_changed)
         assert.are.equal(1, r.photos_checked)
@@ -556,7 +581,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
     it("never calls Lightroom with an empty photo list because that targets the whole selection", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
 
-        local r = Handler.deleteEmptyMasks({ photo_ids = { "404", "405" } })
+        local r = Handler.deleteMasks({ photo_ids = { "404", "405" } })
 
         assert.are.equal(0, r.photos_changed)
         assert.are.equal(0, r.photos_checked)
@@ -568,25 +593,27 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
         local Handler = setup({ photos = photosWithEmptyMasks() })
 
         for _, bad in ipairs({ {}, "1", { true }, { "" } }) do
-            assert.truthy(errorOf(function() Handler.deleteEmptyMasks({ photo_ids = bad }) end)
+            assert.truthy(errorOf(function() Handler.deleteMasks({ photo_ids = bad }) end)
                 :find("photo_ids", 1, true))
         end
-        assert.truthy(errorOf(function() Handler.deleteEmptyMasks({}) end):find("photo_ids is required", 1, true))
+        assert.truthy(errorOf(function() Handler.deleteMasks({}) end):find("photo_id is required", 1, true))
     end)
 
     it("names the minimum Lightroom version when the catalog call is missing", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks(), withoutDeleteAllEmptyMasks = true })
 
-        local err = errorOf(function() Handler.deleteEmptyMasks({ photo_ids = { "1" } }) end)
+        local err = errorOf(function() Handler.deleteMasks({ photo_ids = { "1" } }) end)
 
-        assert.truthy(err:find("delete_empty_masks needs Lightroom Classic 14 or later", 1, true))
+        assert.truthy(err:find("delete_masks with photo_ids needs Lightroom Classic 14 or later", 1, true))
         assert.are.equal(0, #calls.deleteAllEmpty)
     end)
 
     it("does not open Develop or change the selection", function()
         local Handler, calls = setup({ photos = photosWithEmptyMasks() })
+        local session = require 'DevelopSession'
+        session.withPhoto = function() error("empty-mask deletion must not open a Develop session") end
 
-        Handler.deleteEmptyMasks({ photo_ids = { "1", "3" } })
+        Handler.deleteMasks({ photo_ids = { "1", "3" } })
 
         assert.are.equal(0, #calls.modules)
         assert.are.equal(0, #calls.selections)
@@ -595,7 +622,7 @@ describe("HandlerMaskDelete.deleteEmptyMasks", function()
     it("resolves photos before the write gate and reads inside read gates only", function()
         local Handler, _, catalog = setup({ photos = photosWithEmptyMasks() })
 
-        Handler.deleteEmptyMasks({ photo_ids = { "1", "/3.jpg" } })
+        Handler.deleteMasks({ photo_ids = { "1", "/3.jpg" } })
 
         assert.are.equal(1, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideWriteAccess())

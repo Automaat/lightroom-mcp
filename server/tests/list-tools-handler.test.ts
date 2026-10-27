@@ -3,7 +3,7 @@ import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateToolArgs } from '../src/validate-args.js';
-import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
+import { TOOL_DEFINITIONS, listToolsHandler, publishedInputSchema } from '../src/list-tools-handler.js';
 import {
   DEVELOP_SETTING_KEYS,
   LOCAL_ADJUSTMENT_KEYS,
@@ -76,7 +76,6 @@ const EXPECTED_TOOL_NAMES = [
   'add_brush_strokes',
   'create_range_mask',
   'delete_masks',
-  'delete_empty_masks',
   'set_mask_adjustments',
   'get_mask',
   'invert_mask',
@@ -106,8 +105,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 72 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(72);
+  it('contains exactly 71 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(71);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -162,7 +161,7 @@ describe('TOOL_DEFINITIONS', () => {
         title,
         annotations,
         description,
-        inputSchema,
+        inputSchema: publishedInputSchema(inputSchema),
         ...(alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
       })),
     );
@@ -172,6 +171,55 @@ describe('TOOL_DEFINITIONS', () => {
     for (const tool of TOOL_DEFINITIONS) {
       expect(tool.inputSchema.additionalProperties).toBe(false);
     }
+  });
+});
+
+describe('published schema compatibility', () => {
+  it('projects only root combinators without mutating private or nested schemas', () => {
+    const nested = Object.freeze({ oneOf: [{ type: 'number' }, { type: 'string' }] });
+    const privateSchema = Object.freeze({
+      type: 'object' as const,
+      additionalProperties: false,
+      properties: Object.freeze({ value: nested }),
+      required: ['value'],
+      oneOf: [{ required: ['value'] }],
+      anyOf: [{ required: ['value'] }],
+      allOf: [{ required: ['value'] }],
+    });
+    const before = JSON.stringify(privateSchema);
+    expect(publishedInputSchema(privateSchema)).toEqual({
+      type: 'object', additionalProperties: false,
+      properties: { value: nested }, required: ['value'],
+    });
+    expect(JSON.stringify(privateSchema)).toBe(before);
+    expect(publishedInputSchema(privateSchema)).not.toBe(privateSchema);
+    expect(publishedInputSchema(privateSchema).properties).toBe(privateSchema.properties);
+    expect(publishedInputSchema(privateSchema)).toEqual(publishedInputSchema(privateSchema));
+  });
+
+  it('preserves every contract field except public root combinators', () => {
+    for (const [index, contract] of TOOL_CONTRACTS.entries()) {
+      const original = JSON.stringify(contract.inputSchema);
+      const published = TOOL_DEFINITIONS[index].inputSchema;
+      expect(published).not.toHaveProperty('oneOf');
+      expect(published).not.toHaveProperty('anyOf');
+      expect(published).not.toHaveProperty('allOf');
+      const expected = { ...contract.inputSchema };
+      delete expected.oneOf;
+      delete expected.anyOf;
+      delete expected.allOf;
+      expect(published).toEqual(expected);
+      expect(published.properties).toBe(contract.inputSchema.properties);
+      expect(JSON.stringify(contract.inputSchema)).toBe(original);
+    }
+    for (const name of ['set_ai_metadata', 'create_smart_collection', 'get_develop_preset',
+      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments']) {
+      expect(TOOL_CONTRACTS.find(tool => tool.name === name)!.inputSchema).toHaveProperty('anyOf');
+    }
+    const validate = new Ajv({ strict: false }).compile(
+      TOOL_DEFINITIONS.find(tool => tool.name === 'compare_develop_presets')!.inputSchema);
+    expect(validate({ base: {}, candidate: { preset_uuid: 'uuid' } })).toBe(false);
+    expect(validate({ base: { preset_name: 'base' }, candidate: { preset_uuid: 'uuid' } })).toBe(true);
   });
 });
 
@@ -259,8 +307,6 @@ describe('tool required fields', () => {
     ['create_brush_mask', ['photo_id', 'strokes']],
     ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
     ['create_range_mask', ['photo_id', 'type']],
-    ['delete_masks', ['photo_id']],
-    ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
     ['get_mask', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
@@ -280,12 +326,30 @@ describe('tool required fields', () => {
     'list_keywords',
     'list_develop_presets',
     'get_develop_preset',
+    'delete_masks',
   ])(
     '%s has no required fields',
     (name) => {
       expect(toolRequired(name)).toBeUndefined();
     },
   );
+});
+
+describe('delete_masks schema', () => {
+  it('keeps root selector unions private for client compatibility', () => {
+    const schema = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!.inputSchema;
+    for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(schema).not.toHaveProperty(keyword);
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toHaveProperty('photo_id');
+    expect(schema.properties).toHaveProperty('photo_ids');
+  });
+
+  it('is smaller than the two deletion definitions it replaces', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!;
+    expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(936);
+    expect(JSON.stringify(tool).length).toBeLessThan(1887);
+    expect(TOOL_DEFINITIONS.some(tool => tool.name === 'delete_empty_masks')).toBe(false);
+  });
 });
 
 describe('set_keywords schema', () => {
@@ -321,7 +385,7 @@ describe('photo array schema', () => {
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
     ['match_photo_style', 'target_ids'],
-    ['delete_empty_masks', 'photo_ids'],
+    ['delete_masks', 'photo_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
     const properties = tool?.inputSchema.properties as Record<
@@ -618,8 +682,8 @@ describe('create_smart_collection schema', () => {
   const validate = new Ajv({ strict: false }).compile(smart.inputSchema);
 
   it('create_smart_collection rejects a name without a filter', () => {
-    expect(validate({ name: 'x' })).toBe(false);
-    expect(validate({ name: 'x', parent: 'Trips / 2026' })).toBe(false);
+    expect(validateToolArgs('create_smart_collection', { name: 'x' })).not.toBeNull();
+    expect(validateToolArgs('create_smart_collection', { name: 'x', parent: 'Trips / 2026' })).not.toBeNull();
   });
 
   it('shares every search filter definition without pagination', () => {
