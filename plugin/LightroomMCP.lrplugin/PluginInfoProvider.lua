@@ -439,7 +439,13 @@ local function dispatchAction(request)
         sendResponse({ id = id, result = resultOrErr })
     else
         addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
-        sendResponse({ id = id, error = tostring(resultOrErr) })
+        local message = tostring(resultOrErr)
+        local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
+        if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
+            or source:match("^%a:[/\\]")) then
+            message = detail
+        end
+        sendResponse({ id = id, error = message })
     end
     pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
 end

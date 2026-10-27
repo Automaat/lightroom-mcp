@@ -3,6 +3,17 @@ import { validateToolArgs } from '../src/validate-args.js';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 describe('validateToolArgs', () => {
+  it('reports a single photo_id type clause', () => {
+    expect(validateToolArgs('get_photo_metadata', { photo_id: true })).toBe(
+      'Invalid arguments for get_photo_metadata: photo_id must be string or number',
+    );
+    expect(validateToolArgs('set_rating', { photo_ids: [true], rating: 3 })).toBe(
+      'Invalid arguments for set_rating: photo_ids.0 must be string or number',
+    );
+    expect(validateToolArgs('get_photo_metadata', { photo_id: '' })).toContain('photo_id');
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
+  });
+
   it.each([{}, { limit: 0 }, { limit: 10.5, offset: 2.5, query: 'vi', folder: 'User Presets' }])(
     'list_develop_presets accepts paging and filters %p', (args) => {
       expect(validateToolArgs('list_develop_presets', args)).toBeNull();

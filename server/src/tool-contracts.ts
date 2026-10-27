@@ -361,13 +361,13 @@ const stringArray = (description: string, maxItems?: number) => ({
  * numbers. Accept both rather than making every caller stringify.
  */
 const photoIdSchema = (description: string): JSONObject => ({
-  oneOf: [{ type: "string", minLength: 1 }, { type: "number" }],
+  type: ["string", "number"], minLength: 1,
   description,
 });
 
 const photoIdArray = (description: string): JSONObject => ({
   type: "array",
-  items: { oneOf: [{ type: "string", minLength: 1 }, { type: "number" }] },
+  items: { type: ["string", "number"], minLength: 1 },
   minItems: 1,
   maxItems: MAX_BULK_PHOTO_IDS,
   description,
