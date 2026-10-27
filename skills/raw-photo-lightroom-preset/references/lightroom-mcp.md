@@ -4,7 +4,7 @@
 
 Upstream repository: `https://github.com/Automaat/lightroom-mcp`
 
-Detect available tools at runtime because main can differ from the installed release.
+Detect available tools at runtime because main can differ from the installed release. Enable `LIGHTROOM_MCP_TOOLSETS=develop` in the MCP server environment for this workflow, or `develop,masks` for local masks (`all` enables both). In the desktop bundle, set **Enabled toolsets**. Restart the server after changing the setting; the default exposes only core catalog and metadata tools.
 
 ## Why it helps
 
