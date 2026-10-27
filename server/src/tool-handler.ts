@@ -69,6 +69,9 @@ function successContent(result: unknown): ToolResponse["content"] {
 }
 
 export const NOT_CONNECTED_MESSAGE =
+  "Lightroom plugin not connected. Bring Lightroom to the front or click 'Start Server' in Plug-in Manager.";
+
+export const NOT_CONNECTED_DETAILS =
   "Lightroom plugin not connected. If Lightroom is already open, bring its window to the front once: " +
   "Lightroom starts plug-ins only after its window is first activated, so a Lightroom launched hidden or " +
   "in the background has not started the server yet. Otherwise open Lightroom and click 'Start Server' " +

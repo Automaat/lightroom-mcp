@@ -173,27 +173,8 @@ function MaskCurvesHandler.setMaskCurves(args)
     }
 end
 
-function MaskCurvesHandler.getMaskCurves(args)
-    local photoId, maskId = MaskSelection.requireTarget(args)
-    requireCurveSupport("get_mask_curves")
-    local catalog, photo = MaskSelection.resolvePhoto(photoId)
-
-    local outcome = DevelopSession.withPhoto("get_mask_curves", catalog, photo, function()
-        return MaskSelection.withMaskSelected(photoId, maskId, function()
-            return readAllCurves(photoId, maskId)
-        end)
-    end)
-
-    Log.info(string.format("Read %d local curves of mask %s on photo %s",
-        #MaskCurves.channels - #outcome.unavailable, maskId, photoId))
-
-    return {
-        success = true,
-        photo_id = photoId,
-        mask_id = maskId,
-        curves = outcome.curves,
-        unavailable = outcome.unavailable,
-    }
+function MaskCurvesHandler.readSelected(photoId, maskId)
+    return readAllCurves(photoId, maskId)
 end
 
 return MaskCurvesHandler

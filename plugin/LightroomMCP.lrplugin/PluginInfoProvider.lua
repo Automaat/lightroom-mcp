@@ -31,11 +31,11 @@ local HandlerVirtualCopies = require 'HandlerVirtualCopies'
 local HandlerMasks = require 'HandlerMasks'
 local HandlerSpots = require 'HandlerSpots'
 local HandlerGradientMasks = require 'HandlerGradientMasks'
-local HandlerAiMasks = require 'HandlerAiMasks'
 local HandlerBrushMasks = require 'HandlerBrushMasks'
 local HandlerRangeMasks = require 'HandlerRangeMasks'
 local HandlerMaskDelete = require 'HandlerMaskDelete'
 local HandlerMaskAdjustments = require 'HandlerMaskAdjustments'
+local HandlerMaskRead = require 'HandlerMaskRead'
 local HandlerMaskInvert = require 'HandlerMaskInvert'
 local HandlerMaskCurves = require 'HandlerMaskCurves'
 local HandlerMaskPointColors = require 'HandlerMaskPointColors'
@@ -233,9 +233,8 @@ local DISPATCH = {
     remove_keyword_subtree = HandlerOrganization.removeKeywordSubtree,
     list_keywords = HandlerKeywords.listKeywords,
     rename_keyword = HandlerKeywords.renameKeyword,
-    set_rating = HandlerOrganization.setRating,
+    set_rating_and_flag = HandlerOrganization.setRatingAndFlag,
     undo_last_step = HandlerUndo.undoLastStep,
-    set_flag = HandlerOrganization.setFlag,
     remove_photos_from_catalog = HandlerRemoveFromCatalog.removePhotos,
     set_color_label = HandlerOrganization.setColorLabel,
     import_photos = HandlerImport.importPhotos,
@@ -269,20 +268,15 @@ local DISPATCH = {
     delete_spot = HandlerSpots.delete,
     create_gradient_mask = HandlerGradientMasks.createGradientMask,
     update_gradient_mask = HandlerGradientMasks.updateGradientMask,
-    create_people_mask = HandlerAiMasks.createPeopleMask,
-    create_landscape_mask = HandlerAiMasks.createLandscapeMask,
     create_brush_mask = HandlerBrushMasks.createBrushMask,
     add_brush_strokes = HandlerBrushMasks.addBrushStrokes,
     create_range_mask = HandlerRangeMasks.createRangeMask,
     delete_masks = HandlerMaskDelete.deleteMasks,
-    delete_empty_masks = HandlerMaskDelete.deleteEmptyMasks,
     set_mask_adjustments = HandlerMaskAdjustments.setMaskAdjustments,
-    get_mask_adjustments = HandlerMaskAdjustments.getMaskAdjustments,
+    get_mask = HandlerMaskRead.getMask,
     invert_mask = HandlerMaskInvert.invertMask,
     set_mask_curves = HandlerMaskCurves.setMaskCurves,
-    get_mask_curves = HandlerMaskCurves.getMaskCurves,
     edit_mask_point_colors = HandlerMaskPointColors.editMaskPointColors,
-    get_mask_point_colors = HandlerMaskPointColors.getMaskPointColors,
     create_mask = HandlerMaskCreate.createMask,
     create_mask_batch = HandlerMaskBatch.createMaskBatch,
     combine_mask = HandlerMaskCombine.combineMask,
@@ -439,7 +433,13 @@ local function dispatchAction(request)
         sendResponse({ id = id, result = resultOrErr })
     else
         addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
-        sendResponse({ id = id, error = tostring(resultOrErr) })
+        local message = tostring(resultOrErr)
+        local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
+        if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
+            or source:match("^%a:[/\\]") or source:match("^%.%.%.")) then
+            message = detail
+        end
+        sendResponse({ id = id, error = message })
     end
     pluginState.inFlightRequests = math.max(0, pluginState.inFlightRequests - 1)
 end

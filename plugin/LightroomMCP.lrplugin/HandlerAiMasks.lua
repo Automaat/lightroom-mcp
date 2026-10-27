@@ -176,12 +176,16 @@ local function createAiMasks(toolName, args, request)
     return result
 end
 
-function AiMaskHandler.createPeopleMask(args)
-    return createAiMasks("create_people_mask", args, AiMaskParts.parsePeople(args))
-end
-
-function AiMaskHandler.createLandscapeMask(args)
-    return createAiMasks("create_landscape_mask", args, AiMaskParts.parseLandscape(args))
+function AiMaskHandler.createMask(args)
+    local request
+    if args.type == "people" then
+        request = AiMaskParts.parsePeople(args)
+    elseif args.type == "landscape" then
+        request = AiMaskParts.parseLandscape(args)
+    else
+        error("type must be people or landscape")
+    end
+    return createAiMasks("create_mask", args, request)
 end
 
 return AiMaskHandler

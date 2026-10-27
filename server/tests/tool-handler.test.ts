@@ -46,7 +46,179 @@ function makeHandler(opts: {
   });
 }
 
+describe('set_rating_and_flag', () => {
+  const invalid: Array<[Record<string, unknown>, string]> = [
+    [{ photo_ids: [914] }, 'rating'],
+    [{ photo_ids: [914], rating: 6, flag: 'pick' }, 'rating'],
+    [{ photo_ids: [914], rating: '3', flag: 'pick' }, 'rating'],
+    [{ photo_ids: [914], rating: 3, flag: 'rejected' }, 'flag'],
+    [{ photo_ids: [914], flag: false }, 'flag'],
+    [{ photo_ids: [], rating: 3 }, 'photo_ids'],
+    [{ photo_ids: [914], rating: 3, label: 'red' }, 'label'],
+  ];
+
+  it.each(invalid)('rejects invalid arguments before dispatch (%#)', async (args, field) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: {} };
+    } });
+    const result = await handler('set_rating_and_flag', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for set_rating_and_flag');
+    expect(result.content[0].text).toContain(field);
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    { photo_ids: [914, '/a.jpg'], rating: 3 },
+    { photo_ids: [914], flag: 'reject' },
+    { photo_ids: [914], rating: 3, flag: 'pick' },
+    { photo_ids: [914], rating: 0, flag: 'none' },
+  ])('dispatches valid single-field and combined calls unchanged (%#)', async args => {
+    const received: unknown[] = [];
+    const handler = makeHandler({ call: async (action, params) => {
+      received.push([action, params]);
+      return { id: '1', result: { success: true, updated: 1, missing: [] } };
+    } });
+    const result = await handler('set_rating_and_flag', args);
+    expect(result.isError).not.toBe(true);
+    expect(received).toEqual([['set_rating_and_flag', args]]);
+  });
+});
+
+describe('client-compatible metadata selectors', () => {
+  const invalid: Array<[unknown, string]> = [
+    [{}, 'photo_id'],
+    [{ sections: ['developSettings'] }, 'photo_ids'],
+    [{ photo_id: 914, photo_ids: [915] }, 'photo_id'],
+    [{ photo_id: null }, 'photo_id'],
+    [{ photo_id: false, photo_ids: [914] }, 'photo_id'],
+    [{ photo_ids: '914' }, 'photo_ids'],
+    [{ photo_ids: [] }, 'photo_ids'],
+    [{ photo_ids: [null] }, 'photo_ids'],
+    [{ photo_ids: [914], sections: ['unknown'] }, 'sections'],
+    [false, 'object'],
+  ];
+
+  it.each(invalid)('never dispatches invalid selector combinations (%#)', async (args, field) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: {} };
+    } });
+    const result = await handler('get_photo_metadata', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(field);
+    expect(calls).toBe(0);
+  });
+
+  const photo = { id: 914, rating: 3, pickStatus: 1, title: 'Example' };
+  const batch = { photos: [photo, photo], missing: ['absent'] };
+  const valid: Array<[Record<string, unknown>, unknown]> = [
+    [{ photo_id: 914 }, photo],
+    [{ photo_id: '/a.jpg', sections: [] }, photo],
+    [{ photo_id: 914, sections: ['developSettings', 'developSettings'] }, photo],
+    [{ photo_ids: [914, '/a.jpg', 'absent'] }, batch],
+    [{ photo_ids: [914, 914], sections: ['developSettings'] }, batch],
+  ];
+
+  it.each(valid)('preserves single/batch arguments and returned metadata (%#)', async (args, metadata) => {
+    const received: unknown[] = [];
+    const handler = makeHandler({ call: async (action, params) => {
+      received.push([action, params]);
+      return { id: '1', result: metadata };
+    } });
+    const result = await handler('get_photo_metadata', args);
+    expect(result.isError).not.toBe(true);
+    expect(received).toEqual([['get_photo_metadata', args]]);
+    expect(JSON.parse(result.content[0].text)).toEqual(metadata);
+  });
+});
+
 describe('createCallToolHandler', () => {
+  const deletionFields = ['photo_id', 'photo_ids', 'mask_ids', 'tool_ids', 'all'] as const;
+  const deletionValues: Record<(typeof deletionFields)[number], unknown> = {
+    photo_id: 914, photo_ids: [914], mask_ids: ['m'], tool_ids: ['t'], all: true,
+  };
+  const deletionCombinations = Array.from({ length: 32 }, (_, bits) => {
+    const fields = deletionFields.filter((_, i) => bits & (1 << i));
+    const args: Record<string, unknown> = Object.fromEntries(fields.map(field => [field, deletionValues[field]]));
+    const targets = fields.filter(field => ['mask_ids', 'tool_ids', 'all'].includes(field));
+    const valid = fields.includes('photo_ids')
+      ? fields.length === 1
+      : fields.includes('photo_id') && targets.length === 1;
+    return { args, valid };
+  });
+
+  it.each(deletionCombinations)('enforces private delete_masks selectors before dispatch (%#)', async ({ args, valid }) => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(Boolean(result.isError)).toBe(!valid);
+    expect(calls).toBe(valid ? 1 : 0);
+  });
+
+  it.each([
+    {},
+    { photo_ids: [] },
+    { photo_ids: [914], photo_id: 914 },
+    { photo_ids: [914], mask_ids: ['m'] },
+    { photo_ids: [914], tool_ids: ['t'] },
+    { photo_ids: [914], all: true },
+    { photo_ids: [914], photo_id: 914, all: true },
+    { photo_id: 914, mask_ids: ['m'], empty: true },
+  ])('rejects ambiguous delete_masks selectors before dispatch (%#)', async args => {
+    let calls = 0;
+    const result = await makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for delete_masks');
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    { photo_id: 914, mask_ids: ['m'] },
+    { photo_id: 914, tool_ids: ['t'] },
+    { photo_id: 914, all: true },
+    { photo_ids: [914, '/a.dng'] },
+  ])('dispatches each delete_masks mode unchanged (%#)', async args => {
+    let captured: unknown;
+    await makeHandler({ call: async (_action, params) => {
+      captured = params;
+      return { id: '1', result: null };
+    } })('delete_masks', args);
+    expect(captured).toEqual(args);
+  });
+
+  it.each([
+    { photo_id: 1, type: 'people', parts: ['hair', 'hair'] },
+    { photo_id: 1, type: 'people', parts: ['ears'] },
+    { photo_id: 1, type: 'people' },
+    { photo_id: 1, type: 'people', parts: [] },
+    { photo_id: 1, type: 'landscape' },
+    { photo_id: 1, type: 'landscape', categories: [] },
+    { photo_id: 1, type: 'landscape', categories: ['lava'] },
+    { photo_id: 1, type: 'landscape', categories: ['sky', 'sky'] },
+    { photo_id: 1, type: 'sky', parts: ['hair'] },
+    { photo_id: 1, type: 'subject', categories: ['sky'] },
+    { photo_id: 1, type: 'background', parts: ['hair'] },
+    { photo_id: 1, type: 'people', parts: ['hair'], categories: ['sky'] },
+    { photo_id: 1, type: 'landscape', categories: ['sky'], parts: ['hair'] },
+    { photo_id: 1, type: 'people', parts: ['hair'], adjustments: {} },
+    { photo_id: 1, type: 'landscape', categories: ['sky'], adjustments: {} },
+  ])('rejects invalid create_mask selectors before plugin dispatch: %j', async (args) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => { calls++; return { id: '1', result: {} }; } });
+    const result = await handler('create_mask', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for create_mask');
+    expect(calls).toBe(0);
+  });
   it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };
     let captured: unknown;
@@ -94,6 +266,9 @@ describe('createCallToolHandler', () => {
     const result = await handler('list_collections', {});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toMatch(/not connected/i);
+    expect(result.content[0].text).not.toMatch(/[\r\n]/);
+    expect(result.content[0].text.length).toBeLessThan(160);
+    expect(result.content[0].text).toMatch(/bring Lightroom to the front|Start Server/);
   });
 
   it('forwards action and args to dispatcher', async () => {

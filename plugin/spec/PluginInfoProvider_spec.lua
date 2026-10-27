@@ -7,7 +7,7 @@ local helper = require 'spec_helper'
 local HANDLER_MODULES = {
     'JSON', 'HandlerLensBlur', 'HandlerSearch', 'HandlerCollections', 'HandlerFolders', 'HandlerKeywords', 'HandlerMetadata', 'HandlerStyleSummary', 'HandlerAiMetadata',
     'HandlerOrganization', 'HandlerUndo', 'HandlerImport', 'HandlerRemoveFromCatalog', 'HandlerExport', 'HandlerVirtualCopies',
-    'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerSpots', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview',
+    'HandlerSelection', 'HandlerDevelop', 'HandlerSnapshots', 'HandlerMasks', 'HandlerSpots', 'HandlerMaskDelete', 'HandlerMaskAdjustments', 'HandlerMaskRead', 'HandlerMaskCurves', 'HandlerMaskPointColors', 'HandlerMaskInvert', 'HandlerMaskCreate', 'HandlerMaskCombine', 'HandlerGradientMasks', 'HandlerBrushMasks', 'HandlerRangeMasks', 'HandlerAiMasks', 'HandlerMaskBatch', 'HandlerPreview',
 }
 
 -- opts (all optional) let a test drive the otherwise-async server task:
@@ -266,6 +266,45 @@ describe("PluginInfoProvider server task", function()
             binds[1].onMessage(nil, '{"hello":"' .. _G.LightroomMCP_State.token .. '","action":"ping"')
 
             assert.is_nil(sends[1])
+        end)
+    end)
+
+    describe("handler errors", function()
+        local function dispatchError(message, level)
+            local binds, sends = {}, {}
+            installStubs(nil, nil, {
+                runTask = true, stopLoopOnSleep = true, cleanups = {},
+                capturedBinds = binds, sends = sends,
+            })
+            package.loaded.JSON = nil
+            package.loaded.HandlerSearch = {
+                searchPhotos = function() error(message, level) end,
+            }
+            local mod = loadInfoProvider()
+            mod.startServer()
+            local state = _G.LightroomMCP_State
+            state.sendConnected = true
+            binds[1].onMessage(nil, '{"hello":"' .. state.token .. '","id":"e1","action":"search_photos"}')
+            return require('JSON'):decode(sends[1]).error
+        end
+
+        it("removes only the leading Lua position from a raised handler error", function()
+            assert.are.equal("photo_ids is required", dispatchError("photo_ids is required", 1))
+        end)
+
+        it("removes abbreviated Lua source paths containing spaces", function()
+            local compile = loadstring or load
+            local handler = assert(compile('error("photo_ids is required")',
+                "@/Users/person/Documents/Lightroom Plug-ins/LightroomMCP.lrplugin/HandlerOrganization.lua"))
+            local _, message = pcall(handler)
+            assert.is_not_nil(message:match("^%.%.%."))
+            assert.are.equal("photo_ids is required", dispatchError(message, 0))
+        end)
+
+        it("keeps plain messages and embedded Lua file names unchanged", function()
+            for _, message in ipairs({ "photo_ids is required", "Cannot read settings.lua:42: invalid file", "file.jpg:42: missing" }) do
+                assert.are.equal(message, dispatchError(message, 0))
+            end
         end)
     end)
 

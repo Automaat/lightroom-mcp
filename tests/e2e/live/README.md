@@ -43,13 +43,13 @@ Generated (`generate-fixtures.mjs`, deterministic; PNG is pure JS, JPEG goes thr
 | `wide_plain` | 1000x600 JPEG | Flat gray 110 with 2 levels of noise. Any mask shape appears as a clean brightening, so IoU against an analytic shape works. |
 | `pano` | 2400x240 JPEG | 10:1. Hue sweep over the top 80 percent, gray ramp in the bottom 20 percent. Aspect-ratio checks for radial width/height fractions. |
 | `orient_1`..`orient_8` | 1000x600 JPEG | One asymmetric pattern (red, green, blue, yellow corner squares and a white F) stored once, EXIF orientation tag 1..8. A turned or mirrored result is detectable: `expectedDisplayedCorners(n)`, `classifyOrientation(sampleCorners(pixels))`. Orientations 5..8 display 600x1000. |
-| `batch/batch_001..200.jpg` | 1200x800 JPEG | `make-batch.mjs [count]`: distinct crops of the 14-bit CC0 raw, with sky. `import-batch.mjs` imports them into the open throwaway catalog and stores their ids under `batch.ids` in the marker file (about 4 minutes for 200). For `create_mask_batch` and `delete_empty_masks`. |
+| `batch/batch_001..200.jpg` | 1200x800 JPEG | `make-batch.mjs [count]`: distinct crops of the 14-bit CC0 raw, with sky. `import-batch.mjs` imports them into the open throwaway catalog and stores their ids under `batch.ids` in the marker file (about 4 minutes for 200). For `create_mask_batch` and `delete_masks` with only `photo_ids`. |
 
 Downloaded (`manifest.json`, `fetch-samples.mjs [--verify]`): both from raw.pixls.us, CC0 (the site lists them as Creative Commons 0 with the checksums used here). The manifest test rejects any non-CC0 sample or a bad hash, and the downloader only fetches URLs listed in `DOWNLOADABLE_URLS` in `lib/manifest.mjs`, so a new sample needs a code change as well as a manifest entry.
 
 | Key | File | Purpose |
 |---|---|---|
-| `arw_14bit` | `_DSC0009.ARW` (Sony ILCE-7M3, 6000x4000) | Real raw with sky and trees: `create_mask` sky/subject/background, `create_landscape_mask`, batch source, denoise. |
+| `arw_14bit` | `_DSC0009.ARW` (Sony ILCE-7M3, 6000x4000) | Real raw with sky and trees: `create_mask` sky/subject/background, `create_mask` with `type: "landscape"`, batch source, denoise. |
 | `arw_12bit` | `_DSC0010.ARW` | Same scene, 12-bit: second raw for batch and multi-photo checks. |
 
 Supplied by you (never committed; the setup script imports whichever env var is set, checks skip when absent):
@@ -58,7 +58,7 @@ Supplied by you (never committed; the setup script imports whichever env var is 
 |---|---|
 | `LRMCP_LIVE_DEPTH_HEIC` | Depth range. Must be a real iPhone Portrait HEIC that carries a device depth map. Synthetic disparity files are ignored by Lightroom, so there is no generated stand-in. The Lightroom Killer Tips sample has no stated license, so it is not downloaded. |
 | `LRMCP_LIVE_SUBJECT_PHOTO` | Subject/object mask on a clear foreground subject. |
-| `LRMCP_LIVE_PEOPLE_PHOTO` | `create_people_mask` (needs a person). |
+| `LRMCP_LIVE_PEOPLE_PHOTO` | `create_mask` with `type: "people"` (needs a person). |
 
 Other env vars: `LRMCP_LIVE_FIXTURES_DIR`, `LRMCP_LIVE_THROWAWAY_CATALOG`, and the usual `LIGHTROOM_MCP_REQUEST_PORT` / `LIGHTROOM_MCP_RESPONSE_PORT`.
 
@@ -85,6 +85,8 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 ```
 
 ## Verification matrix
+
+For rating and flag changes, use `set_rating_and_flag` with `photo_ids` and either field or both. On a disposable copy, set `rating: 3` and `flag: "pick"`, read back `rating` and `pickStatus` with `get_photo_metadata`, then restore both original values. Rating `0` and flag `"none"` clear their fields; an omitted field stays unchanged.
 
 For `get_photo_preview.region`, compare one `chart80` patch with the same pixels
 from a full-frame preview at the source size reported by `requested_size`.
@@ -125,14 +127,14 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `create_range_mask` depth | `LRMCP_LIVE_DEPTH_HEIC` | Range on near vs far regions of the depth map. Fails cleanly and leaves the photo unchanged on any photo without depth. Skip the check when the env var is unset. |
 | `create_mask` subject/sky/background | `arw_14bit`, `arw_12bit`, `LRMCP_LIVE_SUBJECT_PHOTO` | Sky mask covers the sky region of the preview. "No X detected" modal blocks Develop until dismissed via AX. |
 | `create_mask_batch` | `batch.ids` (200) | Budget: at most 200 photos per call, a call stops after about 230 s with `complete: false` and `remaining_ids`; repeat with the remainder until `complete`. First photo opens in Develop, so a "No X detected" on it stops the batch. Masks of earlier photos are kept. |
-| `create_people_mask` | `LRMCP_LIVE_PEOPLE_PHOTO` | Mask per detected person. Skip when absent. |
-| `create_landscape_mask` | `arw_14bit` | Mask of the chosen landscape category appears on the right region. |
+| `create_mask` with `type: "people"` | `LRMCP_LIVE_PEOPLE_PHOTO` | One mask per selected part; a single person cannot be chosen. Skip when absent. |
+| `create_mask` with `type: "landscape"` | `arw_14bit` | Mask of the chosen landscape category appears on the right region. |
 | `combine_mask` | `wide_plain` | Intersect pixel check: only pixels inside both shapes change (IoU against the intersection of two analytic ellipses). Add and subtract against the union and difference. |
 | `invert_mask` | `wide_plain` | Changed region is the complement of the shape. Inverting twice restores the original diff. |
-| `set_mask_adjustments`, `get_mask_adjustments` | `wide_plain`, `ramp256` | Settle-after-adjust: the call returns after saving the sliders; the preview is stable only after about 3.5 s, so use `measureChange`. Stored row after `readFlushedSettings`: `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
-| `set_mask_curves`, `get_mask_curves` | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask_curves`. |
-| `edit_mask_point_colors`, `get_mask_point_colors` | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask_point_colors`. |
-| `delete_masks`, `delete_empty_masks` | any, `batch.ids` | Remaining count matches, the photos stay in the catalog. `delete_empty_masks` is catalog-only: it does not open Develop and keeps the selection. |
+| `set_mask_adjustments`, `get_mask` (`kinds: ["adjustments"]`) | `wide_plain`, `ramp256` | Settle-after-adjust: the call returns after saving the sliders; the preview is stable only after about 3.5 s, so use `measureChange`. Stored row after `readFlushedSettings`: `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
+| `set_mask_curves`, `get_mask` (`kinds: ["curves"]`) | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask` with `kinds: ["curves"]`. |
+| `edit_mask_point_colors`, `get_mask` (`kinds: ["point_colors"]`) | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask` with `kinds: ["point_colors"]`. |
+| `delete_masks` | any, `batch.ids` | With `photo_id` plus `mask_ids`, `tool_ids` or `all`, remaining count matches and the photo stays in the catalog. With only `photo_ids`, empty masks are removed, nonempty masks and photos remain, `photos_checked`/`photos_changed`/`missing` match, and module/selection stay unchanged without opening Develop. Mixed selector forms fail before dispatch. |
 
 Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
 
@@ -167,3 +169,5 @@ Stop without retrying if removal opens a blocking dialog, affects only the activ
 Live SDK probe: `getAllSpots` works with Remove closed. `getSelectedTool` calls Remove `dust`. A Heal spot reports `HealVersion`, `Masks`, `Method`, `Feather`, `Opacity`, `SourceX`, `OffsetY`, `SourceState`, `SpotType`, `Seed`, and aliases `centerX`, `centerY`, `radius`, `sourceX`, `sourceY`, `opacity`, `sourceState`, `spotType`, `seed`. Nested `Masks` fields are returned verbatim. These fields are SDK output, not a writable schema.
 
 Send the complete fresh `getSelectedSpotParams` table and change only uppercase `Opacity`. A partial `{ opacity: 0.5 }` raised an assertion and cleared both spots on a disposable copy. A complete table changing lowercase `opacity` read back temporarily but reverted after switching photos. Changing only uppercase `Opacity` from 0.5 to 0.6 persisted after switching photos, left the second spot unchanged, and refreshed both aliases to 0.6. Only Heal spot `Opacity` is exposed for editing; other spot parameters remain read-only.
+
+For the combined `get_mask` check, set sliders, a curve and a Point Color swatch on one disposable mask, then omit `kinds` and compare all three results with the set-tool readbacks. Check curves-only omits adjustments/swatches, invalid kinds fail, unknown mask reads no state, and the prior module/selection are restored.

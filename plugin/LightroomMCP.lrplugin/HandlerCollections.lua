@@ -192,7 +192,6 @@ local function createCollection(args, searchDesc)
     return {
         success = true,
         path = path,
-        message = "Collection created: " .. path
     }
 end
 
@@ -313,8 +312,6 @@ function CollectionsHandler.addToCollection(args)
         success = true,
         added = addedCount,
         missing = missingIds,
-        message = string.format("Added %d photos to collection (%d ids not found)",
-            addedCount, missingCount)
     }
 end
 
@@ -404,8 +401,6 @@ function CollectionsHandler.removeFromCollection(args)
         removed = removedCount,
         not_in_collection = notInCollection,
         missing = missingIds,
-        message = string.format("Removed %d photos from collection (%d not in it, %d ids not found)",
-            removedCount, notInCollection, missingCount)
     }
 end
 
@@ -491,8 +486,7 @@ function CollectionsHandler.deleteCollection(args)
     return {
         success = true,
         photo_count = photoCount,
-        message = string.format("Deleted collection '%s' (%d photos stay in the catalog)",
-            args.collection_name, photoCount)
+        message = "Photos stay in the catalog.",
     }
 end
 

@@ -234,6 +234,7 @@ describe("HandlerKeywords.renameKeyword", function()
         assert.are.equal("person", r.old_path)
         assert.are.equal("people", r.new_path)
         assert.are.equal(3, r.photo_count)
+        assert.is_nil(r.message)
         assert.are.equal("people", person:getName())
     end)
 

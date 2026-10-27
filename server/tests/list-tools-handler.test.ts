@@ -3,7 +3,7 @@ import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateToolArgs } from '../src/validate-args.js';
-import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
+import { TOOL_DEFINITIONS, listToolsHandler, publishedInputSchema } from '../src/list-tools-handler.js';
 import {
   DEVELOP_SETTING_KEYS,
   LOCAL_ADJUSTMENT_KEYS,
@@ -39,9 +39,8 @@ const EXPECTED_TOOL_NAMES = [
   'remove_keyword_subtree',
   'list_keywords',
   'rename_keyword',
-  'set_rating',
+  'set_rating_and_flag',
   'undo_last_step',
-  'set_flag',
   'remove_photos_from_catalog',
   'set_color_label',
   'import_photos',
@@ -77,18 +76,13 @@ const EXPECTED_TOOL_NAMES = [
   'add_brush_strokes',
   'create_range_mask',
   'delete_masks',
-  'delete_empty_masks',
   'set_mask_adjustments',
-  'get_mask_adjustments',
+  'get_mask',
   'invert_mask',
   'create_mask',
   'create_mask_batch',
-  'create_people_mask',
-  'create_landscape_mask',
   'set_mask_curves',
-  'get_mask_curves',
   'edit_mask_point_colors',
-  'get_mask_point_colors',
   'combine_mask',
 ] as const;
 
@@ -111,13 +105,40 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 77 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(77);
+  it('contains exactly 71 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(71);
   });
+
+  it('replaces the separate rating and flag tools', () => {
+    const names = TOOL_DEFINITIONS.map(tool => tool.name);
+    expect(names).toContain('set_rating_and_flag');
+    expect(names).not.toContain('set_rating');
+    expect(names).not.toContain('set_flag');
+  });
+
+  it.each(['set_rating_and_flag', 'get_photo_metadata', 'create_gradient_mask', 'create_brush_mask', 'create_range_mask'])(
+    'publishes %s without root unions rejected by Claude Code', name => {
+      const schema = TOOL_DEFINITIONS.find(tool => tool.name === name)!.inputSchema;
+      expect(schema.type).toBe('object');
+      expect(schema).not.toHaveProperty('anyOf');
+      expect(schema).not.toHaveProperty('oneOf');
+      expect(schema).not.toHaveProperty('allOf');
+    },
+  );
 
   it('tool names are unique', () => {
     const names = TOOL_DEFINITIONS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('replaces three mask readers with one smaller definition', () => {
+    const names = TOOL_DEFINITIONS.map((tool) => tool.name);
+    for (const removed of ['get_mask_adjustments', 'get_mask_curves', 'get_mask_point_colors']) {
+      expect(names).not.toContain(removed);
+    }
+    const combined = TOOL_DEFINITIONS.find((tool) => tool.name === 'get_mask');
+    expect(combined).toBeDefined();
+    expect(JSON.stringify(combined).length).toBeLessThan(2193);
   });
 
   it.each(EXPECTED_TOOL_NAMES)('"%s" is present', (name) => {
@@ -135,12 +156,13 @@ describe('TOOL_DEFINITIONS', () => {
 
   it('is generated from tool contracts', () => {
     expect(TOOL_DEFINITIONS).toEqual(
-      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema }) => ({
+      TOOL_CONTRACTS.map(({ name, title, annotations, description, inputSchema, alwaysLoad }) => ({
         name,
         title,
         annotations,
         description,
-        inputSchema,
+        inputSchema: publishedInputSchema(inputSchema),
+        ...(alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
       })),
     );
   });
@@ -152,11 +174,72 @@ describe('TOOL_DEFINITIONS', () => {
   });
 });
 
+describe('published schema compatibility', () => {
+  it('projects only root combinators without mutating private or nested schemas', () => {
+    const nested = Object.freeze({ oneOf: [{ type: 'number' }, { type: 'string' }] });
+    const privateSchema = Object.freeze({
+      type: 'object' as const,
+      additionalProperties: false,
+      properties: Object.freeze({ value: nested }),
+      required: ['value'],
+      oneOf: [{ required: ['value'] }],
+      anyOf: [{ required: ['value'] }],
+      allOf: [{ required: ['value'] }],
+    });
+    const before = JSON.stringify(privateSchema);
+    expect(publishedInputSchema(privateSchema)).toEqual({
+      type: 'object', additionalProperties: false,
+      properties: { value: nested }, required: ['value'],
+    });
+    expect(JSON.stringify(privateSchema)).toBe(before);
+    expect(publishedInputSchema(privateSchema)).not.toBe(privateSchema);
+    expect(publishedInputSchema(privateSchema).properties).toBe(privateSchema.properties);
+    expect(publishedInputSchema(privateSchema)).toEqual(publishedInputSchema(privateSchema));
+  });
+
+  it('preserves every contract field except public root combinators', () => {
+    for (const [index, contract] of TOOL_CONTRACTS.entries()) {
+      const original = JSON.stringify(contract.inputSchema);
+      const published = TOOL_DEFINITIONS[index].inputSchema;
+      expect(published).not.toHaveProperty('oneOf');
+      expect(published).not.toHaveProperty('anyOf');
+      expect(published).not.toHaveProperty('allOf');
+      const expected = { ...contract.inputSchema };
+      delete expected.oneOf;
+      delete expected.anyOf;
+      delete expected.allOf;
+      expect(published).toEqual(expected);
+      expect(published.properties).toBe(contract.inputSchema.properties);
+      expect(JSON.stringify(contract.inputSchema)).toBe(original);
+    }
+    for (const name of ['set_ai_metadata', 'create_smart_collection', 'get_develop_preset',
+      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments']) {
+      expect(TOOL_CONTRACTS.find(tool => tool.name === name)!.inputSchema).toHaveProperty('anyOf');
+    }
+    const validate = new Ajv({ strict: false }).compile(
+      TOOL_DEFINITIONS.find(tool => tool.name === 'compare_develop_presets')!.inputSchema);
+    expect(validate({ base: {}, candidate: { preset_uuid: 'uuid' } })).toBe(false);
+    expect(validate({ base: { preset_name: 'base' }, candidate: { preset_uuid: 'uuid' } })).toBe(true);
+  });
+});
+
 describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
-    const result = listToolsHandler();
+    const result = listToolsHandler(new Set(['core', 'develop', 'masks']));
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
   });
+
+  it('keeps repeated tool lists byte-identical and in contract order', () => {
+    expect(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks'])))).toBe(JSON.stringify(listToolsHandler(new Set(['core', 'develop', 'masks']))));
+    expect(listToolsHandler(new Set(['core', 'develop', 'masks'])).tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS.map((tool) => tool.name));
+  });
+
+  it.each(TOOL_DEFINITIONS.filter((tool) => tool._meta?.['anthropic/alwaysLoad'] === true).map((tool) => [tool.name, tool.description] as const))(
+    'upfront tool %s stays within the 4096-character description limit', (_name, description) => {
+      expect(description).toBeDefined();
+      expect(description!.length).toBeLessThanOrEqual(4096);
+    },
+  );
 });
 
 describe('photo list schemas', () => {
@@ -193,9 +276,8 @@ describe('tool required fields', () => {
     ['remove_from_collection', ['collection_name', 'photo_ids']],
     ['delete_collection', ['collection_name']],
     ['set_keywords', ['photo_ids']],
-    ['set_rating', ['photo_ids', 'rating']],
+    ['set_rating_and_flag', ['photo_ids']],
     ['undo_last_step', ['confirm']],
-    ['set_flag', ['photo_ids', 'flag']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
     ['import_photos', ['source_path']],
@@ -225,19 +307,13 @@ describe('tool required fields', () => {
     ['create_brush_mask', ['photo_id', 'strokes']],
     ['add_brush_strokes', ['photo_id', 'tool_id', 'strokes']],
     ['create_range_mask', ['photo_id', 'type']],
-    ['delete_masks', ['photo_id']],
-    ['delete_empty_masks', ['photo_ids']],
     ['set_mask_adjustments', ['photo_id', 'mask_id', 'adjustments']],
-    ['get_mask_adjustments', ['photo_id', 'mask_id']],
+    ['get_mask', ['photo_id', 'mask_id']],
     ['invert_mask', ['photo_id', 'mask_id', 'mode']],
     ['create_mask', ['photo_id', 'type']],
     ['create_mask_batch', ['photo_ids', 'type']],
-    ['create_people_mask', ['photo_id', 'parts']],
-    ['create_landscape_mask', ['photo_id', 'categories']],
     ['set_mask_curves', ['photo_id', 'mask_id', 'curves']],
-    ['get_mask_curves', ['photo_id', 'mask_id']],
     ['edit_mask_point_colors', ['photo_id', 'mask_id', 'action']],
-    ['get_mask_point_colors', ['photo_id', 'mask_id']],
     ['combine_mask', ['photo_id', 'mask_id', 'operation', 'type']],
   ])('%s requires %j', (name, required) => {
     expect(toolRequired(name)).toEqual(required);
@@ -250,12 +326,30 @@ describe('tool required fields', () => {
     'list_keywords',
     'list_develop_presets',
     'get_develop_preset',
+    'delete_masks',
   ])(
     '%s has no required fields',
     (name) => {
       expect(toolRequired(name)).toBeUndefined();
     },
   );
+});
+
+describe('delete_masks schema', () => {
+  it('keeps root selector unions private for client compatibility', () => {
+    const schema = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!.inputSchema;
+    for (const keyword of ['oneOf', 'anyOf', 'allOf']) expect(schema).not.toHaveProperty(keyword);
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties).toHaveProperty('photo_id');
+    expect(schema.properties).toHaveProperty('photo_ids');
+  });
+
+  it('is smaller than the two deletion definitions it replaces', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'delete_masks')!;
+    expect(JSON.stringify(tool.inputSchema).length).toBeLessThan(936);
+    expect(JSON.stringify(tool).length).toBeLessThan(1887);
+    expect(TOOL_DEFINITIONS.some(tool => tool.name === 'delete_empty_masks')).toBe(false);
+  });
 });
 
 describe('set_keywords schema', () => {
@@ -284,15 +378,14 @@ describe('photo array schema', () => {
     ['set_location', 'photo_ids'],
     ['set_metadata', 'photo_ids'],
     ['set_keywords', 'photo_ids'],
-    ['set_rating', 'photo_ids'],
-    ['set_flag', 'photo_ids'],
+    ['set_rating_and_flag', 'photo_ids'],
     ['set_color_label', 'photo_ids'],
     ['export_photos', 'photo_ids'],
     ['export_photo_metadata', 'photo_ids'],
     ['apply_develop_preset', 'photo_ids'],
     ['copy_develop_settings', 'target_ids'],
     ['match_photo_style', 'target_ids'],
-    ['delete_empty_masks', 'photo_ids'],
+    ['delete_masks', 'photo_ids'],
   ])('%s.%s requires 1-1000 ids', (toolName, propertyName) => {
     const tool = TOOL_DEFINITIONS.find((t) => t.name === toolName);
     const properties = tool?.inputSchema.properties as Record<
@@ -378,7 +471,7 @@ describe('develop setting schema', () => {
 
     expect(validateFor('get_photo_metadata')({ photo_id: 914 })).toBe(true);
     expect(validateFor('get_photo_metadata')({ photo_id: '914' })).toBe(true);
-    expect(validateFor('set_rating')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
     expect(validateFor('set_develop_settings')({
       photo_id: 914,
       settings: { Exposure2012: 0.5 },
@@ -386,8 +479,8 @@ describe('develop setting schema', () => {
     expect(validateFor('copy_develop_settings')({ source_id: 914, target_ids: [915] })).toBe(true);
 
     expect(validateFor('get_photo_metadata')({ photo_id: '' })).toBe(false);
-    expect(validateFor('set_rating')({ photo_ids: [], rating: 3 })).toBe(false);
-    expect(validateFor('set_rating')({ photo_ids: [true], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [true], rating: 3 })).toBe(false);
   });
 
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {
@@ -468,21 +561,42 @@ describe('mask curve schema', () => {
 });
 
 describe('AI mask types', () => {
+  it('replaces two AI entry points with one smaller create_mask definition', () => {
+    const create = TOOL_DEFINITIONS.find((tool) => tool.name === 'create_mask');
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_people_mask');
+    expect(TOOL_DEFINITIONS.map((tool) => tool.name)).not.toContain('create_landscape_mask');
+    expect(JSON.stringify(create).length).toBeLessThan(4997);
+    expect(JSON.stringify(create?.inputSchema).length).toBeLessThan(2872);
+  });
+
   function typeEnumOf(toolName: string): string[] {
     const contract = TOOL_CONTRACTS.find((c) => c.name === toolName);
     const properties = contract?.inputSchema.properties as Record<string, { enum?: string[] }>;
     return properties.type.enum ?? [];
   }
 
-  it('offers the types the Lua type table knows to create_mask and combine_mask alike', () => {
+  it('keeps original SDK types on batch/combine and adds guarded AI types only to create_mask', () => {
     const luaPath = path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'MaskTypes.lua');
     const source = fs.readFileSync(luaPath, 'utf8');
     const namesBlock = source.match(/MaskTypes\.NAMES = \{([^}]*)\}/)?.[1] ?? '';
     const luaNames = [...namesBlock.matchAll(/"(\w+)"/g)].map((m) => m[1]);
 
     expect(luaNames.length).toBeGreaterThan(0);
-    expect(typeEnumOf('create_mask')).toEqual(luaNames);
+    expect(typeEnumOf('create_mask_batch')).toEqual(luaNames);
+    expect(typeEnumOf('create_mask')).toEqual([...luaNames, 'people', 'landscape']);
     expect(typeEnumOf('combine_mask')).toEqual(luaNames);
+  });
+
+  it('publishes the People parts and Landscape categories accepted by the guarded Lua path', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), '..', 'plugin', 'LightroomMCP.lrplugin', 'AiMaskParts.lua'), 'utf8');
+    const contract = TOOL_CONTRACTS.find((tool) => tool.name === 'create_mask');
+    const properties = contract?.inputSchema.properties as Record<string, { items: { enum: string[] } }>;
+    for (const [field, table] of [['parts', 'PEOPLE_PARTS'], ['categories', 'LANDSCAPE_CATEGORIES']]) {
+      const block = source.match(new RegExp(`local ${table} = \\{([\\s\\S]*?)\\n\\}`))?.[1] ?? '';
+      const names = [...block.matchAll(/name = "(\w+)"/g)].map((match) => match[1]);
+      expect(names.length).toBeGreaterThan(0);
+      expect(properties[field].items.enum).toEqual(names);
+    }
   });
 });
 
@@ -568,8 +682,8 @@ describe('create_smart_collection schema', () => {
   const validate = new Ajv({ strict: false }).compile(smart.inputSchema);
 
   it('create_smart_collection rejects a name without a filter', () => {
-    expect(validate({ name: 'x' })).toBe(false);
-    expect(validate({ name: 'x', parent: 'Trips / 2026' })).toBe(false);
+    expect(validateToolArgs('create_smart_collection', { name: 'x' })).not.toBeNull();
+    expect(validateToolArgs('create_smart_collection', { name: 'x', parent: 'Trips / 2026' })).not.toBeNull();
   });
 
   it('shares every search filter definition without pagination', () => {

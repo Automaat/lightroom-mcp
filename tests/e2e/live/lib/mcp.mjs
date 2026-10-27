@@ -15,7 +15,7 @@ export class McpSession {
   }
 
   async start() {
-    this.process = spawn("node", [SERVER_BIN], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env } });
+    this.process = spawn("node", [SERVER_BIN], { stdio: ["pipe", "pipe", "ignore"], env: { ...process.env, LIGHTROOM_MCP_TOOLSETS: "all" } });
     this.process.stdout.setEncoding("utf8");
     this.process.stdout.on("data", (chunk) => this.onStdout(chunk));
     this.process.on("exit", (code) => {

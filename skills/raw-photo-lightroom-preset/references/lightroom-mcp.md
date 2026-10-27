@@ -4,7 +4,7 @@
 
 Upstream repository: `https://github.com/Automaat/lightroom-mcp`
 
-Detect available tools at runtime because main can differ from the installed release.
+Detect available tools at runtime because main can differ from the installed release. Enable `LIGHTROOM_MCP_TOOLSETS=develop` in the MCP server environment for this workflow, or `develop,masks` for local masks (`all` enables both). In the desktop bundle, set **Enabled toolsets**. Restart the server after changing the setting; the default exposes only core catalog and metadata tools.
 
 ## Why it helps
 
@@ -22,9 +22,9 @@ The integration adds the missing feedback loop:
 - `create_develop_preset`: capture explicit settings from a representative as a plugin-managed checkpoint.
 - `export_develop_preset`: copy an exportable backing file without overwriting.
 - `apply_denoise`: apply AI Denoise on Lightroom Classic 15+.
-- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, `delete_masks`, and `delete_empty_masks`: inspect and manage local masks.
-- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_people_mask`, and `create_landscape_mask`: create or edit mask geometry and AI parts on supported Lightroom versions.
-- `get_mask_adjustments`, `set_mask_adjustments`, `get_mask_curves`, `set_mask_curves`, `get_mask_point_colors`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color.
+- `list_masks`, `create_mask`, `create_mask_batch`, `combine_mask`, `invert_mask`, and `delete_masks`: inspect and manage local masks. Call `delete_masks` with only `photo_ids` to remove empty masks in bulk without opening Develop; use `photo_id` and exactly one of `mask_ids`, `tool_ids` or `all` for targeted deletion.
+- `create_gradient_mask`, `update_gradient_mask`, `create_brush_mask`, `add_brush_strokes`, `create_range_mask`, `create_mask` with `type: "people"` or `type: "landscape"`: create or edit mask geometry and AI parts on supported Lightroom versions.
+- `get_mask`, `set_mask_adjustments`, `set_mask_curves`, and `edit_mask_point_colors`: read and adjust a mask's local sliders, curves, and Point Color. `get_mask` reads all three in one session; pass `kinds: ["adjustments"]`, `["curves"]` or `["point_colors"]` to read only selected kinds.
 
 This improves setting selection. It does not by itself create a canonical preset XMP.
 
