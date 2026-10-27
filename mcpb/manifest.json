@@ -31,7 +31,8 @@
       "env": {
         "LIGHTROOM_MCP_REQUEST_PORT": "${user_config.request_port}",
         "LIGHTROOM_MCP_RESPONSE_PORT": "${user_config.response_port}",
-        "LIGHTROOM_MCP_TOOLSETS": "${user_config.toolsets}"
+        "LIGHTROOM_MCP_TOOLSETS": "${user_config.toolsets}",
+        "LIGHTROOM_MCP_READ_ONLY": "${user_config.read_only}"
       }
     }
   },
@@ -322,6 +323,13 @@
     }
   ],
   "user_config": {
+    "read_only": {
+      "type": "boolean",
+      "title": "Read-only mode",
+      "description": "List and accept only read tools from the enabled toolsets. File exports are blocked. Restart the server after changing this setting.",
+      "default": false,
+      "required": false
+    },
     "toolsets": {
       "type": "string",
       "title": "Enabled toolsets",

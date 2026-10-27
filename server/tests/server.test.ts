@@ -1,10 +1,11 @@
-import { describe, it, expect, afterEach } from '@jest/globals';
+import { describe, it, expect, afterEach, jest } from '@jest/globals';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createMcpServer } from '../src/create-server.js';
 import { parseToolsets } from '../src/toolsets.js';
 import { TOOL_CONTRACTS } from '../src/tool-contracts.js';
 import { publishedInputSchema } from '../src/list-tools-handler.js';
 import type { CallOptions, PluginResponse } from '../src/dispatcher.js';
+import type { ToolCaller } from '../src/broker.js';
 
 const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   search_photos: 'read-only',
@@ -96,13 +97,86 @@ interface Pair {
   client: Client;
 }
 
-async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string } = {}): Promise<Pair> {
+describe('read-only mode', () => {
+  let pair: Pair | undefined;
+  afterEach(async () => {
+    await pair?.client.close();
+    await pair?.server.close();
+    pair = undefined;
+  });
+
+  it('classifies every contract explicitly with the audited read-only annotation', () => {
+    expect(Object.keys(TOOL_CLASSES).sort()).toEqual(TOOL_CONTRACTS.map((tool) => tool.name).sort());
+    for (const tool of TOOL_CONTRACTS) {
+      expect(typeof tool.annotations.readOnlyHint).toBe('boolean');
+      expect(tool.annotations.readOnlyHint).toBe(TOOL_CLASSES[tool.name] === 'read-only');
+    }
+  });
+
+  it.each([undefined, 'core', 'develop', 'masks', 'all'])('lists exactly enabled read tools for %p', async (toolsets) => {
+    pair = await connect({ toolsets, readOnly: true });
+    const listed = await pair.client.listTools();
+    const enabled = new Set(parseToolsets(toolsets));
+    expect(listed.tools.map((tool) => tool.name)).toEqual(TOOL_CONTRACTS
+      .filter((tool) => enabled.has(tool.toolset) && TOOL_CLASSES[tool.name] === 'read-only')
+      .map((tool) => tool.name));
+  });
+
+  it('rejects every write, hidden read, unknown and test-only call before dispatch', async () => {
+    const call = jest.fn<CallFn>();
+    pair = await connect({ readOnly: true, call });
+    const names = TOOL_CONTRACTS.filter((tool) => !tool.annotations.readOnlyHint || tool.toolset !== 'core')
+      .map((tool) => tool.name);
+    for (const name of [...names, 'set_rating', 'set_selection', 'not_a_tool']) {
+      const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('LIGHTROOM_MCP_READ_ONLY');
+    }
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it('enforces before the broker follower call and fixes the list at startup', async () => {
+    const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
+    const options = { readOnly: true, toolsets: parseToolsets('all') };
+    const server = createMcpServer({ callTool }, options);
+    const client = new Client({ name: 'follower-test', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    pair = { server, client };
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const before = await client.listTools();
+    options.readOnly = false;
+    const blocked = asToolResult(await client.callTool({ name: 'set_rating_and_flag', arguments: { photo_ids: [914], rating: 3 } }));
+    expect(blocked.isError).toBe(true);
+    expect(callTool).not.toHaveBeenCalled();
+    const read = asToolResult(await client.callTool({ name: 'list_collections', arguments: {} }));
+    expect(read.content[0].text).toBe('forwarded');
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(await client.listTools()).toEqual(before);
+  });
+
+  it.each([undefined, 'all'])('preserves listing bytes and write dispatch when off for %p', async (toolsets) => {
+    const call = jest.fn<CallFn>().mockResolvedValue({ id: 'x', result: { success: true } });
+    pair = await connect({ toolsets, readOnly: false, call });
+    const listed = await pair.client.listTools();
+    const enabled = new Set(parseToolsets(toolsets));
+    const { listToolsHandler } = await import('../src/list-tools-handler.js');
+    expect(listed).toEqual(listToolsHandler(enabled));
+    await pair.client.callTool({ name: 'set_rating_and_flag', arguments: { photo_ids: [914], rating: 3 } });
+    expect(call).toHaveBeenCalledTimes(1);
+    await pair.client.close();
+    await pair.server.close();
+    pair = await connect({ toolsets });
+    expect(JSON.stringify(await pair.client.listTools())).toBe(JSON.stringify(listed));
+  });
+});
+
+async function connect(opts: { ready?: boolean; call?: CallFn; toolsets?: string; readOnly?: boolean } = {}): Promise<Pair> {
   const server = createMcpServer({
     isReady: () => opts.ready ?? true,
     dispatcher: {
       call: opts.call ?? (async () => ({ id: 'x', result: null })),
     },
-  }, { toolsets: parseToolsets(opts.toolsets) });
+  }, { toolsets: parseToolsets(opts.toolsets), readOnly: opts.readOnly ?? false });
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);

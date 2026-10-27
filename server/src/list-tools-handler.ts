@@ -22,6 +22,9 @@ export const TOOL_DEFINITIONS: Tool[] = TOOL_CONTRACTS.map(
   }),
 );
 
-export function listToolsHandler(toolsets: ReadonlySet<Toolset> = new Set(["core"])): { tools: Tool[] } {
-  return { tools: TOOL_DEFINITIONS.filter((_tool, index) => toolsets.has(TOOL_CONTRACTS[index].toolset)) };
+export function listToolsHandler(toolsets: ReadonlySet<Toolset> = new Set(["core"]), readOnly = false): { tools: Tool[] } {
+  return { tools: TOOL_DEFINITIONS.filter((_tool, index) => {
+    const contract = TOOL_CONTRACTS[index];
+    return toolsets.has(contract.toolset) && (!readOnly || contract.annotations.readOnlyHint === true);
+  }) };
 }
