@@ -824,6 +824,53 @@ describe('validateToolArgs', () => {
 });
 
 describe('tool handler argument validation', () => {
+  const selectorCases: { name: string; valid: Record<string, unknown>[]; invalid: Record<string, unknown>[] }[] = [
+    { name: 'set_ai_metadata',
+      valid: [{ photo_ids: [914], score: 42 }, { photo_ids: [914], reason: '' },
+        { photo_ids: [914], score: '', reason: 'clear score' }],
+      invalid: [{ photo_ids: [914] }, { photo_ids: [914], score: 101 }, { photo_ids: [914], reason: false }] },
+    { name: 'create_smart_collection',
+      valid: [{ name: 'Rated', rating: 3 }, { name: 'Camera', camera: 'Camera', edited: false }],
+      invalid: [{ name: 'Empty' }, { name: 'Bad', rating: 6 }, { name: 'Bad', edited: 'true' }] },
+    ...['get_develop_preset', 'export_develop_preset', 'apply_develop_preset'].map(name => {
+      const common = name === 'apply_develop_preset' ? { photo_ids: [914] }
+        : name === 'export_develop_preset' ? { destination_dir: '/tmp/presets' } : {};
+      return { name,
+        valid: [{ ...common, preset_uuid: 'uuid' }, { ...common, preset_name: 'name' },
+          { ...common, preset_uuid: 'uuid', preset_name: 'name', preset_scope: 'plugin' }],
+        invalid: [common, { ...common, preset_uuid: 123 }, { ...common, preset_name: 'name', preset_scope: 'unknown' }] };
+    }),
+    { name: 'apply_auto_adjustments',
+      valid: [{ photo_ids: [914], tone: true }, { photo_ids: [914], white_balance: true },
+        { photo_ids: [914], tone: true, white_balance: true }],
+      invalid: [{ photo_ids: [914] }, { photo_ids: [914], tone: false, white_balance: false },
+        { photo_ids: [914], tone: 'true' }] },
+    { name: 'delete_masks',
+      valid: [{ photo_id: 914, mask_ids: ['mask'] }, { photo_id: 914, tool_ids: ['tool'] }, { photo_id: 914, all: true }],
+      invalid: [{ photo_id: 914 }, { photo_id: 914, mask_ids: ['mask'], all: true },
+        { photo_id: 914, mask_ids: ['mask'], tool_ids: ['tool'] }, { photo_id: 914, all: false },
+        { photo_id: 914, mask_ids: [123] }] },
+  ];
+
+  it.each(selectorCases)('keeps private selector validation before dispatch for $name', async ({ name, valid, invalid }) => {
+    const call = jest.fn((_action: string, _params: unknown) => Promise.resolve({ id: 'fake', result: { ok: true } }));
+    const handler = createCallToolHandler({ dispatcher: { call }, isReady: () => true });
+    for (const args of valid) {
+      call.mockClear();
+      const result = await handler(name, args);
+      expect(result.isError).toBeUndefined();
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(call).toHaveBeenCalledWith(name, args);
+    }
+    for (const args of [...invalid, ...valid.map(args => ({ ...args, unknown_field: true }))]) {
+      call.mockClear();
+      const result = await handler(name, args);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(`Invalid arguments for ${name}`);
+      expect(call).not.toHaveBeenCalled();
+    }
+  });
+
   it('fails before touching Lightroom', async () => {
     const call = jest.fn((_action: string, _params: unknown) =>
       Promise.resolve({ id: 'req_1', result: {} }));

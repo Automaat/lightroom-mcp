@@ -3,7 +3,7 @@ import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateToolArgs } from '../src/validate-args.js';
-import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
+import { TOOL_DEFINITIONS, listToolsHandler, publishedInputSchema } from '../src/list-tools-handler.js';
 import {
   DEVELOP_SETTING_KEYS,
   LOCAL_ADJUSTMENT_KEYS,
@@ -164,7 +164,7 @@ describe('TOOL_DEFINITIONS', () => {
         title,
         annotations,
         description,
-        inputSchema,
+        inputSchema: publishedInputSchema(inputSchema),
         ...(alwaysLoad ? { _meta: { 'anthropic/alwaysLoad': true } } : {}),
       })),
     );
@@ -174,6 +174,55 @@ describe('TOOL_DEFINITIONS', () => {
     for (const tool of TOOL_DEFINITIONS) {
       expect(tool.inputSchema.additionalProperties).toBe(false);
     }
+  });
+});
+
+describe('published schema compatibility', () => {
+  it('projects only root combinators without mutating private or nested schemas', () => {
+    const nested = Object.freeze({ oneOf: [{ type: 'number' }, { type: 'string' }] });
+    const privateSchema = Object.freeze({
+      type: 'object' as const,
+      additionalProperties: false,
+      properties: Object.freeze({ value: nested }),
+      required: ['value'],
+      oneOf: [{ required: ['value'] }],
+      anyOf: [{ required: ['value'] }],
+      allOf: [{ required: ['value'] }],
+    });
+    const before = JSON.stringify(privateSchema);
+    expect(publishedInputSchema(privateSchema)).toEqual({
+      type: 'object', additionalProperties: false,
+      properties: { value: nested }, required: ['value'],
+    });
+    expect(JSON.stringify(privateSchema)).toBe(before);
+    expect(publishedInputSchema(privateSchema)).not.toBe(privateSchema);
+    expect(publishedInputSchema(privateSchema).properties).toBe(privateSchema.properties);
+    expect(publishedInputSchema(privateSchema)).toEqual(publishedInputSchema(privateSchema));
+  });
+
+  it('preserves every contract field except public root combinators', () => {
+    for (const [index, contract] of TOOL_CONTRACTS.entries()) {
+      const original = JSON.stringify(contract.inputSchema);
+      const published = TOOL_DEFINITIONS[index].inputSchema;
+      expect(published).not.toHaveProperty('oneOf');
+      expect(published).not.toHaveProperty('anyOf');
+      expect(published).not.toHaveProperty('allOf');
+      const expected = { ...contract.inputSchema };
+      delete expected.oneOf;
+      delete expected.anyOf;
+      delete expected.allOf;
+      expect(published).toEqual(expected);
+      expect(published.properties).toBe(contract.inputSchema.properties);
+      expect(JSON.stringify(contract.inputSchema)).toBe(original);
+    }
+    for (const name of ['set_ai_metadata', 'create_smart_collection', 'get_develop_preset',
+      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments']) {
+      expect(TOOL_CONTRACTS.find(tool => tool.name === name)!.inputSchema).toHaveProperty('anyOf');
+    }
+    const validate = new Ajv({ strict: false }).compile(
+      TOOL_DEFINITIONS.find(tool => tool.name === 'compare_develop_presets')!.inputSchema);
+    expect(validate({ base: {}, candidate: { preset_uuid: 'uuid' } })).toBe(false);
+    expect(validate({ base: { preset_name: 'base' }, candidate: { preset_uuid: 'uuid' } })).toBe(true);
   });
 });
 
@@ -601,8 +650,8 @@ describe('create_smart_collection schema', () => {
   const validate = new Ajv({ strict: false }).compile(smart.inputSchema);
 
   it('create_smart_collection rejects a name without a filter', () => {
-    expect(validate({ name: 'x' })).toBe(false);
-    expect(validate({ name: 'x', parent: 'Trips / 2026' })).toBe(false);
+    expect(validateToolArgs('create_smart_collection', { name: 'x' })).not.toBeNull();
+    expect(validateToolArgs('create_smart_collection', { name: 'x', parent: 'Trips / 2026' })).not.toBeNull();
   });
 
   it('shares every search filter definition without pagination', () => {
