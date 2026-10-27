@@ -26,6 +26,24 @@ describe('validateToolArgs', () => {
     });
   });
 
+  it.each(['cull', 'detail', 64, 512.5, 1024, 2048])('get_photo_preview accepts size %s', size => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toBeNull();
+  });
+
+  it.each(['huge', 5000])('get_photo_preview explains accepted sizes for %s', size => {
+    expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toMatch(/cull.*detail.*64.*2048/);
+  });
+
+  it.each([{}, { limit: 0 }, { limit: 10.5, offset: 2.5, query: 'vi', folder: 'User Presets' }])(
+    'list_develop_presets accepts paging and filters %p', (args) => {
+      expect(validateToolArgs('list_develop_presets', args)).toBeNull();
+    });
+
+  it.each([{ limit: -1 }, { offset: -1 }, { query: '' }, { folder: '' }, { scope: 'plugin' }, { extra: true }])(
+    'list_develop_presets rejects invalid arguments %p', (args) => {
+      expect(validateToolArgs('list_develop_presets', args)).not.toBeNull();
+    });
+
   it.each(['Circle', 'SoapBubble', 'Blade', 'Ring', 'Anamorphic'])('set_lens_blur accepts %s bokeh', (bokeh) => {
     expect(validateToolArgs('set_lens_blur', { photo_id: 914, bokeh })).toBeNull();
   });

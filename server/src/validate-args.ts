@@ -1,5 +1,10 @@
 import { Ajv, type ValidateFunction } from "ajv";
-import { TOOL_CONTRACTS } from "./tool-contracts.js";
+import {
+  developSettingKeysValidationSchema,
+  developSettingsValidationSchema,
+  TOOL_CONTRACTS,
+} from "./tool-contracts.js";
+import { PREVIEW_SIZE_ERROR } from "./preview-sizes.js";
 
 /**
  * The tool contracts publish a JSON Schema per tool, but nothing enforced it:
@@ -12,7 +17,18 @@ import { TOOL_CONTRACTS } from "./tool-contracts.js";
 const ajv = new Ajv({ strict: false, allErrors: true });
 
 const validators = new Map<string, ValidateFunction>(
-  TOOL_CONTRACTS.map((contract) => [contract.name, ajv.compile(contract.inputSchema)]),
+  TOOL_CONTRACTS.map((contract) => {
+    // Published schemas share values; dispatch still enforces each key's type.
+    const settings = contract.name === "set_develop_settings"
+      ? developSettingsValidationSchema
+      : ["copy_develop_settings", "create_develop_preset"].includes(contract.name)
+        ? { ...(contract.inputSchema.properties?.settings as object), ...developSettingKeysValidationSchema }
+        : null;
+    const schema = settings
+      ? { ...contract.inputSchema, properties: { ...contract.inputSchema.properties, settings } }
+      : contract.inputSchema;
+    return [contract.name, ajv.compile(schema)];
+  }),
 );
 
 function describe(error: { instancePath?: string; message?: string; params?: unknown }): string {
@@ -25,16 +41,18 @@ function describe(error: { instancePath?: string; message?: string; params?: unk
 }
 
 /**
- * Returns null when the arguments satisfy the tool's published schema, or a
- * human-readable message listing what is wrong. Unknown tool names pass
- * through so the dispatcher keeps reporting them.
+ * Returns null for valid arguments, or a message naming invalid fields.
+ * Unknown tool names pass through so the dispatcher keeps reporting them.
  */
 export function validateToolArgs(name: string, args: unknown): string | null {
   const validate = validators.get(name);
   if (!validate) return null;
   if (validate(args ?? {})) return null;
 
-  const problems = (validate.errors ?? []).map(describe);
+  const problems = (validate.errors ?? []).map(error =>
+    name === "get_photo_preview" && error.instancePath === "/size"
+      ? PREVIEW_SIZE_ERROR
+      : describe(error));
   const unique = [...new Set(problems)];
   return `Invalid arguments for ${name}: ${unique.join("; ")}`;
 }

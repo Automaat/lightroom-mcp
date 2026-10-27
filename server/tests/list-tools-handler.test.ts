@@ -2,6 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
+import { validateToolArgs } from '../src/validate-args.js';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
 import {
   DEVELOP_SETTING_KEYS,
@@ -92,6 +93,21 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
+  it('get_photo_preview describes named uses and approximate token costs', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
+    expect(tool?.description).toMatch(/cull.*culling.*650 tokens/);
+    expect(tool?.description).toMatch(/detail.*details.*2\.5k tokens/);
+    expect(tool?.description).toContain('earlier Claude estimates');
+    expect(tool?.description).toContain('width and height');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    for (const size of ['cull', 'detail', 64, 1024, 2048]) {
+      expect(validate({ photo_id: 914, size })).toBe(true);
+    }
+    for (const size of ['huge', 5000]) {
+      expect(validate({ photo_id: 914, size })).toBe(false);
+    }
+  });
+
   it('contains exactly 77 tools', () => {
     expect(TOOL_DEFINITIONS).toHaveLength(77);
   });
@@ -137,6 +153,24 @@ describe('listToolsHandler', () => {
   it('returns { tools: TOOL_DEFINITIONS }', () => {
     const result = listToolsHandler();
     expect(result.tools).toEqual(TOOL_DEFINITIONS);
+  });
+});
+
+describe('photo list schemas', () => {
+  it.each([
+    ['search_photos', {}],
+    ['get_selected_photos', {}],
+    ['get_collection_photos', { collection_name: 'Trips / 2026 / Paris' }],
+  ])('%s accepts an optional path opt-in and rejects unknown arguments', (name, args) => {
+    const tool = TOOL_DEFINITIONS.find((entry) => entry.name === name)!;
+    const validate = new Ajv({ strict: false }).compile(tool.inputSchema);
+
+    expect(validate(args)).toBe(true);
+    expect(validate({ ...args, include_path: true })).toBe(true);
+    expect(validate({ ...args, include_path: false })).toBe(true);
+    expect(validate({ ...args, include_path: 'true' })).toBe(false);
+    expect(validate({ ...args, include_path: 1 })).toBe(false);
+    expect(validate({ ...args, unknown_field: true })).toBe(false);
   });
 });
 
@@ -280,66 +314,40 @@ describe('develop setting schema', () => {
     return [...match[1].matchAll(/^\s*"([^"]+)",/gm)].map((entry) => entry[1]);
   }
 
-  it('restricts copy whitelist to allowlisted SDK keys', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'copy_develop_settings');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      { items?: { enum?: readonly string[] }; minItems?: number }
-    >;
-
-    expect(properties.settings.minItems).toBe(1);
-    expect(properties.settings.items?.enum).toEqual(DEVELOP_SETTING_KEYS);
-  });
-
-  it('restricts direct settings object to allowlisted SDK keys', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      { additionalProperties?: boolean; minProperties?: number; properties?: Record<string, unknown> }
-    >;
-
-    expect(properties.settings.additionalProperties).toBe(false);
-    expect(properties.settings.minProperties).toBe(1);
-    expect(Object.keys(properties.settings.properties ?? {})).toEqual(DEVELOP_SETTING_KEYS);
-  });
-
-  it('uses numeric arrays for point curves and scalar values for ordinary settings', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      {
-        properties?: Record<
-          string,
-          {
-            type?: string;
-            minItems?: number;
-            maxItems?: number;
-            items?: { type?: string; minimum?: number; maximum?: number };
-            oneOf?: unknown[];
-          }
-        >;
-      }
-    >;
-    const settings = properties.settings.properties ?? {};
-
-    for (const key of POINT_CURVE_SETTING_KEYS) {
-      expect(settings[key]).toMatchObject({
-        type: 'array',
-        minItems: 4,
-        maxItems: 64,
-        items: { type: 'integer', minimum: 0, maximum: 255 },
-      });
+  it('publishes one key list and curve schema within the size budget', () => {
+    const names = ['set_develop_settings', 'copy_develop_settings', 'create_develop_preset'];
+    const tools = TOOL_DEFINITIONS.filter(t => names.includes(t.name));
+    const definitions = tools.map(({ name, description, inputSchema }) =>
+      JSON.stringify({ name, description, inputSchema })).join('');
+    const schemas = tools.map(t => JSON.stringify(t.inputSchema)).join('');
+    expect(definitions.length).toBeLessThanOrEqual(7000);
+    for (const key of DEVELOP_SETTING_KEYS) {
+      expect(schemas.split(JSON.stringify(key)).length - 1).toBe(1);
     }
-    expect(settings.Exposure2012.oneOf).toBeDefined();
-    expect(settings.Exposure2012.type).toBeUndefined();
+    expect(schemas.split('Flat input/output pairs').length - 1).toBe(1);
+    expect(schemas).not.toMatch(/"\$(?:ref|defs)"/);
   });
 
-  it('rejects malformed point curve payloads against the published schema', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
-    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+  it('accepts mixed valid settings and copy keys', () => {
+    expect(validateToolArgs('set_develop_settings', {
+      photo_id: 914,
+      settings: { Exposure2012: 0.5, WhiteBalance: 'As Shot',
+        ToneCurvePV2012: [0, 0, 64, 48, 192, 210, 255, 255] },
+    })).toBeNull();
+    expect(validateToolArgs('copy_develop_settings', {
+      source_id: 914, target_ids: [915], settings: ['Exposure2012'], dry_run: true,
+    })).toBeNull();
+    for (const key of DEVELOP_SETTING_KEYS) {
+      expect(validateToolArgs('set_develop_settings', {
+        photo_id: 914, settings: { [key]: POINT_CURVE_SETTING_KEYS.includes(
+          key as typeof POINT_CURVE_SETTING_KEYS[number]) ? [0, 0, 255, 255] : 1 },
+      })).toBeNull();
+    }
+  });
 
-    const check = (curve: unknown[]) =>
-      validate({ photo_id: '1', settings: { ToneCurvePV2012: curve } });
+  it('rejects malformed point curve payloads before dispatch', () => {
+    const check = (curve: unknown[]) => validateToolArgs('set_develop_settings',
+      { photo_id: '1', settings: { ToneCurvePV2012: curve } }) === null;
 
     expect(check([0, 0, 64, 48, 192, 210, 255, 255])).toBe(true);
     expect(check([0, 0, 255, 255])).toBe(true);
@@ -386,7 +394,7 @@ describe('develop setting schema', () => {
       { items?: { enum?: readonly string[] }; minItems?: number; uniqueItems?: boolean }
     >;
 
-    expect(properties.settings.items?.enum).toEqual(DEVELOP_SETTING_KEYS);
+    expect(properties.settings.items?.enum).toBeUndefined();
     expect(properties.settings.minItems).toBe(1);
     expect(properties.settings.uniqueItems).toBe(true);
   });
@@ -562,10 +570,11 @@ describe('create_smart_collection schema', () => {
   });
 
   it('shares every search filter definition without pagination', () => {
-    const { limit, offset, ...filters } = search.inputSchema.properties!;
+    const { limit, offset, include_path, ...filters } = search.inputSchema.properties!;
     const { name, parent, ...savedFilters } = smart.inputSchema.properties!;
     expect(limit).toBeDefined();
     expect(offset).toBeDefined();
+    expect(include_path).toBeDefined();
     expect(name).toBeDefined();
     expect(parent).toBeDefined();
     expect(savedFilters).toEqual(filters);
