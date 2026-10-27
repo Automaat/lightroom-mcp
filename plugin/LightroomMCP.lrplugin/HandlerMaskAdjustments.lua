@@ -319,25 +319,8 @@ function MaskAdjustmentsHandler.setMaskAdjustments(args)
     }
 end
 
-function MaskAdjustmentsHandler.getMaskAdjustments(args)
-    local photoId, maskId = requireTarget(args)
-    requireMaskControls("get_mask_adjustments")
-    local catalog, photo = resolvePhoto(photoId)
-
-    local outcome = DevelopSession.withPhoto("get_mask_adjustments", catalog, photo, function()
-        return withMaskSelected(photoId, maskId, readAllSliders)
-    end)
-
-    Log.info(string.format("Read %d local sliders of mask %s on photo %s",
-        #LocalSliders.list - #outcome.unavailable, maskId, photoId))
-
-    return {
-        success = true,
-        photo_id = photoId,
-        mask_id = maskId,
-        adjustments = outcome.adjustments,
-        unavailable = outcome.unavailable,
-    }
+function MaskAdjustmentsHandler.readSelected()
+    return readAllSliders()
 end
 
 return MaskAdjustmentsHandler

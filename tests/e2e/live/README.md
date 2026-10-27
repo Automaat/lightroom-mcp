@@ -120,9 +120,9 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `create_landscape_mask` | `arw_14bit` | Mask of the chosen landscape category appears on the right region. |
 | `combine_mask` | `wide_plain` | Intersect pixel check: only pixels inside both shapes change (IoU against the intersection of two analytic ellipses). Add and subtract against the union and difference. |
 | `invert_mask` | `wide_plain` | Changed region is the complement of the shape. Inverting twice restores the original diff. |
-| `set_mask_adjustments`, `get_mask_adjustments` | `wide_plain`, `ramp256` | Settle-after-adjust: the call returns after saving the sliders; the preview is stable only after about 3.5 s, so use `measureChange`. Stored row after `readFlushedSettings`: `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
-| `set_mask_curves`, `get_mask_curves` | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask_curves`. |
-| `edit_mask_point_colors`, `get_mask_point_colors` | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask_point_colors`. |
+| `set_mask_adjustments`, `get_mask` (`kinds: ["adjustments"]`) | `wide_plain`, `ramp256` | Settle-after-adjust: the call returns after saving the sliders; the preview is stable only after about 3.5 s, so use `measureChange`. Stored row after `readFlushedSettings`: `local_Exposure` +2 is stored as `LocalExposure2012 = 0.5`. |
+| `set_mask_curves`, `get_mask` (`kinds: ["curves"]`) | `ramp256` | `patchDeltas` per gray level follow the curve points; round trip through `get_mask` with `kinds: ["curves"]`. |
+| `edit_mask_point_colors`, `get_mask` (`kinds: ["point_colors"]`) | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask` with `kinds: ["point_colors"]`. |
 | `delete_masks`, `delete_empty_masks` | any, `batch.ids` | Remaining count matches, the photos stay in the catalog. `delete_empty_masks` is catalog-only: it does not open Develop and keeps the selection. |
 
 Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
@@ -158,3 +158,5 @@ Stop without retrying if removal opens a blocking dialog, affects only the activ
 Live SDK probe: `getAllSpots` works with Remove closed. `getSelectedTool` calls Remove `dust`. A Heal spot reports `HealVersion`, `Masks`, `Method`, `Feather`, `Opacity`, `SourceX`, `OffsetY`, `SourceState`, `SpotType`, `Seed`, and aliases `centerX`, `centerY`, `radius`, `sourceX`, `sourceY`, `opacity`, `sourceState`, `spotType`, `seed`. Nested `Masks` fields are returned verbatim. These fields are SDK output, not a writable schema.
 
 Send the complete fresh `getSelectedSpotParams` table and change only uppercase `Opacity`. A partial `{ opacity: 0.5 }` raised an assertion and cleared both spots on a disposable copy. A complete table changing lowercase `opacity` read back temporarily but reverted after switching photos. Changing only uppercase `Opacity` from 0.5 to 0.6 persisted after switching photos, left the second spot unchanged, and refreshed both aliases to 0.6. Only Heal spot `Opacity` is exposed for editing; other spot parameters remain read-only.
+
+For the combined `get_mask` check, set sliders, a curve and a Point Color swatch on one disposable mask, then omit `kinds` and compare all three results with the set-tool readbacks. Check curves-only omits adjustments/swatches, invalid kinds fail, unknown mask reads no state, and the prior module/selection are restored.
