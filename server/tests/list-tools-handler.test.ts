@@ -2,6 +2,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Ajv } from 'ajv';
 import fs from 'node:fs';
 import path from 'node:path';
+import { validateToolArgs } from '../src/validate-args.js';
 import { TOOL_DEFINITIONS, listToolsHandler } from '../src/list-tools-handler.js';
 import {
   DEVELOP_SETTING_KEYS,
@@ -299,66 +300,40 @@ describe('develop setting schema', () => {
     return [...match[1].matchAll(/^\s*"([^"]+)",/gm)].map((entry) => entry[1]);
   }
 
-  it('restricts copy whitelist to allowlisted SDK keys', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'copy_develop_settings');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      { items?: { enum?: readonly string[] }; minItems?: number }
-    >;
-
-    expect(properties.settings.minItems).toBe(1);
-    expect(properties.settings.items?.enum).toEqual(DEVELOP_SETTING_KEYS);
-  });
-
-  it('restricts direct settings object to allowlisted SDK keys', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      { additionalProperties?: boolean; minProperties?: number; properties?: Record<string, unknown> }
-    >;
-
-    expect(properties.settings.additionalProperties).toBe(false);
-    expect(properties.settings.minProperties).toBe(1);
-    expect(Object.keys(properties.settings.properties ?? {})).toEqual(DEVELOP_SETTING_KEYS);
-  });
-
-  it('uses numeric arrays for point curves and scalar values for ordinary settings', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
-    const properties = tool?.inputSchema.properties as Record<
-      string,
-      {
-        properties?: Record<
-          string,
-          {
-            type?: string;
-            minItems?: number;
-            maxItems?: number;
-            items?: { type?: string; minimum?: number; maximum?: number };
-            oneOf?: unknown[];
-          }
-        >;
-      }
-    >;
-    const settings = properties.settings.properties ?? {};
-
-    for (const key of POINT_CURVE_SETTING_KEYS) {
-      expect(settings[key]).toMatchObject({
-        type: 'array',
-        minItems: 4,
-        maxItems: 64,
-        items: { type: 'integer', minimum: 0, maximum: 255 },
-      });
+  it('publishes one key list and curve schema within the size budget', () => {
+    const names = ['set_develop_settings', 'copy_develop_settings', 'create_develop_preset'];
+    const tools = TOOL_DEFINITIONS.filter(t => names.includes(t.name));
+    const definitions = tools.map(({ name, description, inputSchema }) =>
+      JSON.stringify({ name, description, inputSchema })).join('');
+    const schemas = tools.map(t => JSON.stringify(t.inputSchema)).join('');
+    expect(definitions.length).toBeLessThanOrEqual(7000);
+    for (const key of DEVELOP_SETTING_KEYS) {
+      expect(schemas.split(JSON.stringify(key)).length - 1).toBe(1);
     }
-    expect(settings.Exposure2012.oneOf).toBeDefined();
-    expect(settings.Exposure2012.type).toBeUndefined();
+    expect(schemas.split('Flat input/output pairs').length - 1).toBe(1);
+    expect(schemas).not.toMatch(/"\$(?:ref|defs)"/);
   });
 
-  it('rejects malformed point curve payloads against the published schema', () => {
-    const tool = TOOL_DEFINITIONS.find((t) => t.name === 'set_develop_settings');
-    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+  it('accepts mixed valid settings and copy keys', () => {
+    expect(validateToolArgs('set_develop_settings', {
+      photo_id: 914,
+      settings: { Exposure2012: 0.5, WhiteBalance: 'As Shot',
+        ToneCurvePV2012: [0, 0, 64, 48, 192, 210, 255, 255] },
+    })).toBeNull();
+    expect(validateToolArgs('copy_develop_settings', {
+      source_id: 914, target_ids: [915], settings: ['Exposure2012'], dry_run: true,
+    })).toBeNull();
+    for (const key of DEVELOP_SETTING_KEYS) {
+      expect(validateToolArgs('set_develop_settings', {
+        photo_id: 914, settings: { [key]: POINT_CURVE_SETTING_KEYS.includes(
+          key as typeof POINT_CURVE_SETTING_KEYS[number]) ? [0, 0, 255, 255] : 1 },
+      })).toBeNull();
+    }
+  });
 
-    const check = (curve: unknown[]) =>
-      validate({ photo_id: '1', settings: { ToneCurvePV2012: curve } });
+  it('rejects malformed point curve payloads before dispatch', () => {
+    const check = (curve: unknown[]) => validateToolArgs('set_develop_settings',
+      { photo_id: '1', settings: { ToneCurvePV2012: curve } }) === null;
 
     expect(check([0, 0, 64, 48, 192, 210, 255, 255])).toBe(true);
     expect(check([0, 0, 255, 255])).toBe(true);
@@ -405,7 +380,7 @@ describe('develop setting schema', () => {
       { items?: { enum?: readonly string[] }; minItems?: number; uniqueItems?: boolean }
     >;
 
-    expect(properties.settings.items?.enum).toEqual(DEVELOP_SETTING_KEYS);
+    expect(properties.settings.items?.enum).toBeUndefined();
     expect(properties.settings.minItems).toBe(1);
     expect(properties.settings.uniqueItems).toBe(true);
   });

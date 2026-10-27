@@ -180,7 +180,7 @@ node tests/e2e/mcp-runner.mjs develop
 
 **What it covers**
 
-- `set_develop_settings` with `Exposure2012: 0.5`, then read back via `get_photo_metadata.developSettings.exposure`, expect ~0.5
+- `set_develop_settings` with `Exposure2012: 0.5`, then read back via `get_photo_metadata` with `sections: ["developSettings"]`, checking `developSettings.exposure`, expect ~0.5
 - Restore to 0
 - `apply_develop_preset` using the first preset returned by `list_develop_presets`
 
@@ -242,7 +242,7 @@ Not yet covered by the runner because it needs two distinct photo IDs.
    ```
 4. Verify on photo 1:
    ```sh
-   node tests/e2e/mcp-runner.mjs tool get_photo_metadata '{"photo_id":"<id1>"}'
+   node tests/e2e/mcp-runner.mjs tool get_photo_metadata '{"photo_id":"<id1>","sections":["developSettings"]}'
    ```
    Expect `developSettings.contrast == 40`, `developSettings.saturation == 20`.
 

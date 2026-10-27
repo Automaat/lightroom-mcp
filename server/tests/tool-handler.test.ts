@@ -4,6 +4,36 @@ import { createCallToolHandler } from '../src/tool-handler.js';
 
 import type { PluginResponse } from '../src/dispatcher.js';
 
+describe('develop setting schema', () => {
+  const invalidCurves = [
+    [0, 0, 128, 120, 255], [0, 0, 128.5, 120, 255, 255],
+    [0, 0, 128, 300, 255, 255], [0, 0, 128, -1, 255, 255],
+    [0, 0], Array.from({ length: 66 }, () => 0),
+  ];
+  const invalidCalls: [string, Record<string, unknown>, string][] = [
+    ['set_develop_settings', { photo_id: 914, settings: { NotAKey: 1 } }, 'NotAKey'],
+    ['copy_develop_settings', { source_id: 914, target_ids: [915], settings: ['NotAKey'] }, 'settings'],
+    ['create_develop_preset', { photo_id: 914, preset_name: 'test', settings: ['NotAKey'] }, 'settings'],
+    ['set_develop_settings', { photo_id: 914, settings: {} }, 'settings'],
+    ['set_develop_settings', { photo_id: 914, settings: { Exposure2012: [0, 0, 255, 255] } }, 'Exposure2012'],
+    ['set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: 1 } }, 'ToneCurvePV2012'],
+    ...invalidCurves.map((curve): [string, Record<string, unknown>, string] =>
+      ['set_develop_settings', { photo_id: 914, settings: { ToneCurvePV2012: curve } }, 'ToneCurvePV2012']),
+  ];
+
+  it.each(invalidCalls)('rejects invalid %s settings before dispatch (%#)', async (name, args, field) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: {} };
+    } });
+    const result = await handler(name, args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(field);
+    expect(calls).toBe(0);
+  });
+});
+
 function makeHandler(opts: {
   ready?: boolean;
   call?: (action: string, params: unknown) => Promise<PluginResponse>;

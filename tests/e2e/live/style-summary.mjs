@@ -19,7 +19,7 @@ async function tool(name, args) {
 }
 
 try {
-  initial = await tool("get_photo_metadata", { photo_id: photoId });
+  initial = await tool("get_photo_metadata", { photo_id: photoId, sections: ["developSettings"] });
   const top = await tool("search_photos", { rating: 5, limit: 1000 });
   assert.equal(top.has_more, false, "test catalog has more than 1000 five-star photos");
   for (const photo of top.photos) {
@@ -54,7 +54,7 @@ try {
       if (initial) await tool("set_rating", { photo_ids: [photoId], rating: initial.rating ?? 0 });
       if (changedRatings.length) await tool("set_rating", { photo_ids: changedRatings, rating: 5 });
       if (initial) {
-        const restored = await tool("get_photo_metadata", { photo_id: photoId });
+        const restored = await tool("get_photo_metadata", { photo_id: photoId, sections: ["developSettings"] });
         assert.equal(restored.rating ?? 0, initial.rating ?? 0);
         assert.equal(restored.developSettings.exposure, initial.developSettings.exposure);
       }
