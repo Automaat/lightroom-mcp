@@ -293,7 +293,8 @@ describe("PluginInfoProvider server task", function()
         end)
 
         it("removes abbreviated Lua source paths containing spaces", function()
-            local handler = assert(load('error("photo_ids is required")',
+            local compile = loadstring or load
+            local handler = assert(compile('error("photo_ids is required")',
                 "@/Users/person/Documents/Lightroom Plug-ins/LightroomMCP.lrplugin/HandlerOrganization.lua"))
             local _, message = pcall(handler)
             assert.is_not_nil(message:match("^%.%.%."))
