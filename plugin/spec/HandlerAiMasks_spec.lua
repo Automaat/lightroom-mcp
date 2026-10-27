@@ -34,8 +34,8 @@ end
 local function setup(opts)
     opts = opts or {}
     local photo = helper.fakePhoto({ id = "1", path = "/1.jpg" })
-    local store = Store.attach(photo, { entries = opts.entries })
-    local calls = { updateAI = 0, modules = {} }
+    local store = Store.attach(photo, { entries = opts.entries, processVersion = opts.processVersion })
+    local calls = { updateAI = 0, modules = {}, catalogs = 0 }
     if not opts.withoutUpdateAi then
         photo.updateAISettings = function()
             calls.updateAI = calls.updateAI + 1
@@ -49,7 +49,7 @@ local function setup(opts)
 
     helper.installImport({
         LrApplication = {
-            activeCatalog = function() return catalog end,
+            activeCatalog = function() calls.catalogs = calls.catalogs + 1; return catalog end,
             versionTable = function() return opts.version or { major = 15, minor = 6 } end,
         },
         LrApplicationView = {
@@ -62,18 +62,18 @@ local function setup(opts)
         LrLogger = helper.defaultLrLogger(),
     })
     for _, name in ipairs({
-        "HandlerAiMasks", "AiMaskParts", "GuardedMaskWrite", "DevelopSession", "Log",
+        "HandlerMaskCreate", "HandlerAiMasks", "AiMaskParts", "GuardedMaskWrite", "DevelopSession", "Log",
     }) do
         package.loaded[name] = nil
     end
-    return require 'HandlerAiMasks', store, calls
+    return require 'HandlerMaskCreate', store, calls
 end
 
-describe("HandlerAiMasks.createPeopleMask", function()
+describe("HandlerMaskCreate.createMask people", function()
     it("writes one all-people mask per part and returns the ids", function()
         local Handler, store, calls = setup()
 
-        local result = Handler.createPeopleMask({ photo_id = "1", parts = { "hair", "face_skin" } })
+        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "hair", "face_skin" } })
 
         local written = store.writes[1]
         assert.are.equal(2, #written)
@@ -99,7 +99,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
     it("writes entire_person as an all-people part and keeps the masks already on the photo", function()
         local Handler, store = setup({ entries = { existingGradient() } })
 
-        local result = Handler.createPeopleMask({ photo_id = "1", parts = { "face_skin", "entire_person" } })
+        local result = Handler.createMask({ type = "people", photo_id = "1", parts = { "face_skin", "entire_person" } })
 
         local written = store.writes[1]
         assert.are.equal(3, #written)
@@ -115,7 +115,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
         local Handler, store = setup({ entries = { existingGradient() }, absentCategories = { [5] = true } })
 
         local message = errorOf(function()
-            Handler.createPeopleMask({ photo_id = "1", parts = { "face_skin", "hair" } })
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "face_skin", "hair" } })
         end)
 
         assert.matches("found no hair on any person in photo 1", message, 1, true)
@@ -135,7 +135,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
             { { photo_id = "1", parts = { "hair" }, person = 2 }, "person is not supported" },
             { { parts = { "hair" } }, "photo_id is required" },
         }) do
-            assert.matches(case[2], errorOf(function() Handler.createPeopleMask(case[1]) end), 1, true)
+            assert.matches(case[2], errorOf(function() case[1].type = "people"; Handler.createMask(case[1]) end), 1, true)
         end
         assert.are.equal(0, store.attempts)
         assert.are.equal(0, store.reads)
@@ -146,7 +146,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
         local Handler, store = setup()
 
         assert.matches("Photo not found: 99",
-            errorOf(function() Handler.createPeopleMask({ photo_id = "99", parts = { "hair" } }) end), 1, true)
+            errorOf(function() Handler.createMask({ type = "people", photo_id = "99", parts = { "hair" } }) end), 1, true)
         assert.are.equal(0, store.attempts)
     end)
 
@@ -154,7 +154,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
         local Handler, store = setup({ withoutUpdateAi = true })
 
         assert.matches("needs Lightroom Classic 13.3 or later",
-            errorOf(function() Handler.createPeopleMask({ photo_id = "1", parts = { "hair" } }) end), 1, true)
+            errorOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end), 1, true)
         assert.are.equal(0, store.attempts)
     end)
 
@@ -162,14 +162,14 @@ describe("HandlerAiMasks.createPeopleMask", function()
         local Handler, store = setup({ version = { major = 14, minor = 5 } })
 
         assert.matches("not a version this tool has been tested on",
-            errorOf(function() Handler.createPeopleMask({ photo_id = "1", parts = { "hair" } }) end), 1, true)
+            errorOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end), 1, true)
         assert.are.equal(0, store.attempts)
     end)
 
     it("removes the new masks when the AI update call fails", function()
         local Handler, store = setup({ updateFails = true })
 
-        local message = errorOf(function() Handler.createPeopleMask({ photo_id = "1", parts = { "hair" } }) end)
+        local message = errorOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
 
         assert.matches("Lightroom could not compute the masks", message, 1, true)
         assert.are.equal(0, #store.entries)
@@ -178,7 +178,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
     it("leaves the masks alone and says so when Lightroom never finishes computing", function()
         local Handler, store, calls = setup({ neverCompute = true })
 
-        local message = errorOf(function() Handler.createPeopleMask({ photo_id = "1", parts = { "hair" } }) end)
+        local message = errorOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
 
         assert.matches("has not finished computing", message, 1, true)
         assert.matches("can freeze Lightroom", message, 1, true)
@@ -191,7 +191,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
         local Handler, store = setup({ dropLastEntry = true })
 
         local message = errorOf(function()
-            Handler.createPeopleMask({ photo_id = "1", parts = { "hair", "lips" } })
+            Handler.createMask({ type = "people", photo_id = "1", parts = { "hair", "lips" } })
         end)
 
         assert.matches("Lightroom kept 1 of the 2 requested masks", message, 1, true)
@@ -201,7 +201,7 @@ describe("HandlerAiMasks.createPeopleMask", function()
     it("does the catalog reads and writes only inside their gates", function()
         local Handler, store = setup()
 
-        Handler.createPeopleMask({ photo_id = "1", parts = { "hair" } })
+        Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } })
 
         assert.are.equal(0, store.readsOutsideGate)
         assert.are.equal(0, store.writesOutsideGate)
@@ -212,18 +212,18 @@ describe("HandlerAiMasks.createPeopleMask", function()
         local DevelopSession = require 'DevelopSession'
         local message
         DevelopSession.run("other_tool", nil, false, function()
-            message = errorOf(function() Handler.createPeopleMask({ photo_id = "1", parts = { "hair" } }) end)
+            message = errorOf(function() Handler.createMask({ type = "people", photo_id = "1", parts = { "hair" } }) end)
         end)
 
         assert.matches("other_tool is already running", message, 1, true)
     end)
 end)
 
-describe("HandlerAiMasks.createLandscapeMask", function()
+describe("HandlerMaskCreate.createMask landscape", function()
     it("writes one landscape mask per category and returns the ids", function()
         local Handler, store, calls = setup()
 
-        local result = Handler.createLandscapeMask({ photo_id = "1", categories = { "sky", "water", "vegetation" } })
+        local result = Handler.createMask({ type = "landscape", photo_id = "1", categories = { "sky", "water", "vegetation" } })
 
         local written = store.writes[1]
         assert.are.equal(3, #written)
@@ -248,7 +248,7 @@ describe("HandlerAiMasks.createLandscapeMask", function()
         local Handler, store = setup({ entries = { existingGradient() }, absentCategories = { [50007] = true } })
 
         local message = errorOf(function()
-            Handler.createLandscapeMask({ photo_id = "1", categories = { "sky", "water" } })
+            Handler.createMask({ type = "landscape", photo_id = "1", categories = { "sky", "water" } })
         end)
 
         assert.matches("found no water in photo 1", message, 1, true)
@@ -265,9 +265,54 @@ describe("HandlerAiMasks.createLandscapeMask", function()
             { { photo_id = "1", categories = {} }, "category must be a non-empty list" },
             { { photo_id = "1" }, "category must be a non-empty list" },
         }) do
-            assert.matches(case[2], errorOf(function() Handler.createLandscapeMask(case[1]) end), 1, true)
+            assert.matches(case[2], errorOf(function() case[1].type = "landscape"; Handler.createMask(case[1]) end), 1, true)
         end
         assert.are.equal(0, store.attempts)
         assert.are.equal(0, store.reads)
+    end)
+end)
+
+describe("HandlerMaskCreate.createMask AI selectors", function()
+    it("rejects selectors for another type and unsupported adjustments before catalog access", function()
+        local Handler, store, calls = setup()
+        for _, case in ipairs({
+            { { type = "sky", parts = { "hair" } }, "parts" },
+            { { type = "subject", categories = { "sky" } }, "categories" },
+            { { type = "background", parts = {} }, "parts" },
+            { { type = "people", parts = { "hair" }, categories = { "sky" } }, "categories" },
+            { { type = "landscape", categories = { "sky" }, parts = { "hair" } }, "parts" },
+            { { type = "people", parts = { "hair" }, adjustments = {} }, "adjustments" },
+            { { type = "landscape", categories = { "sky" }, adjustments = { exposure = 1 } }, "adjustments" },
+        }) do
+            case[1].photo_id = "1"
+            assert.matches(case[2], errorOf(function() Handler.createMask(case[1]) end), 1, true)
+        end
+        assert.are.equal(0, calls.catalogs)
+        assert.are.equal(0, calls.updateAI)
+        assert.are.equal(0, store.reads)
+        assert.are.equal(0, store.attempts)
+    end)
+
+    it("keeps both guarded types off untested process versions without writing", function()
+        for _, typeName in ipairs({ "people", "landscape" }) do
+            local Handler, store, calls = setup({ processVersion = "11.0" })
+            local args = { photo_id = "1", type = typeName }
+            if typeName == "people" then args.parts = { "hair" } else args.categories = { "sky" } end
+            assert.matches("process version", errorOf(function() Handler.createMask(args) end), 1, true)
+            assert.are.equal(0, store.attempts)
+            assert.are.equal(0, calls.updateAI)
+        end
+    end)
+
+    it("keeps both guarded types off untested Lightroom versions without writing", function()
+        for _, typeName in ipairs({ "people", "landscape" }) do
+            local Handler, store, calls = setup({ version = { major = 14, minor = 5 } })
+            local args = { photo_id = "1", type = typeName }
+            if typeName == "people" then args.parts = { "hair" } else args.categories = { "sky" } end
+            assert.matches("not a version this tool has been tested on",
+                errorOf(function() Handler.createMask(args) end), 1, true)
+            assert.are.equal(0, store.attempts)
+            assert.are.equal(0, calls.updateAI)
+        end
     end)
 end)

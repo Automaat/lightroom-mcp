@@ -43,6 +43,20 @@ function describe(error: { instancePath?: string; message?: string; params?: unk
   return field ? `${field} ${what}` : what;
 }
 
+function maskSelectorProblem(args: unknown): string | null {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  const values = args as Record<string, unknown>;
+  for (const [field, type] of [["parts", "people"], ["categories", "landscape"]]) {
+    if (values[field] !== undefined && values.type !== type) return `${field} requires type ${type}`;
+  }
+  if (values.type === "people" || values.type === "landscape") {
+    if (values.adjustments !== undefined) return "adjustments is not supported for people or landscape";
+    const field = values.type === "people" ? "parts" : "categories";
+    if (values[field] === undefined) return `${field} is required for type ${values.type}`;
+  }
+  return null;
+}
+
 /**
  * Returns null for valid arguments, or a message naming invalid fields.
  * Unknown tool names pass through so the dispatcher keeps reporting them.
@@ -50,6 +64,8 @@ function describe(error: { instancePath?: string; message?: string; params?: unk
 export function validateToolArgs(name: string, args: unknown): string | null {
   const validate = validators.get(name);
   if (!validate) return null;
+  const selectorProblem = name === "create_mask" ? maskSelectorProblem(args) : null;
+  if (selectorProblem) return `Invalid arguments for ${name}: ${selectorProblem}`;
   if (validate(args ?? {})) {
     const params = (args ?? {}) as Record<string, unknown>;
     // Keep root schemas compatible with Claude Code; enforce relations here.

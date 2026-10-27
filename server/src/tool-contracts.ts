@@ -25,6 +25,7 @@ const MAX_MASK_DELETE_IDS = 100;
 const MAX_MASK_BATCH_PHOTO_IDS = 200;
 
 const MASK_TYPES = ["subject", "sky", "background"] as const;
+const CREATE_MASK_TYPES = [...MASK_TYPES, "people", "landscape"] as const;
 const MASK_COMBINE_OPERATIONS = ["add", "subtract", "intersect"] as const;
 
 const PEOPLE_MASK_PARTS = [
@@ -2041,7 +2042,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerMaskCreate.createMask",
     description:
-      "Create a detected Subject, Sky or Background mask (Lightroom Classic 11+) and return mask_id; existing masks stay unchanged. Optional local adjustments default every omitted slider to 0, never inheriting the Masking panel. Exposure is -4 to 4. Nothing found fails after about 30 s without a new mask, but a \"No sky detected\" modal alert blocks all Develop calls until someone clicks OK in Lightroom. Shared Develop restoration and history rules apply.",
+      "Create Subject, Sky or Background (Lightroom Classic 11+), or People/Landscape masks (15.6; shared guarded-write rules). Returns mask_id and mask or masks per part/category. Existing masks stay unchanged; missing parts remove all new masks. Shared restoration/history rules apply. Detection can leave a \"No sky detected\" modal alert blocking Develop until OK is clicked. People/Landscape computation takes up to 120 s without opening Develop; an \"AI process is running\" alert can need OK. See type, parts, categories and adjustments for limits.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2049,14 +2050,30 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         photo_id: photoIdSchema("Photo ID or file path"),
         type: {
           type: "string",
-          enum: [...MASK_TYPES],
-          description: "What Lightroom should select: subject, sky or background",
+          enum: [...CREATE_MASK_TYPES],
+          description: "Subject, Sky or Background; people requires parts and landscape requires categories.",
         },
         adjustments: {
           type: "object",
           additionalProperties: false,
           properties: MASK_ADJUSTMENT_PROPERTIES,
-          description: "Local adjustment sliders for the new mask. Omitted sliders start at 0.",
+          description: "Subject/Sky/Background only. Every omitted slider starts at 0, never inherits Masking panel values. People/Landscape reject this field; use set_mask_adjustments afterwards.",
+        },
+        parts: {
+          type: "array",
+          items: { type: "string", enum: [...PEOPLE_MASK_PARTS] },
+          minItems: 1,
+          maxItems: PEOPLE_MASK_PARTS.length,
+          uniqueItems: true,
+          description: "People only: each part becomes its own mask. No single-person option: Lightroom ignores written person ids and masks the first person. A missing person or part removes all new masks.",
+        },
+        categories: {
+          type: "array",
+          items: { type: "string", enum: [...LANDSCAPE_MASK_CATEGORIES] },
+          minItems: 1,
+          maxItems: LANDSCAPE_MASK_CATEGORIES.length,
+          uniqueItems: true,
+          description: "Landscape only: each category becomes its own mask, often in about 15 s. A missing region removes all new masks. Unknown/duplicate categories/parts fail before access.",
         },
       },
       required: ["photo_id", "type"],
@@ -2090,54 +2107,6 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_ids", "type"],
-    },
-  },
-  {
-    name: "create_people_mask",
-    title: "Create people mask",
-    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    luaHandler: "HandlerAiMasks.createPeopleMask",
-    description:
-      "Create one People mask per part (Lightroom Classic 15.6; shared guarded-write rules apply). Parts are listed in the schema; each covers all people. No single-person option: Lightroom ignores written person ids and masks the first person. Returns mask_id for the first mask and masks with each part/id. Missing person or part fails and removes all new masks; unknown/duplicate parts fail before access. Computes selection for up to 120 s without opening Develop. If masks are open in Develop, an \"AI process is running\" alert can require clicking OK in Lightroom. New masks have no adjustments; use set_mask_adjustments.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
-        parts: {
-          type: "array",
-          items: { type: "string", enum: [...PEOPLE_MASK_PARTS] },
-          minItems: 1,
-          maxItems: PEOPLE_MASK_PARTS.length,
-          uniqueItems: true,
-          description: "Parts of a person to select; each part becomes its own mask",
-        },
-      },
-      required: ["photo_id", "parts"],
-    },
-  },
-  {
-    name: "create_landscape_mask",
-    title: "Create landscape mask",
-    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-    luaHandler: "HandlerAiMasks.createLandscapeMask",
-    description:
-      "Create one Landscape mask per category (Lightroom Classic 15.6; shared guarded-write rules apply). Categories are listed in the schema. Returns mask_id for the first mask and masks with each category/id. Any missing region fails and removes all new masks; unknown/duplicate categories fail before access. Computes selection without opening Develop, up to 120 s (often about 15 s). If masks are open in Develop, an \"AI process is running\" alert can require clicking OK in Lightroom. New masks have no adjustments; use set_mask_adjustments.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
-        categories: {
-          type: "array",
-          items: { type: "string", enum: [...LANDSCAPE_MASK_CATEGORIES] },
-          minItems: 1,
-          maxItems: LANDSCAPE_MASK_CATEGORIES.length,
-          uniqueItems: true,
-          description: "Landscape categories to select; each category becomes its own mask",
-        },
-      },
-      required: ["photo_id", "categories"],
     },
   },
   {
