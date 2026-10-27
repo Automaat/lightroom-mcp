@@ -174,9 +174,9 @@ If you'd rather drop the plugin in by hand:
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright for one photo; add `sections: ["developSettings"]` for develop settings. |
+| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location and copyright for one `photo_id` or up to 100 `photo_ids`. Batch results return `photos` in request order and `missing` identifiers. Pass `sections: ["developSettings"]` to include develop settings for each. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
-| `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_preview` | JPEG preview of one photo (raw files too), optionally cropped to a rendered-frame region. `size: "cull"` requests 512 for culling; `"detail"` requests 1024 for inspecting details. Numeric sizes 64–2048 and the default 512 remain supported. |
 | `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |
@@ -230,11 +230,11 @@ If you'd rather drop the plugin in by hand:
 | `update_spot` | Change a Heal spot's uppercase `params.Opacity` from 0 to 1 |
 | `delete_spot` | Delete one Remove spot by index with `confirm: true` |
 | `list_masks` | List a photo's masks with their ids, names, hidden state and component tools, and the stored range of each range mask tool, including the color sample's l, a and b (LrC 11+); briefly opens the photo in Develop. |
-| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_gradient_mask` | Place a linear or radial gradient mask from normalized image coordinates, as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `update_gradient_mask` | Move or reshape an existing linear or radial gradient by tool id; same guarded write. |
-| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_brush_mask` | Paint a brush mask from strokes (points in normalized image coordinates, radius, flow, feather, density, erase), as a new mask or a component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `add_brush_strokes` | Paint more strokes into an existing brush by tool id; same guarded write. |
-| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
+| `create_range_mask` | Create a luminance, color or depth range mask (one color sample point given as Lightroom's own l, a and b, which `list_masks` reads from a color range made in Lightroom, not as sRGB, or copied from an existing color range with `copy_sample_from`; depth needs a photo with device depth such as an iPhone Portrait HEIC), as a new mask or an add/subtract component of one; optional `adjustments` sets a new mask's sliders in the same call (cannot combine with `mask_id`); guarded write, LrC 15.6 only; briefly opens the photo in Develop. |
 | `delete_masks` | Delete masks or component tools by id, or all masks, from a photo (LrC 11+); an unknown id deletes nothing; briefly opens the photo in Develop. |
 | `delete_empty_masks` | Delete all empty masks from many photos and report how many photos changed (LrC 14+); no Develop switch. |
 | `set_mask_adjustments` | Change any subset of a mask's local sliders (`local_Exposure`, `local_Contrast`, ...) by mask id; out-of-range values are rejected before anything is written (LrC 11+); briefly opens the photo in Develop. |

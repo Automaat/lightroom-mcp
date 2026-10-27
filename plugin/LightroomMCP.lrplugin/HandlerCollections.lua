@@ -32,7 +32,6 @@ function CollectionsHandler.listCollections(args)
                 table.insert(all, {
                     collection = coll,
                     name = prefix .. coll:getName(),
-                    parent = collSet:getName(),
                     type = coll:type(),
                     isSmartCollection = coll:isSmartCollection(),
                 })
@@ -451,7 +450,7 @@ function CollectionsHandler.getCollectionPhotos(args)
     local total = #photos
 
     local last = math.min(offset + limit, total)
-    local results = PhotoSummary.page(catalog, photos, offset + 1, last)
+    local results = PhotoSummary.page(catalog, photos, offset + 1, last, args.include_path == true)
 
     Log.info(string.format("Collection %s has %d photos, returning %d (offset=%d, limit=%d)",
         args.collection_name, total, #results, offset, limit))

@@ -60,7 +60,7 @@ function FoldersHandler.getFolderPhotos(args)
     if not target then error("Folder not found: " .. args.folder_path) end
     local photos = target:getPhotos(args.include_subfolders == true) or {}
     local limit, offset = pageBounds(args)
-    local results = PhotoSummary.page(catalog, photos, offset + 1, math.min(offset + limit, #photos))
+    local results = PhotoSummary.page(catalog, photos, offset + 1, math.min(offset + limit, #photos), true)
     return { count = #photos, photos = results, has_more = offset + #results < #photos }
 end
 

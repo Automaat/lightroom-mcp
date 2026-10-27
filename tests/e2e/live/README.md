@@ -86,6 +86,15 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 ## Verification matrix
 
+For `get_photo_preview.region`, compare one `chart80` patch with the same pixels
+from a full-frame preview at the source size reported by `requested_size`.
+Require mean RGB differences within 0.03 per channel and a flat patch interior.
+On `orient_6`, crop a displayed corner and compare with
+`expectedDisplayedCorners(6)`. Record full-frame, small-preview and region
+dimensions and image-token estimates: a region requests a larger source before
+cropping, capped at size 2048. Verify omitted-region bytes and metadata retain
+their full-frame behavior, and malformed regions fail before rendering.
+
 `node tests/e2e/live/duplicate-groups.mjs` reads the two ARW fixtures and `wide_plain`, derives the raw capture gap from `find_duplicate_groups.photos`, and checks that only the ARWs group at that gap. It verifies ratings, flags, keyword paths and reported collections stay unchanged. `get_photo_metadata.dateTimeOriginal` remains a display string and is never parsed. The script reads the marked throwaway catalog without changing its shared fixtures.
 
 `node tests/e2e/live/photo-stats.mjs` checks `get_photo_stats` on untouched `ramp256` and `wide_plain`: each ramp quarter holds 25 percent of the histogram mass within 5 points; plain gray has mean luminance 110 within 4 and no clipping. The script only reads the marked throwaway catalog.
@@ -108,10 +117,10 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 |---|---|---|
 | `list_masks` | any photo with masks | Ids are reusable for later calls. A range made in the Lightroom UI appears only after Lightroom saved it. Module, view source and selection are restored. Empty list for a photo without masks. |
 | `create_gradient_mask` linear | `orient_1`..`orient_8`, `wide_plain`, `pano` | On every orientation the brightening lands on the side the displayed start point is on (`regionDeltas` top vs bottom, left vs right). A cropped and rotated copy (set `Crop*` and `CropAngle` on a duplicate): coordinates stay relative to the uncropped frame. |
-| `create_gradient_mask` radial | `wide_plain`, `orient_1`..`orient_8`, `pano` | IoU against `ellipseInside` at 0 feather is at least 0.8 (0.99 measured). Large angles: rotation 60 and -60 differ, the opposite rotation scores clearly lower, rotation past 45 is reported as swapped width/height with the angle turned back by 90. Width/height are fractions of the image, so `pano` stays 10:1. `area: outside` is the complement. |
+| `create_gradient_mask` radial | `wide_plain`, `orient_1`..`orient_8`, `pano` | IoU against `ellipseInside` at 0 feather is at least 0.8 (0.99 measured). Large angles: rotation 60 and -60 differ, the opposite rotation scores clearly lower, rotation past 45 is reported as swapped width/height with the angle turned back by 90. Width/height are fractions of the image, so `pano` stays 10:1. `area: outside` is the complement.  With the create call's `adjustments: {exposure: 1}`, verify `local_Exposure` reads back as 1 and the selected region brightens without a separate `set_mask_adjustments` call; the create call finishes within 30 s. |
 | `update_gradient_mask` | same as create | Only the given fields change, tool/mask ids and adjustments survive. |
-| `create_brush_mask`, `add_brush_strokes` | `wide_plain`, `orient_6` | Delta band follows the stroke path in the displayed frame. Radius is a fraction of the long edge. Erase strokes remove earlier paint. Brush on a cropped photo. |
-| `create_range_mask` luminance | `ramp256` | `patchDeltas` over the 256 patches: inside `[min, max]` full change, outside none, falloff ramps linearly, ramps clipped at 0 and 1. Band narrower than 0.01 refused. |
+| `create_brush_mask`, `add_brush_strokes` | `wide_plain`, `orient_6` | Delta band follows the stroke path in the displayed frame. Radius is a fraction of the long edge. Erase strokes remove earlier paint. Brush on a cropped photo.  With the create call's `adjustments: {exposure: 1}`, verify `local_Exposure` reads back as 1 and the selected region brightens without a separate `set_mask_adjustments` call; the create call finishes within 30 s. |
+| `create_range_mask` luminance | `ramp256` | `patchDeltas` over the 256 patches: inside `[min, max]` full change, outside none, falloff ramps linearly, ramps clipped at 0 and 1. Band narrower than 0.01 refused.  With the create call's `adjustments: {exposure: 1}`, verify `local_Exposure` reads back as 1 and the selected region brightens without a separate `set_mask_adjustments` call; the create call finishes within 30 s. |
 | `create_range_mask` color | `chart80` | Selection follows Lightroom's `l a b` triple, not sRGB (#338/#339): take the triple from a range clicked in the UI (`list_masks`) or use `copy_sample_from`. Exactly one sample point: two crash Lightroom and crash-loop the catalog. |
 | `create_range_mask` depth | `LRMCP_LIVE_DEPTH_HEIC` | Range on near vs far regions of the depth map. Fails cleanly and leaves the photo unchanged on any photo without depth. Skip the check when the env var is unset. |
 | `create_mask` subject/sky/background | `arw_14bit`, `arw_12bit`, `LRMCP_LIVE_SUBJECT_PHOTO` | Sky mask covers the sky region of the preview. "No X detected" modal blocks Develop until dismissed via AX. |

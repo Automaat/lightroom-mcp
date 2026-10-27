@@ -93,6 +93,24 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
+  it('get_photo_preview describes named uses and approximate token costs', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
+    const sizeSchema = tool?.inputSchema.properties?.size as { description: string };
+    const guidance = `${tool?.description} ${sizeSchema.description}`;
+    expect(guidance).toMatch(/cull.*culling.*650 tokens/);
+    expect(guidance).toMatch(/detail.*details.*2\.5k tokens/);
+    expect(guidance).toContain('earlier Claude estimates');
+    expect(guidance).toContain('width/height/bytes');
+    expect(guidance).toContain('each turn in history');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    for (const size of ['cull', 'detail', 64, 1024, 2048]) {
+      expect(validate({ photo_id: 914, size })).toBe(true);
+    }
+    for (const size of ['huge', 5000]) {
+      expect(validate({ photo_id: 914, size })).toBe(false);
+    }
+  });
+
   it('contains exactly 77 tools', () => {
     expect(TOOL_DEFINITIONS).toHaveLength(77);
   });
@@ -141,13 +159,30 @@ describe('listToolsHandler', () => {
   });
 });
 
+describe('photo list schemas', () => {
+  it.each([
+    ['search_photos', {}],
+    ['get_selected_photos', {}],
+    ['get_collection_photos', { collection_name: 'Trips / 2026 / Paris' }],
+  ])('%s accepts an optional path opt-in and rejects unknown arguments', (name, args) => {
+    const tool = TOOL_DEFINITIONS.find((entry) => entry.name === name)!;
+    const validate = new Ajv({ strict: false }).compile(tool.inputSchema);
+
+    expect(validate(args)).toBe(true);
+    expect(validate({ ...args, include_path: true })).toBe(true);
+    expect(validate({ ...args, include_path: false })).toBe(true);
+    expect(validate({ ...args, include_path: 'true' })).toBe(false);
+    expect(validate({ ...args, include_path: 1 })).toBe(false);
+    expect(validate({ ...args, unknown_field: true })).toBe(false);
+  });
+});
+
 describe('tool required fields', () => {
   function toolRequired(name: string): string[] | undefined {
     return TOOL_DEFINITIONS.find((t) => t.name === name)?.inputSchema.required as string[] | undefined;
   }
 
   it.each<[string, string[]]>([
-    ['get_photo_metadata', ['photo_id']],
     ['get_photo_preview', ['photo_id']],
     ['set_gps', ['photo_ids', 'latitude', 'longitude']],
     ['set_location', ['photo_ids']],
@@ -538,10 +573,11 @@ describe('create_smart_collection schema', () => {
   });
 
   it('shares every search filter definition without pagination', () => {
-    const { limit, offset, ...filters } = search.inputSchema.properties!;
+    const { limit, offset, include_path, ...filters } = search.inputSchema.properties!;
     const { name, parent, ...savedFilters } = smart.inputSchema.properties!;
     expect(limit).toBeDefined();
     expect(offset).toBeDefined();
+    expect(include_path).toBeDefined();
     expect(name).toBeDefined();
     expect(parent).toBeDefined();
     expect(savedFilters).toEqual(filters);

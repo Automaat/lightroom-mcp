@@ -293,7 +293,7 @@ async function main() {
     const destinationDir = path.join(outputRoot, checkpointName);
 
     await run("find a source photo without changing it", async () => {
-      const r = await c.callTool("search_photos", { limit: 1 });
+      const r = await c.callTool("search_photos", { limit: 1, include_path: true });
       checkTrue("not error", !r.isError, r.text);
       ctx.firstPhoto = r.parsed.photos?.[0];
       checkTrue("photo exists", !!ctx.firstPhoto, "catalog appears empty");
@@ -638,9 +638,9 @@ async function main() {
     // Phase 7b — export to /tmp, verify file + dimensions.
     // Prefer a real photo (rating>=1 typically means actual catalog content,
     // skipping test fixtures like synthetic PNGs that LR refuses to render).
-    let search = await c.callTool("search_photos", { rating: 5, limit: 1 });
+    let search = await c.callTool("search_photos", { rating: 5, limit: 1, include_path: true });
     if (search.isError || !search.parsed.photos?.length) {
-      search = await c.callTool("search_photos", { limit: 1 });
+      search = await c.callTool("search_photos", { limit: 1, include_path: true });
     }
     const photo = search.parsed.photos?.[0];
     if (photo) {

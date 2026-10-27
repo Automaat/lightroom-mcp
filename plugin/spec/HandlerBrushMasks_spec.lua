@@ -41,13 +41,30 @@ local function setup(opts)
     catalog.getActiveSources = function() return { "folder" } end
     catalog.setActiveSources = function() end
 
+    local selectedMask
     local controller = {
         getAllMasks = function()
             calls.getAllMasks = calls.getAllMasks + 1
             if opts.hideNewMasks then return {} end
             return Store.maskListOf(storeOf[active].entries)
         end,
-        selectMask = function() end,
+        selectMask = function(id) selectedMask = id end,
+        getSelectedMask = function() return selectedMask end,
+        getRange = function(name)
+            if opts.narrowRange then return -0.5, 0.5 end
+            if name == "local_Exposure" then return -4, 4 end
+            return -100, 100
+        end,
+        getValue = function(name)
+            if opts.wrongAdjustment then return 0 end
+            for _, entry in ipairs(storeOf[active].entries) do
+                if entry.CorrectionID == selectedMask then
+                    if name == "local_Exposure" then return (entry.LocalExposure2012 or 0) * 4 end
+                    if name == "local_Contrast" then return (entry.LocalContrast2012 or 0) * 100 end
+                end
+            end
+            return 0
+        end,
         selectMaskTool = function() end,
     }
     if opts.withoutMaskApi then controller = {} end
@@ -71,6 +88,7 @@ local function setup(opts)
     })
     for _, name in ipairs({
         "HandlerBrushMasks", "BrushStrokes", "GuardedMaskWrite", "ImageFrame", "DevelopSession", "Log",
+        "MaskCreationAdjustments", "MaskSelection", "LocalSliders",
     }) do
         package.loaded[name] = nil
     end
@@ -99,6 +117,52 @@ local function existingBrush()
 end
 
 describe("HandlerBrushMasks.createBrushMask", function()
+    it("writes requested adjustments with the geometry in one Develop session", function()
+        local Handler, stores, calls = setup()
+        local result = Handler.createBrushMask(createRequest({ adjustments = { exposure = 1, contrast = -25 } }))
+        assert.is_true(result.success)
+        assert.are.equal(1, #stores["1"].writes)
+        assert.are.equal(0.25, stores["1"].entries[1].LocalExposure2012)
+        assert.are.equal(-0.25, stores["1"].entries[1].LocalContrast2012)
+        assert.is_nil(stores["1"].entries[1].LocalTemperature)
+        assert.are.same({ "develop", "library" }, calls.modules)
+    end)
+
+    it("rejects empty, unknown, out-of-range and existing-mask adjustments before writes", function()
+        for _, adjustments in ipairs({ {}, { unknown = 1 }, { exposure = 5 }, { exposure = 0 / 0 } }) do
+            local Handler, stores = setup()
+            assert.matches("adjust", errorOf(function()
+                Handler.createBrushMask(createRequest({ adjustments = adjustments }))
+            end))
+            assert.are.equal(0, #stores["1"].writes)
+        end
+        local Handler, stores = setup()
+        assert.matches("mask_id", errorOf(function()
+            Handler.createBrushMask(createRequest({ mask_id = "existing", adjustments = { exposure = 1 } }))
+        end))
+        assert.are.equal(0, #stores["1"].writes)
+    end)
+
+    it("restores all previous masks when the SDK adjustment read-back differs", function()
+        local previous = { correction("Existing", { Store.linearComponent({ MaskID = "C1T1" }) },
+            { CorrectionID = "C1" }) }
+        local Handler, stores = setup({ wrongAdjustment = true, photos = { { id = "1", entries = previous } } })
+        assert.matches("restored", errorOf(function()
+            Handler.createBrushMask(createRequest({ adjustments = { exposure = 1 } }))
+        end))
+        assert.are.same(previous, stores["1"].entries)
+        assert.are.equal(2, #stores["1"].writes)
+    end)
+
+    it("rejects a narrower live slider range before writing", function()
+        local Handler, stores = setup({ narrowRange = true })
+        assert.matches("slider range", errorOf(function()
+            Handler.createBrushMask(createRequest({ adjustments = { exposure = 1 } }))
+        end))
+        assert.are.same({}, stores["1"].entries)
+        assert.are.equal(0, #stores["1"].writes)
+    end)
+
     it("paints a new brush mask and returns its ids", function()
         local Handler, stores = setup()
 
