@@ -86,6 +86,8 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 ## Verification matrix
 
+For rating and flag changes, use `set_rating_and_flag` with `photo_ids` and either field or both. On a disposable copy, set `rating: 3` and `flag: "pick"`, read back `rating` and `pickStatus` with `get_photo_metadata`, then restore both original values. Rating `0` and flag `"none"` clear their fields; an omitted field stays unchanged.
+
 For `get_photo_preview.region`, compare one `chart80` patch with the same pixels
 from a full-frame preview at the source size reported by `requested_size`.
 Require mean RGB differences within 0.03 per channel and a flat patch interior.
