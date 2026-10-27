@@ -157,7 +157,7 @@ describe('validateToolArgs', () => {
     expect(invalidSection).toContain('sections');
     expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
-    expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 3 })).toBeNull();
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: 3 })).toBeNull();
     expect(validateToolArgs('search_photos', {})).toBeNull();
   });
 
@@ -670,8 +670,8 @@ describe('validateToolArgs', () => {
   });
 
   it('enforces documented ranges and types', () => {
-    expect(validateToolArgs('set_rating', { photo_ids: [914], rating: 99 })).toContain('rating');
-    expect(validateToolArgs('set_rating', { photo_ids: [914], rating: '3' })).toContain('rating');
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: 99 })).toContain('rating');
+    expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: '3' })).toContain('rating');
     expect(validateToolArgs('search_photos', { limit: 'many' })).toContain('limit');
     expect(validateToolArgs('export_photos', {
       photo_ids: [914],
@@ -698,10 +698,10 @@ describe('validateToolArgs', () => {
   it('accepts only pick, reject or none as a flag', () => {
     const base = { photo_ids: [914] };
 
-    expect(validateToolArgs('set_flag', { ...base, flag: 'pick' })).toBeNull();
-    expect(validateToolArgs('set_flag', { ...base, flag: 'none' })).toBeNull();
-    expect(validateToolArgs('set_flag', { ...base, flag: 'rejected' })).toContain('flag');
-    expect(validateToolArgs('set_flag', { ...base, flag: -1 })).toContain('flag');
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: 'pick' })).toBeNull();
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: 'none' })).toBeNull();
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: 'rejected' })).toContain('flag');
+    expect(validateToolArgs('set_rating_and_flag', { ...base, flag: -1 })).toContain('flag');
   });
 
   it('accepts IPTC location strings and rejects other types or unknown fields', () => {
@@ -752,14 +752,15 @@ describe('validateToolArgs', () => {
   });
 
   it('reports a missing required field', () => {
-    const msg = validateToolArgs('set_rating', { photo_ids: [914] });
+    const msg = validateToolArgs('set_rating_and_flag', { photo_ids: [914] });
 
-    expect(msg).toContain("required property 'rating'");
+    expect(msg).toContain("rating");
+    expect(msg).toContain("flag");
   });
 
   it('treats missing arguments as an empty object', () => {
     expect(validateToolArgs('search_photos', undefined)).toBeNull();
-    expect(validateToolArgs('set_rating', undefined)).toContain('required property');
+    expect(validateToolArgs('set_rating_and_flag', undefined)).toContain('required property');
   });
 
   it('reports a violation that has no field path', () => {

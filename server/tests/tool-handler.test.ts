@@ -46,6 +46,47 @@ function makeHandler(opts: {
   });
 }
 
+describe('set_rating_and_flag', () => {
+  const invalid: Array<[Record<string, unknown>, string]> = [
+    [{ photo_ids: [914] }, 'rating'],
+    [{ photo_ids: [914], rating: 6, flag: 'pick' }, 'rating'],
+    [{ photo_ids: [914], rating: '3', flag: 'pick' }, 'rating'],
+    [{ photo_ids: [914], rating: 3, flag: 'rejected' }, 'flag'],
+    [{ photo_ids: [914], flag: false }, 'flag'],
+    [{ photo_ids: [], rating: 3 }, 'photo_ids'],
+    [{ photo_ids: [914], rating: 3, label: 'red' }, 'label'],
+  ];
+
+  it.each(invalid)('rejects invalid arguments before dispatch (%#)', async (args, field) => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => {
+      calls++;
+      return { id: '1', result: {} };
+    } });
+    const result = await handler('set_rating_and_flag', args);
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Invalid arguments for set_rating_and_flag');
+    expect(result.content[0].text).toContain(field);
+    expect(calls).toBe(0);
+  });
+
+  it.each([
+    { photo_ids: [914, '/a.jpg'], rating: 3 },
+    { photo_ids: [914], flag: 'reject' },
+    { photo_ids: [914], rating: 3, flag: 'pick' },
+    { photo_ids: [914], rating: 0, flag: 'none' },
+  ])('dispatches valid single-field and combined calls unchanged (%#)', async args => {
+    const received: unknown[] = [];
+    const handler = makeHandler({ call: async (action, params) => {
+      received.push([action, params]);
+      return { id: '1', result: { success: true, updated: 1, missing: [] } };
+    } });
+    const result = await handler('set_rating_and_flag', args);
+    expect(result.isError).not.toBe(true);
+    expect(received).toEqual([['set_rating_and_flag', args]]);
+  });
+});
+
 describe('createCallToolHandler', () => {
   it.each([['cull', 512], ['detail', 1024]] as const)('get_photo_preview resolves %s before dispatch', async (size, edge) => {
     const args = { photo_id: 914, size };

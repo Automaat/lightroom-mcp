@@ -86,6 +86,8 @@ const deltas = regionDeltas(before, after, [{ name: "top", x0: 0.3, y0: 0, x1: 0
 
 ## Verification matrix
 
+For rating and flag changes, use `set_rating_and_flag` with `photo_ids` and either field or both. On a disposable copy, set `rating: 3` and `flag: "pick"`, read back `rating` and `pickStatus` with `get_photo_metadata`, then restore both original values. Rating `0` and flag `"none"` clear their fields; an omitted field stays unchanged.
+
 `node tests/e2e/live/duplicate-groups.mjs` reads the two ARW fixtures and `wide_plain`, derives the raw capture gap from `find_duplicate_groups.photos`, and checks that only the ARWs group at that gap. It verifies ratings, flags, keyword paths and reported collections stay unchanged. `get_photo_metadata.dateTimeOriginal` remains a display string and is never parsed. The script reads the marked throwaway catalog without changing its shared fixtures.
 
 `node tests/e2e/live/photo-stats.mjs` checks `get_photo_stats` on untouched `ramp256` and `wide_plain`: each ramp quarter holds 25 percent of the histogram mass within 5 points; plain gray has mean luminance 110 within 4 and no clipping. The script only reads the marked throwaway catalog.

@@ -39,9 +39,8 @@ const EXPECTED_TOOL_NAMES = [
   'remove_keyword_subtree',
   'list_keywords',
   'rename_keyword',
-  'set_rating',
+  'set_rating_and_flag',
   'undo_last_step',
-  'set_flag',
   'remove_photos_from_catalog',
   'set_color_label',
   'import_photos',
@@ -108,8 +107,15 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 77 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(77);
+  it('contains exactly 76 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(76);
+  });
+
+  it('replaces the separate rating and flag tools', () => {
+    const names = TOOL_DEFINITIONS.map(tool => tool.name);
+    expect(names).toContain('set_rating_and_flag');
+    expect(names).not.toContain('set_rating');
+    expect(names).not.toContain('set_flag');
   });
 
   it('tool names are unique', () => {
@@ -190,9 +196,8 @@ describe('tool required fields', () => {
     ['remove_from_collection', ['collection_name', 'photo_ids']],
     ['delete_collection', ['collection_name']],
     ['set_keywords', ['photo_ids']],
-    ['set_rating', ['photo_ids', 'rating']],
+    ['set_rating_and_flag', ['photo_ids']],
     ['undo_last_step', ['confirm']],
-    ['set_flag', ['photo_ids', 'flag']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
     ['import_photos', ['source_path']],
@@ -281,8 +286,7 @@ describe('photo array schema', () => {
     ['set_location', 'photo_ids'],
     ['set_metadata', 'photo_ids'],
     ['set_keywords', 'photo_ids'],
-    ['set_rating', 'photo_ids'],
-    ['set_flag', 'photo_ids'],
+    ['set_rating_and_flag', 'photo_ids'],
     ['set_color_label', 'photo_ids'],
     ['export_photos', 'photo_ids'],
     ['export_photo_metadata', 'photo_ids'],
@@ -375,7 +379,7 @@ describe('develop setting schema', () => {
 
     expect(validateFor('get_photo_metadata')({ photo_id: 914 })).toBe(true);
     expect(validateFor('get_photo_metadata')({ photo_id: '914' })).toBe(true);
-    expect(validateFor('set_rating')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [914, '/a.jpg'], rating: 3 })).toBe(true);
     expect(validateFor('set_develop_settings')({
       photo_id: 914,
       settings: { Exposure2012: 0.5 },
@@ -383,8 +387,8 @@ describe('develop setting schema', () => {
     expect(validateFor('copy_develop_settings')({ source_id: 914, target_ids: [915] })).toBe(true);
 
     expect(validateFor('get_photo_metadata')({ photo_id: '' })).toBe(false);
-    expect(validateFor('set_rating')({ photo_ids: [], rating: 3 })).toBe(false);
-    expect(validateFor('set_rating')({ photo_ids: [true], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [], rating: 3 })).toBe(false);
+    expect(validateFor('set_rating_and_flag')({ photo_ids: [true], rating: 3 })).toBe(false);
   });
 
   it('requires explicit allowlisted keys when creating a preset checkpoint', () => {

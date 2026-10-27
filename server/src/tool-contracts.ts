@@ -1054,11 +1054,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
-    name: "set_rating",
-    title: "Set rating",
+    name: "set_rating_and_flag",
+    title: "Set rating and flag",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    luaHandler: "HandlerOrganization.setRating",
-    description: "Set star rating for photos",
+    luaHandler: "HandlerOrganization.setRatingAndFlag",
+    description: "Set rating, flag, or both in one write. Returns success, updated and missing; get_photo_metadata reports rating and pickStatus (pick 1, reject -1, none 0).",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1070,29 +1070,14 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minimum: 0,
           maximum: 5,
         },
-      },
-      required: ["photo_ids", "rating"],
-    },
-  },
-  {
-    name: "set_flag",
-    title: "Set flag",
-    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-    luaHandler: "HandlerOrganization.setFlag",
-    description:
-      "Set the pick flag of photos: pick, reject, or none to remove the flag. get_photo_metadata reports it as pickStatus (1, -1 or 0).",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_ids: photoIdArray("Array of photo IDs or file paths"),
         flag: {
           type: "string",
           enum: ["pick", "reject", "none"],
           description: "pick, reject, or none (unflagged)",
         },
       },
-      required: ["photo_ids", "flag"],
+      required: ["photo_ids"],
+      anyOf: [{ required: ["rating"] }, { required: ["flag"] }],
     },
   },
   {
