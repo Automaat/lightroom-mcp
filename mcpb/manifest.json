@@ -45,7 +45,7 @@
     },
     {
       "name": "get_photo_metadata",
-      "description": "Detailed metadata for a photo; pass sections: [\"developSettings\"] for develop settings."
+      "description": "Detailed metadata for one photo_id or up to 100 photo_ids; sections: [\"developSettings\"] includes develop settings for each."
     },
     {
       "name": "get_photo_preview",

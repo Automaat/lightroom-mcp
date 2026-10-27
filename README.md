@@ -174,9 +174,9 @@ If you'd rather drop the plugin in by hand:
 | --- | --- |
 | `search_photos` | Search by filename, keywords, rating, date, camera, lens, ISO, focal length (mm), flag, color label, edited status, file type or folder; filters intersect. |
 | `get_selected_photos` | Photos selected in Lightroom (or filmstrip). |
-| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location, copyright for one photo; add `sections: ["developSettings"]` for develop settings. |
+| `get_photo_metadata` | Keywords (names and full paths), EXIF, GPS, IPTC location and copyright for one `photo_id` or up to 100 `photo_ids`. Batch results return `photos` in request order and `missing` identifiers. Pass `sections: ["developSettings"]` to include develop settings for each. |
 | `summarize_develop_settings` | Read-only medians and ranges of numeric Develop settings by camera and ISO (1–400, 401–1600, 1601–6400, 6401+, unknown). Rating ≥4 by default; optional exported filter intersects rating. Reads up to 200 photos; reports matched/scanned/truncated and settings omitted to keep each group under 6,000 characters. Excludes crop, perspective and white balance. |
-| `get_photo_preview` | JPEG preview of one photo (raw files too), returned as an image. |
+| `get_photo_preview` | JPEG preview of one photo (raw files too), optionally cropped to a rendered-frame region. `size: "cull"` requests 512 for culling; `"detail"` requests 1024 for inspecting details. Numeric sizes 64–2048 and the default 512 remain supported. |
 | `get_photo_previews` | Up to 20 ordered JPEG thumbnails with per-photo errors and partial timeout results. |
 | `get_photo_stats` | Rendered-preview luminance histogram, clipping fractions, mean luminance and sharpness for up to 20 photos; errors stay with each photo. |
 | `find_duplicate_groups` | Find near-duplicate and burst groups using JPEG dHash and raw capture time (up to 100 photos; defaults 5 s / 10 bits; 25 s partial-result budget) |

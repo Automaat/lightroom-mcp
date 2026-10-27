@@ -93,6 +93,24 @@ const EXPECTED_TOOL_NAMES = [
 ] as const;
 
 describe('TOOL_DEFINITIONS', () => {
+  it('get_photo_preview describes named uses and approximate token costs', () => {
+    const tool = TOOL_DEFINITIONS.find(tool => tool.name === 'get_photo_preview');
+    const sizeSchema = tool?.inputSchema.properties?.size as { description: string };
+    const guidance = `${tool?.description} ${sizeSchema.description}`;
+    expect(guidance).toMatch(/cull.*culling.*650 tokens/);
+    expect(guidance).toMatch(/detail.*details.*2\.5k tokens/);
+    expect(guidance).toContain('earlier Claude estimates');
+    expect(guidance).toContain('width/height/bytes');
+    expect(guidance).toContain('each turn in history');
+    const validate = new Ajv({ strict: false }).compile(tool!.inputSchema);
+    for (const size of ['cull', 'detail', 64, 1024, 2048]) {
+      expect(validate({ photo_id: 914, size })).toBe(true);
+    }
+    for (const size of ['huge', 5000]) {
+      expect(validate({ photo_id: 914, size })).toBe(false);
+    }
+  });
+
   it('contains exactly 77 tools', () => {
     expect(TOOL_DEFINITIONS).toHaveLength(77);
   });
@@ -165,7 +183,6 @@ describe('tool required fields', () => {
   }
 
   it.each<[string, string[]]>([
-    ['get_photo_metadata', ['photo_id']],
     ['get_photo_preview', ['photo_id']],
     ['set_gps', ['photo_ids', 'latitude', 'longitude']],
     ['set_location', ['photo_ids']],
