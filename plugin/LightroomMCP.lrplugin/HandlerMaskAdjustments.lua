@@ -320,7 +320,11 @@ function MaskAdjustmentsHandler.setMaskAdjustments(args)
 end
 
 function MaskAdjustmentsHandler.readSelected()
-    return readAllSliders()
+    local result = readAllSliders()
+    if next(result.adjustments) == nil then
+        error("Local adjustments cannot be read; they need Lightroom Classic 11 or later", 0)
+    end
+    return result
 end
 
 return MaskAdjustmentsHandler

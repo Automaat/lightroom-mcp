@@ -137,6 +137,23 @@ describe("HandlerMaskRead.getMask", function()
         assert.are.equal("mask-b", ctx.selectedMaskOf[ctx.photos[1]])
     end)
 
+    it("fails an adjustments-only request with no readable sliders and keeps other readable kinds", function()
+        local ctx = setup()
+        local values = ctx.valuesOf[ctx.photos[1]]["mask-a"]
+        values.local_Exposure, values.local_Contrast = nil, nil
+        local err = errorOf(function()
+            ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "adjustments" } })
+        end)
+        assert.truthy(err:find("adjustments", 1, true))
+        assert.truthy(err:find("Lightroom Classic 11", 1, true))
+        local r = ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-a", kinds = { "adjustments", "curves" } })
+        assert.is_nil(r.adjustments)
+        assert.is_nil(r.unavailable.adjustments)
+        assert.truthy(r.errors.adjustments:find("Lightroom Classic 11", 1, true))
+        assert.are.same(LINE, r.curves.main)
+        assert.are.equal(0, #ctx.calls.setValue)
+    end)
+
     it("returns empty swatches and reports malformed or throwing Point Color reads", function()
         local ctx = setup()
         local r = ctx.Handler.getMask({ photo_id = "1", mask_id = "mask-b", kinds = { "point_colors" } })
