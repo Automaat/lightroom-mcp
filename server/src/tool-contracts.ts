@@ -2073,7 +2073,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minItems: 1,
           maxItems: LANDSCAPE_MASK_CATEGORIES.length,
           uniqueItems: true,
-          description: "Landscape only: each category becomes its own mask, often in about 15 s. A missing region removes all new masks. Unknown or duplicate categories/parts fail before access.",
+          description: "Landscape only: each category becomes its own mask, often in about 15 s. A missing region removes all new masks. Unknown/duplicate categories/parts fail before access.",
         },
       },
       required: ["photo_id", "type"],
