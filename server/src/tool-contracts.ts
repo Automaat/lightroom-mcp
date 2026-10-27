@@ -1985,18 +1985,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
-    name: "get_mask_adjustments",
-    title: "Get mask adjustments",
+    name: "get_mask",
+    title: "Get mask",
     annotations: { readOnlyHint: true, openWorldHint: false },
-    luaHandler: "HandlerMaskAdjustments.getMaskAdjustments",
+    luaHandler: "HandlerMaskRead.getMask",
     description:
-      "Read local SDK slider values by mask_id from list_masks (Lightroom Classic 11+), for every slider set_mask_adjustments supports. Unexposed sliders appear in unavailable. Unknown ids fail. Shared Develop restoration rules apply.",
+      "Read local adjustments, tone curves and Point Color by mask_id from list_masks in one Develop session. kinds defaults to all; only requested kinds are read. Returns adjustments (SDK slider names), curves (main/red/green/blue flat input/output arrays), swatches (Lightroom order, indexed from 1), and per-kind unavailable fields. Unsupported or unreadable kinds appear in errors while supported kinds return; none readable fails. Minimum Lightroom Classic versions: adjustments 11, curves 12.3, Point Color 13.2. Unknown ids fail without reading values. Shared Develop restoration rules apply.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         mask_id: maskIdSchema("Mask id from list_masks"),
+        kinds: {
+          type: "array",
+          items: { type: "string", enum: ["adjustments", "curves", "point_colors"] },
+          minItems: 1,
+          maxItems: 3,
+          uniqueItems: true,
+          description: "Kinds to read; omitted reads all. Omitted kinds have no result fields. Point Color swatches report SrcHue, SrcSat, SrcLum, HueShift, SatScale, LumScale, RangeAmount, HueRange, SatRange and LumRange; no swatches is an empty list.",
+        },
       },
       required: ["photo_id", "mask_id"],
     },
@@ -2157,29 +2165,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
-    name: "get_mask_curves",
-    title: "Get mask curves",
-    annotations: { readOnlyHint: true, openWorldHint: false },
-    luaHandler: "HandlerMaskCurves.getMaskCurves",
-    description:
-      "Read local main (RGB), red, green and blue tone curves by mask_id from list_masks (Lightroom Classic 12.3+), as Lightroom flat input/output arrays. Missing channels appear in unavailable; none returned fails naming the minimum version. Unknown ids fail. Shared Develop restoration rules apply.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
-        mask_id: maskIdSchema("Mask id from list_masks"),
-      },
-      required: ["photo_id", "mask_id"],
-    },
-  },
-  {
     name: "edit_mask_point_colors",
     title: "Edit mask point colors",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerMaskPointColors.editMaskPointColors",
     description:
-      "Edit local Point Color swatches by mask_id from list_masks (Lightroom Classic 13.2+). Up to 8 swatches, indexed from 1 as in get_mask_point_colors. add requires swatch SrcHue (0..6), SrcSat/SrcLum (0..1); duplicate source color fails. Optional shift/scale/range fields and limits are in the schema. update needs index and changed swatch fields; delete needs index; clear removes all swatches. Preserves mask sliders and other/global settings. Read-back mismatch restores a swatch update. Restores previous mask and swatch after Develop. Unsupported versions fail naming the minimum version. Returns action, affected index, changed flag and resulting swatches.",
+      "Edit local Point Color swatches by mask_id from list_masks (Lightroom Classic 13.2+). Up to 8 swatches, indexed from 1 as in get_mask swatches. add requires swatch SrcHue (0..6), SrcSat/SrcLum (0..1); duplicate source color fails. Optional shift/scale/range fields and limits are in the schema. update needs index and changed swatch fields; delete needs index; clear removes all swatches. Preserves mask sliders and other/global settings. Read-back mismatch restores a swatch update. Restores previous mask and swatch after Develop. Unsupported versions fail naming the minimum version. Returns action, affected index, changed flag and resulting swatches.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -2206,23 +2197,6 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_id", "mask_id", "action"],
-    },
-  },
-  {
-    name: "get_mask_point_colors",
-    title: "Get mask point colors",
-    annotations: { readOnlyHint: true, openWorldHint: false },
-    luaHandler: "HandlerMaskPointColors.getMaskPointColors",
-    description:
-      "Read local Point Color swatches by mask_id from list_masks (Lightroom Classic 13.2+), in Lightroom order, indexed from 1 for edit_mask_point_colors. Returns SrcHue, SrcSat, SrcLum, HueShift, SatScale, LumScale, RangeAmount, HueRange, SatRange and LumRange as reported; no swatches returns an empty list. Unknown ids fail. Shared Develop restoration rules apply.",
-    inputSchema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        photo_id: photoIdSchema("Photo ID or file path"),
-        mask_id: maskIdSchema("Mask id from list_masks"),
-      },
-      required: ["photo_id", "mask_id"],
     },
   },
   {

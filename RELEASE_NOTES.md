@@ -1,5 +1,6 @@
 # Unreleased
 
+- `get_mask` replaces `get_mask_adjustments`, `get_mask_curves` and `get_mask_point_colors`. Pass `photo_id` and `mask_id`; omit `kinds` to read all three in one Develop session, or select `adjustments`, `curves` and/or `point_colors`. Results contain `adjustments`, `curves`, `swatches` and per-kind `unavailable`; unsupported/unreadable kinds appear in `errors`, and a request with no readable kind fails. The set tools are unchanged.
 - Write results omit request echoes and count-only messages while retaining counts, IDs, readbacks and actionable warnings. See [the changed tools and fields](docs/release-notes/360-write-results.md).
 - `set_rating` and `set_flag` are replaced by `set_rating_and_flag`. Pass `photo_ids` and `rating`, `flag`, or both; both fields are saved in one write. Rating `0` clears stars and flag `"none"` clears the pick flag. Omitted fields stay unchanged. Results contain `success`, `updated` and `missing`.
 - `set_rating_and_flag`, `get_photo_metadata` and the three mask creation tools publish plain object schemas for Claude Code. Rating-or-flag, exclusive single/batch photo selectors and the mask-id/creation-adjustments exclusion are enforced before dispatch; handlers, sections, geometry, sliders and results are unchanged.
