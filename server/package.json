@@ -60,7 +60,7 @@
   "devDependencies": {
     "@modelcontextprotocol/client": "^2.4.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^25.6.0",
+    "@types/node": "^26.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^10.4.0",
     "eslint-plugin-unused-imports": "^4.4.1",
