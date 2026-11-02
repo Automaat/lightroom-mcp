@@ -99,6 +99,13 @@ try {
   results.caseSingle = caseJpeg.data;
   assert.equal(caseJpeg.data.imported, 1);
 
+  const unicode = makeFolder("unicode", { "caf\u00e9.ARW": rawSource, "caf\u00e9.jpg": jpegSource });
+  const otherForm = await session.tool("import_photos", { source_path: path.join(unicode, "cafe\u0301.jpg") });
+  results.unicode = otherForm.text;
+  assert.equal(otherForm.isError, true);
+  assert.match(otherForm.text, /\.ARW/);
+  assert.deepEqual(catalogFiles(unicode), []);
+
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });
   assert.equal(separate.data.imported, 1);
   const singleFiles = await waitForFiles(single, 1);

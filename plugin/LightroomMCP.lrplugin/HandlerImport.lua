@@ -49,7 +49,7 @@ end
 
 local function leafSpelledOnDisk(path, entries)
     local leaf = LrPathUtils.leafName(path)
-    local spelling = leaf
+    local spelling = nil
     for _, entry in ipairs(entries) do
         local entryLeaf = LrPathUtils.leafName(entry)
         if entryLeaf == leaf then
@@ -62,12 +62,32 @@ local function leafSpelledOnDisk(path, entries)
     return spelling
 end
 
+local function rawFileProbedBeside(path, entries)
+    local stem = LrPathUtils.removeExtension(path)
+    local probedExtensions = {}
+    for _, entry in ipairs(entries) do
+        local ext = LrPathUtils.extension(entry)
+        if JPEG_SIDECAR_RAW_EXTENSIONS[ext:lower()] and not probedExtensions[ext] then
+            probedExtensions[ext] = true
+            local candidate = stem .. "." .. ext
+            if LrFileUtils.exists(candidate) == 'file' then
+                return candidate
+            end
+        end
+    end
+    return nil
+end
+
 local function rawFileBeside(path)
     local entries = {}
     for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
         entries[#entries + 1] = entry
     end
-    local stem = LrPathUtils.removeExtension(leafSpelledOnDisk(path, entries))
+    local leafOnDisk = leafSpelledOnDisk(path, entries)
+    if not leafOnDisk then
+        return rawFileProbedBeside(path, entries)
+    end
+    local stem = LrPathUtils.removeExtension(leafOnDisk)
     for _, entry in ipairs(entries) do
         if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
             and LrPathUtils.leafName(LrPathUtils.removeExtension(entry)) == stem
