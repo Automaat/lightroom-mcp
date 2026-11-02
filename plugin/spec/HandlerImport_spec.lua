@@ -11,11 +11,33 @@ local helper = require 'spec_helper'
 -- Providing either would let a regression to the wrong API pass green, which
 -- is precisely how both bugs shipped.
 local function fakeFileUtils(opts)
+    local function matches(known, p)
+        for candidate in pairs(known or {}) do
+            if candidate == p or (opts.caseInsensitiveVolume and candidate:lower() == p:lower()) then
+                return true
+            end
+        end
+        return false
+    end
     return {
         exists = function(p)
-            if opts.directories and opts.directories[p] then return 'directory' end
-            if opts.exists and opts.exists[p] then return 'file' end
+            if matches(opts.directories, p) then return 'directory' end
+            if matches(opts.exists, p) then return 'file' end
             return false
+        end,
+        directoryEntries = function(dir)
+            local entries = {}
+            for _, known in ipairs({ opts.exists or {}, opts.directories or {} }) do
+                for p in pairs(known) do
+                    if p:match("^(.*)/[^/]+$") == dir then entries[#entries + 1] = p end
+                end
+            end
+            table.sort(entries)
+            local i = 0
+            return function()
+                i = i + 1
+                return entries[i]
+            end
         end,
         recursiveFiles = function(_)
             local i = 0
@@ -33,6 +55,8 @@ local function fakePathUtils()
     return {
         extension = function(p) return p:match("%.([^.]+)$") or "" end,
         removeExtension = function(p) return (p:gsub("%.[^.]+$", "")) end,
+        leafName = function(p) return p:match("([^/]+)$") end,
+        parent = function(p) return p:match("^(.*)/[^/]+$") end,
     }
 end
 
@@ -140,21 +164,66 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal(2, r.skipped_sidecar_jpegs)
         end)
 
-        for _, case in ipairs({
-            { name = "lowercase raw", jpeg = "/dir/a.jpg", raw = "/dir/a.cr3" },
-            { name = "uppercase raw", jpeg = "/dir/a.JPG", raw = "/dir/a.CR3" },
-            { name = "jpeg extension", jpeg = "/dir/a.jpeg", raw = "/dir/a.nef" },
+        for _, volume in ipairs({
+            { name = "case-sensitive volume", caseInsensitiveVolume = false },
+            { name = "case-insensitive volume", caseInsensitiveVolume = true },
         }) do
-            it("refuses a lone JPEG beside its raw and names the raw: " .. case.name, function()
-                local catalog, Handler = setup({ fs = { exists = { [case.jpeg] = true, [case.raw] = true } } })
+            for _, case in ipairs({
+                { name = "lowercase raw", jpeg = "/dir/a.jpg", raw = "/dir/a.cr3" },
+                { name = "uppercase raw", jpeg = "/dir/S1.JPG", raw = "/dir/S1.ARW" },
+                { name = "jpeg extension", jpeg = "/dir/a.jpeg", raw = "/dir/a.nef" },
+                { name = "mixed-case raw extension", jpeg = "/dir/a.jpg", raw = "/dir/a.Cr3" },
+            }) do
+                it("refuses a lone JPEG and names the raw as on disk: " .. case.name .. ", " .. volume.name, function()
+                    local catalog, Handler = setup({ fs = {
+                        caseInsensitiveVolume = volume.caseInsensitiveVolume,
+                        exists = { [case.jpeg] = true, [case.raw] = true },
+                    } })
 
-                local ok, err = pcall(Handler.importPhotos, { source_path = case.jpeg })
+                    local ok, err = pcall(Handler.importPhotos, { source_path = case.jpeg })
 
-                assert.is_false(ok)
-                assert.truthy(tostring(err):find(case.raw, 1, true))
-                assert.are.same({}, importedPaths(catalog))
-            end)
+                    assert.is_false(ok)
+                    assert.truthy(tostring(err):find("Import " .. case.raw .. " instead", 1, true))
+                    assert.are.same({}, importedPaths(catalog))
+                end)
+            end
         end
+
+        it("uses the JPEG's name on disk when the path spells it in another case", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                exists = { ["/dir/S1.JPG"] = true, ["/dir/S1.ARW"] = true },
+            } })
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/s1.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("Import /dir/S1.ARW instead", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        it("imports a JPEG whose name on disk differs from its raw's, however the path spells it", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                exists = { ["/dir/q.jpg"] = true, ["/dir/Q.ARW"] = true },
+            } })
+
+            local r = Handler.importPhotos({ source_path = "/dir/Q.jpg" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.same({ "/dir/Q.jpg" }, importedPaths(catalog))
+        end)
+
+        it("prefers the exact name when a case-sensitive volume holds both spellings", function()
+            local catalog, Handler = setup({ fs = {
+                exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true, ["/dir/A.ARW"] = true },
+            } })
+
+            local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
+        end)
 
         it("imports a lone JPEG beside its raw with separate_jpegs", function()
             local catalog, Handler = setup({ fs = { exists = { ["/dir/a.jpg"] = true, ["/dir/a.cr3"] = true } } })
@@ -170,11 +239,14 @@ describe("HandlerImport.importPhotos", function()
             { name = "JPEG beside a DNG", source = "/dir/a.jpg", others = { "/dir/a.dng", "/dir/a.DNG" } },
             { name = "raw with a JPEG beside it", source = "/dir/a.cr3", others = { "/dir/a.jpg" } },
             { name = "folder named like the raw", source = "/dir/a.jpg", directoryNamed = "/dir/a.cr3" },
+            { name = "raw whose name differs in case", source = "/dir/q.jpg", others = { "/dir/Q.ARW" } },
+            { name = "raw in another folder", source = "/dir/a.jpg", others = { "/dir/sub/a.cr3" } },
         }) do
             it("imports a single file: " .. case.name, function()
                 local exists = { [case.source] = true }
                 for _, other in ipairs(case.others or {}) do exists[other] = true end
                 local catalog, Handler = setup({ fs = {
+                    caseInsensitiveVolume = true,
                     exists = exists,
                     directories = case.directoryNamed and { [case.directoryNamed] = true } or {},
                 } })
