@@ -208,7 +208,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `set_rating_and_flag` | Set a 0-5 star rating, a pick flag (`pick`, `reject`, `none`), or both in one write. |
 | `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
-| `import_photos` | Import a file or folder into the catalog. |
+| `import_photos` | Import a file or folder into the catalog. A JPEG with a non-DNG raw file of exactly the same name stays the raw's sidecar unless `separate_jpegs` is set. |
 | `export_photos` | Export with format / quality / dimensions. |
 | `export_photo_metadata` | Write metadata (incl. keyword paths) for many photos, or the selection, to a JSON file. |
 | `list_develop_presets` | Discover presets and plugin checkpoints by name (`query`) or exact `folder`, with `limit` (default 100) and `offset`. Returns `name`, `folder`, `scope`, `uuid`, total `count` and `has_more`; use `get_develop_preset` for `file`. |

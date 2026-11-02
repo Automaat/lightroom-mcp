@@ -7,13 +7,62 @@ local Log = require 'Log'
 
 local ImportHandler = {}
 
-local IMPORTABLE_EXTENSIONS = {}
+local JPEG_SIDECAR_RAW_EXTENSION_NAMES = {}
 for ext in ([[
-    3fr ari arw bay cap cr2 cr3 crw dcr dcs dng drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
+    3fr ari arw bay cap cr2 cr3 crw dcr dcs drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
     nef nrw orf ori pef ptx pxn raf raw rw2 rwl sr2 srf srw x3f
-    avif heic heif hif jpe jpeg jpg jxl png psb psd tif tiff
+]]):gmatch("%S+") do
+    JPEG_SIDECAR_RAW_EXTENSION_NAMES[#JPEG_SIDECAR_RAW_EXTENSION_NAMES + 1] = ext
+end
+
+local JPEG_SIDECAR_RAW_EXTENSIONS = {}
+local IMPORTABLE_EXTENSIONS = {}
+for _, ext in ipairs(JPEG_SIDECAR_RAW_EXTENSION_NAMES) do
+    JPEG_SIDECAR_RAW_EXTENSIONS[ext] = true
+    IMPORTABLE_EXTENSIONS[ext] = true
+end
+for ext in ([[
+    dng avif heic heif hif jpe jpeg jpg jxl png psb psd tif tiff
 ]]):gmatch("%S+") do
     IMPORTABLE_EXTENSIONS[ext] = true
+end
+
+local JPEG_EXTENSIONS = { jpe = true, jpeg = true, jpg = true }
+
+local function lowerExtension(path)
+    return LrPathUtils.extension(path):lower()
+end
+
+local function withoutSidecarJpegs(files)
+    local rawStems = {}
+    for _, file in ipairs(files) do
+        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(file)] then
+            rawStems[LrPathUtils.removeExtension(file)] = true
+        end
+    end
+    local kept = {}
+    local sidecarCount = 0
+    for _, file in ipairs(files) do
+        if JPEG_EXTENSIONS[lowerExtension(file)] and rawStems[LrPathUtils.removeExtension(file)] then
+            sidecarCount = sidecarCount + 1
+        else
+            kept[#kept + 1] = file
+        end
+    end
+    return kept, sidecarCount
+end
+
+local function rawFileBeside(path)
+    local stem = LrPathUtils.removeExtension(path)
+    for _, ext in ipairs(JPEG_SIDECAR_RAW_EXTENSION_NAMES) do
+        for _, spelling in ipairs({ ext, ext:upper() }) do
+            local candidate = stem .. "." .. spelling
+            if LrFileUtils.exists(candidate) == 'file' then
+                return candidate
+            end
+        end
+    end
+    return nil
 end
 
 local function describeSkipped(skipped)
@@ -49,6 +98,7 @@ function ImportHandler.importPhotos(args, context)
     local photosToImport = {}
     local skippedByExtension = {}
     local skippedCount = 0
+    local sidecarJpegCount = 0
     if sourceKind == 'directory' then
         -- Import all photos from directory, including nested subfolders.
         -- LrFileUtils.files lists only the immediate directory, so a source
@@ -58,7 +108,7 @@ function ImportHandler.importPhotos(args, context)
             -- extension() is on LrPathUtils; LrFileUtils has no such field, so
             -- the previous call was nil and raised "attempt to call field
             -- 'extension' (a nil value)" on every directory import.
-            local ext = LrPathUtils.extension(file):lower()
+            local ext = lowerExtension(file)
             if IMPORTABLE_EXTENSIONS[ext] then
                 table.insert(photosToImport, file)
             else
@@ -66,8 +116,20 @@ function ImportHandler.importPhotos(args, context)
                 skippedCount = skippedCount + 1
             end
         end
+        if not args.separate_jpegs then
+            photosToImport, sidecarJpegCount = withoutSidecarJpegs(photosToImport)
+        end
     else
         -- Import single photo
+        if not args.separate_jpegs and JPEG_EXTENSIONS[lowerExtension(args.source_path)] then
+            local rawFile = rawFileBeside(args.source_path)
+            if rawFile then
+                error(string.format(
+                    "%s has a raw file of the same name. Import %s instead; Lightroom keeps the JPEG as its sidecar. "
+                        .. "To add the JPEG as a separate photo, set separate_jpegs to true.",
+                    args.source_path, rawFile))
+            end
+        end
         table.insert(photosToImport, args.source_path)
     end
 
@@ -131,7 +193,8 @@ function ImportHandler.importPhotos(args, context)
         end)
     end
 
-    Log.info(string.format("Imported %d photos from: %s (skipped %d)", importedCount, args.source_path, skippedCount))
+    Log.info(string.format("Imported %d photos from: %s (skipped %d, sidecar JPEGs %d)",
+        importedCount, args.source_path, skippedCount, sidecarJpegCount))
 
     local message
     if skippedCount > 0 then
@@ -145,6 +208,7 @@ function ImportHandler.importPhotos(args, context)
         remaining_paths = #remainingPaths > 0 and remainingPaths or nil,
         skipped = skippedCount,
         skipped_by_extension = skippedCount > 0 and skippedByExtension or nil,
+        skipped_sidecar_jpegs = sidecarJpegCount > 0 and sidecarJpegCount or nil,
         message = message,
     }
 end
