@@ -71,8 +71,13 @@ try {
   const refused = await session.tool("import_photos", { source_path: jpegPath });
   results.singleRefused = refused.text;
   assert.equal(refused.isError, true);
-  assert.match(refused.text, /S1\.ARW/i);
+  assert.ok(refused.text.includes("S1.ARW"));
   assert.deepEqual(catalogFiles(single), []);
+
+  const caseSingle = makeFolder("case-single", { "Q.ARW": rawSource, "q.jpg": jpegSource });
+  const caseJpeg = await session.toolOrThrow("import_photos", { source_path: path.join(caseSingle, "q.jpg") });
+  results.caseSingle = caseJpeg.data;
+  assert.equal(caseJpeg.data.imported, 1);
 
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });
   assert.equal(separate.data.imported, 1);

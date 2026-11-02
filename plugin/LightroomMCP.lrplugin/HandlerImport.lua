@@ -7,17 +7,12 @@ local Log = require 'Log'
 
 local ImportHandler = {}
 
-local JPEG_SIDECAR_RAW_EXTENSION_NAMES = {}
+local JPEG_SIDECAR_RAW_EXTENSIONS = {}
+local IMPORTABLE_EXTENSIONS = {}
 for ext in ([[
     3fr ari arw bay cap cr2 cr3 crw dcr dcs drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
     nef nrw orf ori pef ptx pxn raf raw rw2 rwl sr2 srf srw x3f
 ]]):gmatch("%S+") do
-    JPEG_SIDECAR_RAW_EXTENSION_NAMES[#JPEG_SIDECAR_RAW_EXTENSION_NAMES + 1] = ext
-end
-
-local JPEG_SIDECAR_RAW_EXTENSIONS = {}
-local IMPORTABLE_EXTENSIONS = {}
-for _, ext in ipairs(JPEG_SIDECAR_RAW_EXTENSION_NAMES) do
     JPEG_SIDECAR_RAW_EXTENSIONS[ext] = true
     IMPORTABLE_EXTENSIONS[ext] = true
 end
@@ -53,13 +48,12 @@ local function withoutSidecarJpegs(files)
 end
 
 local function rawFileBeside(path)
-    local stem = LrPathUtils.removeExtension(path)
-    for _, ext in ipairs(JPEG_SIDECAR_RAW_EXTENSION_NAMES) do
-        for _, spelling in ipairs({ ext, ext:upper() }) do
-            local candidate = stem .. "." .. spelling
-            if LrFileUtils.exists(candidate) == 'file' then
-                return candidate
-            end
+    local stem = LrPathUtils.leafName(LrPathUtils.removeExtension(path))
+    for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
+        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
+            and LrPathUtils.leafName(LrPathUtils.removeExtension(entry)) == stem
+            and LrFileUtils.exists(entry) == 'file' then
+            return entry
         end
     end
     return nil
