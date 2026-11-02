@@ -173,8 +173,7 @@ function ImportHandler.importPhotos(args, context)
             break
         end
         if context then context:report(processed, #photosToImport, filePath) end
-        local existing = catalog:findPhotoByPath(filePath)
-        if existing and existing:getRawMetadata('path') == filePath then
+        if catalog:findPhotoByPath(filePath, false) then
             alreadyInCatalogCount = alreadyInCatalogCount + 1
         else
             catalog:withWriteAccessDo("Import Photo", function()

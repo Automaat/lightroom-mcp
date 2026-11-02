@@ -68,6 +68,16 @@ try {
   assert.equal(again.data.skipped_sidecar_jpegs, 3);
   assert.equal(againFiles.filter((row) => row.id !== null).length, 5);
 
+  const renamed = makeFolder("renamed", { "A.ARW": rawSource });
+  await session.toolOrThrow("import_photos", { source_path: path.join(renamed, "A.ARW") });
+  fs.renameSync(path.join(renamed, "A.ARW"), path.join(renamed, "a.tmp"));
+  fs.renameSync(path.join(renamed, "a.tmp"), path.join(renamed, "a.ARW"));
+  fs.copyFileSync(jpegSource, path.join(renamed, "new.jpg"));
+  const renamedResult = await session.toolOrThrow("import_photos", { source_path: renamed }, { timeoutMs: 300_000 });
+  results.renamed = renamedResult.data;
+  assert.equal(renamedResult.data.imported, 1);
+  assert.equal(renamedResult.data.already_in_catalog, 1);
+
   const caseDiffers = makeFolder("case", { "R.ARW": rawSource, "r.jpg": jpegSource });
   const caseResult = await session.toolOrThrow("import_photos", { source_path: caseDiffers }, { timeoutMs: 300_000 });
   const caseFiles = await waitForFiles(caseDiffers, 2);

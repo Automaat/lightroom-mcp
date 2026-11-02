@@ -136,13 +136,13 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal(1, #catalog:getAllPhotos())
         end)
 
-        it("imports a file when the catalog only matches another case", function()
-            local _, Handler = setupFolder({ "/dir/A.arw" }, { "/dir/a.arw" })
+        it("counts a file renamed in case only as already in the catalog", function()
+            local _, Handler = setupFolder({ "/dir/A.arw" }, { "/dir/a.arw", "/dir/new.arw" })
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
             assert.are.equal(1, r.imported)
-            assert.is_nil(r.already_in_catalog)
+            assert.are.equal(1, r.already_in_catalog)
         end)
 
         it("leaves already_in_catalog out when nothing was there", function()
