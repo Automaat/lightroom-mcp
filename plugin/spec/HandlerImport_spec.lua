@@ -11,9 +11,15 @@ local helper = require 'spec_helper'
 -- Providing either would let a regression to the wrong API pass green, which
 -- is precisely how both bugs shipped.
 local function fakeFileUtils(opts)
+    local function volumeForm(p)
+        local form = p
+        if opts.caseInsensitiveVolume then form = form:lower() end
+        if opts.normalizationInsensitiveVolume then form = form:gsub("e\204\129", "\195\169") end
+        return form
+    end
     local function matches(known, p)
         for candidate in pairs(known or {}) do
-            if candidate == p or (opts.caseInsensitiveVolume and candidate:lower() == p:lower()) then
+            if volumeForm(candidate) == volumeForm(p) then
                 return true
             end
         end
@@ -143,6 +149,55 @@ describe("HandlerImport.importPhotos", function()
 
             assert.are.equal(1, r.imported)
             assert.are.equal(1, r.already_in_catalog)
+        end)
+
+        it("imports a separate file that differs in case on a case-sensitive volume", function()
+            local catalog, Handler = setup({
+                photos = { helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }) },
+                fs = {
+                    directories = { ["/dir"] = true },
+                    dirContents = { "/dir/A.jpg", "/dir/a.jpg" },
+                    exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true },
+                },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.are.same({ "/dir/A.jpg", "/dir/a.jpg" }, importedPaths(catalog))
+        end)
+
+        it("counts both spellings when both are in the catalog", function()
+            local _, Handler = setup({
+                photos = {
+                    helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }),
+                    helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }),
+                },
+                fs = {
+                    directories = { ["/dir"] = true },
+                    dirContents = { "/dir/A.jpg", "/dir/a.jpg" },
+                    exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true },
+                },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.are.equal(0, r.imported)
+            assert.are.equal(2, r.already_in_catalog)
+        end)
+
+        it("counts a path spelled in another case as the catalog entry", function()
+            local catalog, Handler = setup({
+                photos = { helper.fakePhoto({ path = "/dir/q.jpg", id = "/dir/q.jpg" }) },
+                fs = { caseInsensitiveVolume = true, exists = { ["/dir/q.jpg"] = true } },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir/Q.jpg" })
+
+            assert.are.equal(0, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(1, #catalog:getAllPhotos())
         end)
 
         it("leaves already_in_catalog out when nothing was there", function()
@@ -305,6 +360,31 @@ describe("HandlerImport.importPhotos", function()
 
             assert.are.equal(1, r.imported)
             assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
+        end)
+
+        it("finds the raw when the path uses another Unicode form than the disk", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                normalizationInsensitiveVolume = true,
+                exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
+            } })
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):lower():find("import /dir/cafe\204\129.arw instead", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        it("imports a JPEG in another Unicode form when no raw is beside it", function()
+            local _, Handler = setup({ fs = {
+                normalizationInsensitiveVolume = true,
+                exists = { ["/dir/caf\195\169.jpg"] = true },
+            } })
+
+            local r = Handler.importPhotos({ source_path = "/dir/cafe\204\129.jpg" })
+
+            assert.are.equal(1, r.imported)
         end)
 
         it("imports a lone JPEG beside its raw with separate_jpegs", function()

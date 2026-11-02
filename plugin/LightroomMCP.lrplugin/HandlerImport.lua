@@ -49,7 +49,7 @@ end
 
 local function leafSpelledOnDisk(path, entries)
     local leaf = LrPathUtils.leafName(path)
-    local spelling = leaf
+    local spelling = nil
     for _, entry in ipairs(entries) do
         local entryLeaf = LrPathUtils.leafName(entry)
         if entryLeaf == leaf then
@@ -62,12 +62,29 @@ local function leafSpelledOnDisk(path, entries)
     return spelling
 end
 
+local function rawFileProbedBeside(path)
+    local stem = LrPathUtils.removeExtension(path)
+    for ext in pairs(JPEG_SIDECAR_RAW_EXTENSIONS) do
+        for _, spelling in ipairs({ ext, ext:upper() }) do
+            local candidate = stem .. "." .. spelling
+            if LrFileUtils.exists(candidate) == 'file' then
+                return candidate
+            end
+        end
+    end
+    return nil
+end
+
 local function rawFileBeside(path)
     local entries = {}
     for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
         entries[#entries + 1] = entry
     end
-    local stem = LrPathUtils.removeExtension(leafSpelledOnDisk(path, entries))
+    local leafOnDisk = leafSpelledOnDisk(path, entries)
+    if not leafOnDisk then
+        return rawFileProbedBeside(path)
+    end
+    local stem = LrPathUtils.removeExtension(leafOnDisk)
     for _, entry in ipairs(entries) do
         if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
             and LrPathUtils.leafName(LrPathUtils.removeExtension(entry)) == stem
@@ -76,6 +93,30 @@ local function rawFileBeside(path)
         end
     end
     return nil
+end
+
+local function bothSpellingsOnDisk(path, otherPath)
+    local leaf = LrPathUtils.leafName(path)
+    local otherLeaf = LrPathUtils.leafName(otherPath)
+    if leaf == otherLeaf then
+        return false
+    end
+    local leafListed = false
+    local otherLeafListed = false
+    for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
+        local entryLeaf = LrPathUtils.leafName(entry)
+        leafListed = leafListed or entryLeaf == leaf
+        otherLeafListed = otherLeafListed or entryLeaf == otherLeaf
+    end
+    return leafListed and otherLeafListed
+end
+
+local function isInCatalog(catalog, path)
+    if catalog:findPhotoByPath(path, true) then
+        return true
+    end
+    local caseVariant = catalog:findPhotoByPath(path, false)
+    return caseVariant ~= nil and not bothSpellingsOnDisk(path, caseVariant:getRawMetadata('path'))
 end
 
 local function describeSkipped(skipped)
@@ -173,7 +214,7 @@ function ImportHandler.importPhotos(args, context)
             break
         end
         if context then context:report(processed, #photosToImport, filePath) end
-        if catalog:findPhotoByPath(filePath, false) then
+        if isInCatalog(catalog, filePath) then
             alreadyInCatalogCount = alreadyInCatalogCount + 1
         else
             catalog:withWriteAccessDo("Import Photo", function()
