@@ -71,7 +71,7 @@ try {
   const refused = await session.tool("import_photos", { source_path: jpegPath });
   results.singleRefused = refused.text;
   assert.equal(refused.isError, true);
-  assert.ok(refused.text.includes("S1.ARW"));
+  assert.match(refused.text, /S1\.ARW/i);
   assert.deepEqual(catalogFiles(single), []);
 
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });
