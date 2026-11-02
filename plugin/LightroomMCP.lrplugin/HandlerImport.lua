@@ -47,9 +47,28 @@ local function withoutSidecarJpegs(files)
     return kept, sidecarCount
 end
 
+local function leafSpelledOnDisk(path, entries)
+    local leaf = LrPathUtils.leafName(path)
+    local spelling = leaf
+    for _, entry in ipairs(entries) do
+        local entryLeaf = LrPathUtils.leafName(entry)
+        if entryLeaf == leaf then
+            return leaf
+        end
+        if entryLeaf:lower() == leaf:lower() then
+            spelling = entryLeaf
+        end
+    end
+    return spelling
+end
+
 local function rawFileBeside(path)
-    local stem = LrPathUtils.leafName(LrPathUtils.removeExtension(path))
+    local entries = {}
     for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
+        entries[#entries + 1] = entry
+    end
+    local stem = LrPathUtils.removeExtension(leafSpelledOnDisk(path, entries))
+    for _, entry in ipairs(entries) do
         if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
             and LrPathUtils.leafName(LrPathUtils.removeExtension(entry)) == stem
             and LrFileUtils.exists(entry) == 'file' then

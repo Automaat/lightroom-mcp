@@ -189,6 +189,42 @@ describe("HandlerImport.importPhotos", function()
             end
         end
 
+        it("uses the JPEG's name on disk when the path spells it in another case", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                exists = { ["/dir/S1.JPG"] = true, ["/dir/S1.ARW"] = true },
+            } })
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/s1.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("Import /dir/S1.ARW instead", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        it("imports a JPEG whose name on disk differs from its raw's, however the path spells it", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                exists = { ["/dir/q.jpg"] = true, ["/dir/Q.ARW"] = true },
+            } })
+
+            local r = Handler.importPhotos({ source_path = "/dir/Q.jpg" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.same({ "/dir/Q.jpg" }, importedPaths(catalog))
+        end)
+
+        it("prefers the exact name when a case-sensitive volume holds both spellings", function()
+            local catalog, Handler = setup({ fs = {
+                exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true, ["/dir/A.ARW"] = true },
+            } })
+
+            local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
+        end)
+
         it("imports a lone JPEG beside its raw with separate_jpegs", function()
             local catalog, Handler = setup({ fs = { exists = { ["/dir/a.jpg"] = true, ["/dir/a.cr3"] = true } } })
 
