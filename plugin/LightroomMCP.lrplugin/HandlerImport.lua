@@ -101,30 +101,6 @@ local function rawFileBeside(path)
     return nil
 end
 
-local function volumeIgnoresCase(path)
-    local flipped = path:upper() == path and path:lower() or path:upper()
-    if LrFileUtils.exists(flipped) ~= 'file' then
-        return false
-    end
-    local leaf = LrPathUtils.leafName(path)
-    local flippedLeaf = LrPathUtils.leafName(flipped)
-    local leafListed = false
-    local flippedLeafListed = false
-    for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
-        local entryLeaf = LrPathUtils.leafName(entry)
-        leafListed = leafListed or entryLeaf == leaf
-        flippedLeafListed = flippedLeafListed or entryLeaf == flippedLeaf
-    end
-    return not (leafListed and flippedLeafListed)
-end
-
-local function isInCatalog(catalog, path)
-    if catalog:findPhotoByPath(path, true) then
-        return true
-    end
-    return catalog:findPhotoByPath(path, false) ~= nil and volumeIgnoresCase(path)
-end
-
 local function describeSkipped(skipped)
     local names = {}
     for ext in pairs(skipped) do names[#names + 1] = ext end
@@ -220,7 +196,7 @@ function ImportHandler.importPhotos(args, context)
             break
         end
         if context then context:report(processed, #photosToImport, filePath) end
-        if isInCatalog(catalog, filePath) then
+        if catalog:findPhotoByPath(filePath, false) then
             alreadyInCatalogCount = alreadyInCatalogCount + 1
         else
             catalog:withWriteAccessDo("Import Photo", function()

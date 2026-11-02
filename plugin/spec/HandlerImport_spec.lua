@@ -159,45 +159,6 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal(1, r.already_in_catalog)
         end)
 
-        it("imports a separate file that differs in case on a case-sensitive volume", function()
-            local catalog, Handler = setup({
-                photos = { helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }) },
-                fs = {
-                    directories = { ["/dir"] = true },
-                    dirContents = { "/dir/A.jpg", "/dir/a.jpg" },
-                    exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true },
-                },
-            })
-
-            local r = Handler.importPhotos({ source_path = "/dir" })
-
-            assert.are.equal(1, r.imported)
-            assert.are.equal(1, r.already_in_catalog)
-            assert.are.same({ "/dir/A.jpg", "/dir/a.jpg" }, importedPaths(catalog))
-        end)
-
-        for _, case in ipairs({
-            { name = "catalog entry in a folder differing in case", catalogPath = "/Dir/a.jpg",
-                onDisk = { "/Dir/a.jpg", "/dir/a.jpg" } },
-            { name = "catalog entry whose file is gone", catalogPath = "/dir/A.jpg", onDisk = { "/dir/a.jpg" } },
-            { name = "all-caps twin on disk", catalogPath = "/dir/A.JPG", onDisk = { "/dir/A.JPG", "/dir/a.jpg" } },
-        }) do
-            it("imports a new file on a case-sensitive volume: " .. case.name, function()
-                local exists = {}
-                for _, path in ipairs(case.onDisk) do exists[path] = true end
-                local catalog, Handler = setup({
-                    photos = { helper.fakePhoto({ path = case.catalogPath, id = case.catalogPath }) },
-                    fs = { exists = exists },
-                })
-
-                local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
-
-                assert.are.equal(1, r.imported)
-                assert.is_nil(r.already_in_catalog)
-                assert.are.same({ case.catalogPath, "/dir/a.jpg" }, importedPaths(catalog))
-            end)
-        end
-
         it("counts a lowercase path to an all-caps file on a case-insensitive volume", function()
             local _, Handler = setup({
                 photos = { helper.fakePhoto({ path = "/dir/A.JPG", id = "/dir/A.JPG" }) },
