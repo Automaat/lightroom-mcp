@@ -7,6 +7,7 @@ local JSON = require 'JSON'
 local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
+local ExportPresets = require 'ExportPresets'
 
 local ExportHandler = {}
 
@@ -48,18 +49,80 @@ local function absolutePath(destination)
     return destination
 end
 
+local function requireFormat(requestedFormat)
+    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+    local resolvedFormat = EXPORT_FORMATS[requestedFormat and requestedFormat:lower() or 'jpeg']
+    if not resolvedFormat then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+    return resolvedFormat
+end
+
+-- Export settings when no preset is given: the tool's own defaults.
+-- Lightroom's jpeg_quality is 0-1; the tool's quality is 0-100.
+local function defaultSettings(args)
+    local settings = {
+        LR_jpeg_quality = (args.quality or 90) / 100,
+    }
+    local format = requireFormat(args.format)
+    settings.LR_format = format
+    if format == 'JPEG' then
+        settings.LR_export_colorSpace = 'sRGB'
+    elseif format == 'TIFF' then
+        settings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
+    end
+    return settings
+end
+
+-- Export settings from a saved preset, with only the arguments the caller
+-- passed layered on top: the preset's sharpening, renaming, metadata and
+-- watermark settings survive a quality or size override.
+local function presetSettings(preset, args)
+    local settings = preset.settings
+    if args.format ~= nil then
+        settings.LR_format = requireFormat(args.format)
+    end
+    if args.quality ~= nil then
+        settings.LR_jpeg_quality = args.quality / 100
+    end
+    -- Opening another application would leave it waiting for a user.
+    settings.LR_export_postProcessing = 'doNothing'
+    return settings
+end
+
 function ExportHandler.exportPhotos(args, context)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
 
-    if type(args.destination) ~= "string" or args.destination:match("^%s*$") then
+    local preset
+    if args.export_preset ~= nil then
+        preset = ExportPresets.resolve(args.export_preset, args.export_preset_folder)
+    elseif args.export_preset_folder ~= nil then
+        error("export_preset_folder requires export_preset")
+    end
+
+    local destination
+    if args.destination ~= nil then
+        if type(args.destination) ~= "string" or args.destination:match("^%s*$") then
+            error("destination is required")
+        end
+        if args.destination:find("[%z\1-\31]") then
+            error("destination must not contain control characters")
+        end
+        destination = absolutePath(args.destination)
+    elseif not preset then
         error("destination is required")
+    else
+        local destinationType = preset.settings.LR_export_destinationType
+        if not ExportPresets.FIXED_DESTINATION_TYPES[destinationType]
+            or (destinationType == 'specificFolder' and not preset.settings.LR_export_destinationPathPrefix) then
+            error("Export preset '" .. preset.name .. "' has no fixed destination ("
+                .. tostring(destinationType) .. "); pass destination")
+        end
     end
-    if args.destination:find("[%z\1-\31]") then
-        error("destination must not contain control characters")
-    end
-    local destination = absolutePath(args.destination)
 
     -- Every argument is checked before the folder is created, so a rejected
     -- call leaves nothing behind.
@@ -68,14 +131,15 @@ function ExportHandler.exportPhotos(args, context)
         error("on_existing must be one of: rename, overwrite, skip")
     end
 
-    local requestedFormat = args.format
-    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
-        error("format must be one of: jpeg, png, tiff, original")
-    end
-    local formatKey = requestedFormat and requestedFormat:lower() or 'jpeg'
-    local resolvedFormat = EXPORT_FORMATS[formatKey]
-    if not resolvedFormat then
-        error("format must be one of: jpeg, png, tiff, original")
+    local exportSettings = preset and presetSettings(preset, args) or defaultSettings(args)
+    exportSettings.LR_collisionHandling = COLLISION_HANDLING[collisionHandling]
+
+    -- Set dimensions if specified
+    if args.width or args.height then
+        exportSettings.LR_size_doConstrain = true
+        exportSettings.LR_size_maxWidth = args.width
+        exportSettings.LR_size_maxHeight = args.height
+        exportSettings.LR_size_resizeType = 'longEdge'
     end
 
     local catalog = LrApplication.activeCatalog()
@@ -98,44 +162,32 @@ function ExportHandler.exportPhotos(args, context)
         error("No photos found to export")
     end
 
-    -- Lightroom refuses a missing folder with its own error, in the UI
-    -- language; create it as export_photo_metadata and export_develop_preset do.
-    local existing = LrFileUtils.exists(destination)
-    if existing == false then
-        LrFileUtils.createAllDirectories(destination)
-        if LrFileUtils.exists(destination) ~= "directory" then
-            error("could not create destination folder: " .. destination)
+    if destination then
+        -- Lightroom refuses a missing folder with its own error, in the UI
+        -- language; create it as export_photo_metadata and export_develop_preset do.
+        local existing = LrFileUtils.exists(destination)
+        if existing == false then
+            LrFileUtils.createAllDirectories(destination)
+            if LrFileUtils.exists(destination) ~= "directory" then
+                error("could not create destination folder: " .. destination)
+            end
+        elseif existing ~= "directory" then
+            error("destination is not a directory: " .. destination)
         end
-    elseif existing ~= "directory" then
-        error("destination is not a directory: " .. destination)
     end
 
     -- destinationType=specificFolder makes LR honour
     -- LR_export_destinationPathPrefix; sourceFolder ignores it and
-    -- writes next to the original. LR_format is set in the
-    -- format-specific block below.
-    local exportSettings = {
-        LR_export_destinationType = 'specificFolder',
-        LR_export_destinationPathPrefix = destination,
-        LR_export_useSubfolder = false,
-        LR_jpeg_quality = args.quality or 90,
-        LR_collisionHandling = COLLISION_HANDLING[collisionHandling],
-    }
-
-    -- Set dimensions if specified
-    if args.width or args.height then
-        exportSettings.LR_size_doConstrain = true
-        exportSettings.LR_size_maxWidth = args.width
-        exportSettings.LR_size_maxHeight = args.height
-        exportSettings.LR_size_resizeType = 'longEdge'
-    end
-
-    -- Handle different formats
-    exportSettings.LR_format = resolvedFormat
-    if resolvedFormat == 'JPEG' then
-        exportSettings.LR_export_colorSpace = 'sRGB'
-    elseif resolvedFormat == 'TIFF' then
-        exportSettings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
+    -- writes next to the original. Without a destination argument the
+    -- preset's own destination (type, folder, subfolder) is kept.
+    if destination then
+        exportSettings.LR_export_destinationType = 'specificFolder'
+        exportSettings.LR_export_destinationPathPrefix = destination
+        exportSettings.LR_export_useSubfolder = false
+    else
+        destination = exportSettings.LR_export_destinationType == 'specificFolder'
+            and exportSettings.LR_export_destinationPathPrefix
+            or exportSettings.LR_export_destinationType
     end
 
     local exportedCount = 0
@@ -168,6 +220,24 @@ function ExportHandler.exportPhotos(args, context)
         complete = #remainingIds == 0,
         remaining_ids = #remainingIds > 0 and remainingIds or nil,
         destination = destination,
+        preset = preset and {
+            name = preset.name, folder = preset.folder, scope = preset.scope, file = preset.file,
+        } or nil,
+    }
+end
+
+-- Lists the export presets saved on disk, including ones that cannot run over
+-- the bridge (other export services) with the reason, so a failed lookup in
+-- export_photos can be explained.
+function ExportHandler.listExportPresets(args)
+    args = args or {}
+    if args.folder ~= nil and (type(args.folder) ~= "string" or args.folder == "") then
+        error("folder must be a non-empty string")
+    end
+    local presets = ExportPresets.list(args.folder)
+    return {
+        presets = presets,
+        count = #presets,
     }
 end
 

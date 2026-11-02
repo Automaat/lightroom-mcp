@@ -31,6 +31,7 @@ local function setup(opts)
             }
         end,
     })
+    package.loaded.ExportPresets = nil
     package.loaded.HandlerExport = nil
     return catalog, require 'HandlerExport', exportSessionCalls, createdDirs
 end
@@ -89,6 +90,8 @@ describe("HandlerExport.exportPhotos", function()
         assert.are.equal(1, r.exported)
         assert.are.equal("/out", r.destination)
         assert.are.equal("JPEG", calls[1].exportSettings.LR_format)
+        -- Lightroom's jpeg_quality is 0-1; the tool's quality is 0-100.
+        assert.are.equal(0.9, calls[1].exportSettings.LR_jpeg_quality)
     end)
 
     it("creates a missing destination folder before exporting", function()
@@ -302,6 +305,7 @@ describe("HandlerExport.exportPhotos", function()
                 }
             end,
         })
+        package.loaded.ExportPresets = nil
         package.loaded.HandlerExport = nil
         local Handler = require 'HandlerExport'
 
@@ -342,6 +346,7 @@ describe("HandlerExport.exportPhotoMetadata", function()
             },
             LrExportSession = function() return { doExportOnCurrentTask = function() end } end,
         })
+        package.loaded.ExportPresets = nil
         package.loaded.HandlerExport = nil
         return catalog, require 'HandlerExport'
     end
