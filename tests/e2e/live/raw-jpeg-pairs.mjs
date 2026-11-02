@@ -58,6 +58,16 @@ try {
   assert.match(pairedFiles.find((row) => row.file === "P1.ARW").sidecars, /jpg/i);
   assert.match(pairedFiles.find((row) => row.file === "P2.ARW").sidecars, /jpeg/i);
 
+  fs.copyFileSync(rawSource, path.join(paired, "P3.ARW"));
+  fs.copyFileSync(jpegSource, path.join(paired, "P3.JPG"));
+  const again = await session.toolOrThrow("import_photos", { source_path: paired }, { timeoutMs: 300_000 });
+  const againFiles = await waitForFiles(paired, 5);
+  results.reimport = { result: again.data, files: againFiles };
+  assert.equal(again.data.imported, 1);
+  assert.equal(again.data.already_in_catalog, 4);
+  assert.equal(again.data.skipped_sidecar_jpegs, 3);
+  assert.equal(againFiles.filter((row) => row.id !== null).length, 5);
+
   const caseDiffers = makeFolder("case", { "R.ARW": rawSource, "r.jpg": jpegSource });
   const caseResult = await session.toolOrThrow("import_photos", { source_path: caseDiffers }, { timeoutMs: 300_000 });
   const caseFiles = await waitForFiles(caseDiffers, 2);
