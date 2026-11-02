@@ -22,12 +22,6 @@ for ext in ([[
     IMPORTABLE_EXTENSIONS[ext] = true
 end
 
-local SORTED_JPEG_SIDECAR_RAW_EXTENSIONS = {}
-for ext in pairs(JPEG_SIDECAR_RAW_EXTENSIONS) do
-    SORTED_JPEG_SIDECAR_RAW_EXTENSIONS[#SORTED_JPEG_SIDECAR_RAW_EXTENSIONS + 1] = ext
-end
-table.sort(SORTED_JPEG_SIDECAR_RAW_EXTENSIONS)
-
 local JPEG_EXTENSIONS = { jpe = true, jpeg = true, jpg = true }
 
 local function lowerExtension(path)
@@ -68,11 +62,14 @@ local function leafSpelledOnDisk(path, entries)
     return spelling
 end
 
-local function rawFileProbedBeside(path)
+local function rawFileProbedBeside(path, entries)
     local stem = LrPathUtils.removeExtension(path)
-    for _, ext in ipairs(SORTED_JPEG_SIDECAR_RAW_EXTENSIONS) do
-        for _, spelling in ipairs({ ext, ext:upper() }) do
-            local candidate = stem .. "." .. spelling
+    local probedExtensions = {}
+    for _, entry in ipairs(entries) do
+        local ext = LrPathUtils.extension(entry)
+        if JPEG_SIDECAR_RAW_EXTENSIONS[ext:lower()] and not probedExtensions[ext] then
+            probedExtensions[ext] = true
+            local candidate = stem .. "." .. ext
             if LrFileUtils.exists(candidate) == 'file' then
                 return candidate
             end
@@ -88,7 +85,7 @@ local function rawFileBeside(path)
     end
     local leafOnDisk = leafSpelledOnDisk(path, entries)
     if not leafOnDisk then
-        return rawFileProbedBeside(path)
+        return rawFileProbedBeside(path, entries)
     end
     local stem = LrPathUtils.removeExtension(leafOnDisk)
     for _, entry in ipairs(entries) do

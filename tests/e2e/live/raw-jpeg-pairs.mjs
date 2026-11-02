@@ -103,7 +103,7 @@ try {
   const otherForm = await session.tool("import_photos", { source_path: path.join(unicode, "cafe\u0301.jpg") });
   results.unicode = otherForm.text;
   assert.equal(otherForm.isError, true);
-  assert.match(otherForm.text, /\.arw/i);
+  assert.match(otherForm.text, /\.ARW/);
   assert.deepEqual(catalogFiles(unicode), []);
 
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });

@@ -375,7 +375,20 @@ describe("HandlerImport.importPhotos", function()
             local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
 
             assert.is_false(ok)
-            assert.truthy(tostring(err):lower():find("import /dir/cafe\204\129.arw instead", 1, true))
+            assert.truthy(tostring(err):find("Import /dir/cafe\204\129.ARW instead", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        it("finds a mixed-case raw extension across Unicode forms on a case-sensitive volume", function()
+            local catalog, Handler = setup({ fs = {
+                normalizationInsensitiveVolume = true,
+                exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ArW"] = true },
+            } })
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("Import /dir/cafe\204\129.ArW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
