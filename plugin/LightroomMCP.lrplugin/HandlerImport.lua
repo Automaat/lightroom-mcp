@@ -7,22 +7,22 @@ local Log = require 'Log'
 
 local ImportHandler = {}
 
-local RAW_EXTENSION_NAMES = {}
+local JPEG_SIDECAR_RAW_EXTENSION_NAMES = {}
 for ext in ([[
-    3fr ari arw bay cap cr2 cr3 crw dcr dcs dng drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
+    3fr ari arw bay cap cr2 cr3 crw dcr dcs drf eip erf fff gpr iiq k25 kdc mdc mef mos mrw
     nef nrw orf ori pef ptx pxn raf raw rw2 rwl sr2 srf srw x3f
 ]]):gmatch("%S+") do
-    RAW_EXTENSION_NAMES[#RAW_EXTENSION_NAMES + 1] = ext
+    JPEG_SIDECAR_RAW_EXTENSION_NAMES[#JPEG_SIDECAR_RAW_EXTENSION_NAMES + 1] = ext
 end
 
-local RAW_EXTENSIONS = {}
+local JPEG_SIDECAR_RAW_EXTENSIONS = {}
 local IMPORTABLE_EXTENSIONS = {}
-for _, ext in ipairs(RAW_EXTENSION_NAMES) do
-    RAW_EXTENSIONS[ext] = true
+for _, ext in ipairs(JPEG_SIDECAR_RAW_EXTENSION_NAMES) do
+    JPEG_SIDECAR_RAW_EXTENSIONS[ext] = true
     IMPORTABLE_EXTENSIONS[ext] = true
 end
 for ext in ([[
-    avif heic heif hif jpe jpeg jpg jxl png psb psd tif tiff
+    dng avif heic heif hif jpe jpeg jpg jxl png psb psd tif tiff
 ]]):gmatch("%S+") do
     IMPORTABLE_EXTENSIONS[ext] = true
 end
@@ -33,21 +33,17 @@ local function lowerExtension(path)
     return LrPathUtils.extension(path):lower()
 end
 
-local function pairKey(path)
-    return LrPathUtils.removeExtension(path):lower()
-end
-
 local function withoutSidecarJpegs(files)
-    local rawKeys = {}
+    local rawStems = {}
     for _, file in ipairs(files) do
-        if RAW_EXTENSIONS[lowerExtension(file)] then
-            rawKeys[pairKey(file)] = true
+        if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(file)] then
+            rawStems[LrPathUtils.removeExtension(file)] = true
         end
     end
     local kept = {}
     local sidecarCount = 0
     for _, file in ipairs(files) do
-        if JPEG_EXTENSIONS[lowerExtension(file)] and rawKeys[pairKey(file)] then
+        if JPEG_EXTENSIONS[lowerExtension(file)] and rawStems[LrPathUtils.removeExtension(file)] then
             sidecarCount = sidecarCount + 1
         else
             kept[#kept + 1] = file
@@ -58,7 +54,7 @@ end
 
 local function rawFileBeside(path)
     local stem = LrPathUtils.removeExtension(path)
-    for _, ext in ipairs(RAW_EXTENSION_NAMES) do
+    for _, ext in ipairs(JPEG_SIDECAR_RAW_EXTENSION_NAMES) do
         for _, spelling in ipairs({ ext, ext:upper() }) do
             local candidate = stem .. "." .. spelling
             if LrFileUtils.exists(candidate) == 'file' then

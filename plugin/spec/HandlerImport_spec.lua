@@ -72,9 +72,9 @@ describe("HandlerImport.importPhotos", function()
         for _, case in ipairs({
             { name = "lowercase pair", files = { "/dir/a.cr3", "/dir/a.jpg" }, kept = { "/dir/a.cr3" } },
             { name = "mixed extension case", files = { "/dir/a.CR3", "/dir/a.jpg" }, kept = { "/dir/a.CR3" } },
-            { name = "mixed name case", files = { "/dir/A.nef", "/dir/a.JPG" }, kept = { "/dir/A.nef" } },
+            { name = "mixed extension case on a jpeg", files = { "/dir/A.nef", "/dir/A.jpg" }, kept = { "/dir/A.nef" } },
             { name = "jpeg listed before the raw", files = { "/dir/a.JPEG", "/dir/a.arw" }, kept = { "/dir/a.arw" } },
-            { name = "jpe extension", files = { "/dir/a.dng", "/dir/a.jpe" }, kept = { "/dir/a.dng" } },
+            { name = "jpe extension", files = { "/dir/a.nef", "/dir/a.jpe" }, kept = { "/dir/a.nef" } },
             { name = "several jpegs for one raw", files = { "/dir/a.raf", "/dir/a.jpg", "/dir/a.jpeg" }, kept = { "/dir/a.raf" } },
         }) do
             it("leaves out the JPEG: " .. case.name, function()
@@ -93,6 +93,9 @@ describe("HandlerImport.importPhotos", function()
             { name = "same name in another folder", files = { "/dir/one/a.cr3", "/dir/two/a.jpg" } },
             { name = "non-JPEG next to a raw", files = { "/dir/a.cr3", "/dir/a.tif", "/dir/a.heic" } },
             { name = "JPEG next to a non-raw", files = { "/dir/a.png", "/dir/a.jpg" } },
+            { name = "name differing in case", files = { "/dir/A.nef", "/dir/a.JPG" } },
+            { name = "JPEG next to a DNG", files = { "/dir/a.dng", "/dir/a.jpg" } },
+            { name = "JPEG next to an uppercase DNG", files = { "/dir/a.DNG", "/dir/a.JPEG" } },
         }) do
             it("keeps every file: " .. case.name, function()
                 local r, paths = importFolder(case.files)
@@ -164,6 +167,7 @@ describe("HandlerImport.importPhotos", function()
 
         for _, case in ipairs({
             { name = "JPEG with no raw beside it", source = "/dir/a.jpg", others = { "/dir/a.png" } },
+            { name = "JPEG beside a DNG", source = "/dir/a.jpg", others = { "/dir/a.dng", "/dir/a.DNG" } },
             { name = "raw with a JPEG beside it", source = "/dir/a.cr3", others = { "/dir/a.jpg" } },
             { name = "folder named like the raw", source = "/dir/a.jpg", directoryNamed = "/dir/a.cr3" },
         }) do

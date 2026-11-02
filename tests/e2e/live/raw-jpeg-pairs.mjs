@@ -11,12 +11,14 @@ const { marker, catalogPath, session } = await openLiveSession();
 requireFixtureId(marker, "arw_12bit");
 const rawSource = marker.fixtures.arw_12bit.path;
 const jpegSource = marker.fixtures.wide_plain.path;
-const extraRaw = process.argv[2];
+const dngSample = process.argv[2];
 const root = path.join(path.dirname(catalogPath), `raw-jpeg-pairs-${randomUUID()}`);
+const folders = [];
 
 function makeFolder(name, files) {
   const folder = path.join(root, name);
   fs.mkdirSync(folder, { recursive: true });
+  folders.push(folder);
   for (const [file, source] of Object.entries(files)) fs.copyFileSync(source, path.join(folder, file));
   return folder;
 }
@@ -42,21 +44,27 @@ async function waitForFiles(folder, count) {
   return catalogFiles(folder);
 }
 
-const imported = [];
 const results = {};
 try {
   requireThrowawayCatalog();
 
-  const paired = makeFolder("paired", { "P1.ARW": rawSource, "P1.JPG": jpegSource, "P2.ARW": rawSource, "p2.jpeg": jpegSource, "alone.jpg": jpegSource, "rawonly.ARW": rawSource });
+  const paired = makeFolder("paired", { "P1.ARW": rawSource, "P1.JPG": jpegSource, "P2.ARW": rawSource, "P2.jpeg": jpegSource, "alone.jpg": jpegSource, "rawonly.ARW": rawSource });
   const folderResult = await session.toolOrThrow("import_photos", { source_path: paired }, { timeoutMs: 300_000 });
   const pairedFiles = await waitForFiles(paired, 4);
-  imported.push(...pairedFiles);
   results.folder = { result: folderResult.data, files: pairedFiles };
   assert.equal(folderResult.data.imported, 4);
   assert.equal(folderResult.data.skipped_sidecar_jpegs, 2);
   assert.deepEqual(pairedFiles.map((row) => row.file).sort(), ["P1.ARW", "P2.ARW", "alone.jpg", "rawonly.ARW"].sort());
   assert.match(pairedFiles.find((row) => row.file === "P1.ARW").sidecars, /jpg/i);
   assert.match(pairedFiles.find((row) => row.file === "P2.ARW").sidecars, /jpeg/i);
+
+  const caseDiffers = makeFolder("case", { "R.ARW": rawSource, "r.jpg": jpegSource });
+  const caseResult = await session.toolOrThrow("import_photos", { source_path: caseDiffers }, { timeoutMs: 300_000 });
+  const caseFiles = await waitForFiles(caseDiffers, 2);
+  results.caseDiffers = { result: caseResult.data, files: caseFiles };
+  assert.equal(caseResult.data.imported, 2);
+  assert.equal(caseResult.data.skipped_sidecar_jpegs, undefined);
+  assert.equal(caseFiles.filter((row) => row.id !== null).length, 2);
 
   const single = makeFolder("single", { "S1.ARW": rawSource, "S1.JPG": jpegSource });
   const jpegPath = path.join(single, "S1.JPG");
@@ -69,27 +77,24 @@ try {
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });
   assert.equal(separate.data.imported, 1);
   const singleFiles = await waitForFiles(single, 1);
-  imported.push(...singleFiles);
   results.singleSeparate = singleFiles;
 
   const optOut = makeFolder("optout", { "O1.ARW": rawSource, "O1.JPG": jpegSource });
   const optOutResult = await session.toolOrThrow("import_photos", { source_path: optOut, separate_jpegs: true }, { timeoutMs: 300_000 });
   const optOutFiles = await waitForFiles(optOut, 2);
-  imported.push(...optOutFiles);
   results.optOut = { result: optOutResult.data, files: optOutFiles };
   assert.equal(optOutResult.data.imported, 2);
   assert.equal(optOutResult.data.skipped_sidecar_jpegs, undefined);
   assert.equal(optOutFiles.length, 2);
 
-  if (extraRaw) {
-    const name = `X1${path.extname(extraRaw)}`;
-    const extra = makeFolder("extra", { [name]: extraRaw, "X1.JPG": jpegSource });
-    const extraResult = await session.toolOrThrow("import_photos", { source_path: extra }, { timeoutMs: 300_000 });
-    const extraFiles = await waitForFiles(extra, 1);
-    imported.push(...extraFiles);
-    results.extraRaw = { result: extraResult.data, files: extraFiles };
-    assert.equal(extraResult.data.skipped_sidecar_jpegs, 1);
-    assert.match(extraFiles.find((row) => row.file === name).sidecars, /jpg/i);
+  if (dngSample) {
+    const dng = makeFolder("dng", { "D1.DNG": dngSample, "D1.JPG": jpegSource });
+    const dngResult = await session.toolOrThrow("import_photos", { source_path: dng }, { timeoutMs: 300_000 });
+    const dngFiles = await waitForFiles(dng, 2);
+    results.dng = { result: dngResult.data, files: dngFiles };
+    assert.equal(dngResult.data.imported, 2);
+    assert.equal(dngResult.data.skipped_sidecar_jpegs, undefined);
+    assert.equal(dngFiles.filter((row) => row.id !== null).length, 2);
   }
 
   console.log(JSON.stringify({ passed: true, root, results }, null, 2));
@@ -98,7 +103,7 @@ try {
   throw error;
 } finally {
   requireThrowawayCatalog();
-  const ids = imported.map((row) => row.id).filter((id) => id !== null);
+  const ids = folders.flatMap(catalogFiles).map((row) => row.id).filter((id) => id !== null);
   if (ids.length > 0) await session.tool("remove_photos_from_catalog", { photo_ids: ids, confirm: true });
   await session.stop();
 }
