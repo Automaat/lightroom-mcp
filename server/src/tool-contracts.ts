@@ -1184,7 +1184,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerImport.importPhotos",
     description:
-      "Import a photo or a folder recursively. A JPEG with a non-DNG raw file of exactly the same name (only the extension's case may differ) stays the raw's sidecar: folders leave it out and report skipped_sidecar_jpegs; importing that JPEG alone fails and names the raw. Lightroom makes no sidecar for other JPEGs, so they import as their own photos. Returns success, imported/skipped counts, skipped_by_extension, skipped_sidecar_jpegs, complete and remaining_paths. Only unsupported-extension notes remain in message.",
+      "Import a photo or a folder recursively. A JPEG with a non-DNG raw file of exactly the same name (only the extension's case may differ) stays the raw's sidecar: folders leave it out and report skipped_sidecar_jpegs; importing that JPEG alone fails and names the raw. Lightroom makes no sidecar for other JPEGs, so they import as their own photos. Files already in the catalog are left unchanged and counted in already_in_catalog. Returns success, imported/skipped counts, skipped_by_extension, skipped_sidecar_jpegs, already_in_catalog, complete and remaining_paths. Only unsupported-extension notes remain in message.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

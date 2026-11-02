@@ -373,10 +373,13 @@ function M.fakeCatalog(opts)
             return M.fakePhoto({ id = id, __dangling = true })
         end,
         getTargetPhotos = function() markQuery() return opts.targetPhotos or photos end,
-        findPhotoByPath = function(_, path)
+        findPhotoByPath = function(_, path, caseSensitive)
             markQuery()
             for _, photo in ipairs(photos) do
-                if photo:getRawMetadata('path') == path then return photo end
+                local candidate = photo:getRawMetadata('path')
+                if candidate == path or (caseSensitive == false and candidate:lower() == path:lower()) then
+                    return photo
+                end
             end
             return nil
         end,

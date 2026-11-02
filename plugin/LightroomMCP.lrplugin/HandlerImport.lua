@@ -165,6 +165,7 @@ function ImportHandler.importPhotos(args, context)
     -- handlers interleave.
     local addedPhotos = {}
     local remainingPaths = {}
+    local alreadyInCatalogCount = 0
     local processed = 0
     for index, filePath in ipairs(photosToImport) do
         if context and context:isCanceled() then
@@ -172,13 +173,17 @@ function ImportHandler.importPhotos(args, context)
             break
         end
         if context then context:report(processed, #photosToImport, filePath) end
-        catalog:withWriteAccessDo("Import Photo", function()
-            local photo = catalog:addPhoto(filePath)
-            if photo then
-                table.insert(addedPhotos, photo)
-                importedCount = importedCount + 1
-            end
-        end)
+        if catalog:findPhotoByPath(filePath, false) then
+            alreadyInCatalogCount = alreadyInCatalogCount + 1
+        else
+            catalog:withWriteAccessDo("Import Photo", function()
+                local photo = catalog:addPhoto(filePath)
+                if photo then
+                    table.insert(addedPhotos, photo)
+                    importedCount = importedCount + 1
+                end
+            end)
+        end
         processed = processed + 1
     end
     if context and processed > 0 then context:report(processed, #photosToImport, photosToImport[processed]) end
@@ -206,8 +211,8 @@ function ImportHandler.importPhotos(args, context)
         end)
     end
 
-    Log.info(string.format("Imported %d photos from: %s (skipped %d, sidecar JPEGs %d)",
-        importedCount, args.source_path, skippedCount, sidecarJpegCount))
+    Log.info(string.format("Imported %d photos from: %s (skipped %d, sidecar JPEGs %d, already in catalog %d)",
+        importedCount, args.source_path, skippedCount, sidecarJpegCount, alreadyInCatalogCount))
 
     local message
     if skippedCount > 0 then
@@ -222,6 +227,7 @@ function ImportHandler.importPhotos(args, context)
         skipped = skippedCount,
         skipped_by_extension = skippedCount > 0 and skippedByExtension or nil,
         skipped_sidecar_jpegs = sidecarJpegCount > 0 and sidecarJpegCount or nil,
+        already_in_catalog = alreadyInCatalogCount > 0 and alreadyInCatalogCount or nil,
         message = message,
     }
 end

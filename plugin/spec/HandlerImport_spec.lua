@@ -61,7 +61,7 @@ local function fakePathUtils()
 end
 
 local function setup(opts)
-    local catalog = helper.fakeCatalog({ collections = opts.collections or {} })
+    local catalog = helper.fakeCatalog({ collections = opts.collections or {}, photos = opts.photos })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrLogger = helper.defaultLrLogger(),
@@ -82,6 +82,88 @@ local function importedPaths(catalog)
 end
 
 describe("HandlerImport.importPhotos", function()
+    describe("files already in the catalog", function()
+        local function setupFolder(existingPaths, dirContents)
+            local photos = {}
+            for _, path in ipairs(existingPaths) do
+                photos[#photos + 1] = helper.fakePhoto({ path = path, id = path })
+            end
+            return setup({
+                photos = photos,
+                fs = { directories = { ["/dir"] = true }, dirContents = dirContents },
+            })
+        end
+
+        it("adds the new photo and reports the existing ones", function()
+            local catalog, Handler = setupFolder({ "/dir/a.arw", "/dir/b.jpg" }, { "/dir/a.arw", "/dir/b.jpg", "/dir/c.arw" })
+            local added = {}
+            local addPhoto = catalog.addPhoto
+            catalog.addPhoto = function(self, path)
+                added[#added + 1] = path
+                return addPhoto(self, path)
+            end
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.are.same({ "/dir/c.arw" }, added)
+            assert.are.equal(1, r.imported)
+            assert.are.equal(2, r.already_in_catalog)
+            assert.is_true(r.complete)
+            assert.is_false(catalog:getQueriedInsideWriteAccess())
+        end)
+
+        it("does not count a sidecar JPEG as already in the catalog", function()
+            local _, Handler = setupFolder({ "/dir/a.arw" }, { "/dir/a.arw", "/dir/a.jpg" })
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.are.equal(0, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(1, r.skipped_sidecar_jpegs)
+        end)
+
+        it("reports a single file that is already in the catalog", function()
+            local catalog, Handler = setup({
+                photos = { helper.fakePhoto({ path = "/dir/a.arw", id = "/dir/a.arw" }) },
+                fs = { exists = { ["/dir/a.arw"] = true } },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir/a.arw" })
+
+            assert.is_true(r.success)
+            assert.are.equal(0, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(1, #catalog:getAllPhotos())
+        end)
+
+        it("counts a file renamed in case only as already in the catalog", function()
+            local _, Handler = setupFolder({ "/dir/A.arw" }, { "/dir/a.arw", "/dir/new.arw" })
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+        end)
+
+        it("leaves already_in_catalog out when nothing was there", function()
+            local _, Handler = setupFolder({}, { "/dir/a.arw" })
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.is_nil(r.already_in_catalog)
+        end)
+
+        it("still surfaces a file that fails for another reason", function()
+            local catalog, Handler = setupFolder({ "/dir/a.arw" }, { "/dir/a.arw", "/dir/bad.arw", "/dir/c.arw" })
+            catalog.addPhoto = function() error("failed to import photo") end
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("failed to import photo", 1, true))
+        end)
+    end)
+
     describe("RAW+JPEG pairs", function()
         local function importFolder(dirContents, args)
             local catalog, Handler = setup({ fs = {
