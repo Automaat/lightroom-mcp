@@ -22,6 +22,12 @@ for ext in ([[
     IMPORTABLE_EXTENSIONS[ext] = true
 end
 
+local SORTED_JPEG_SIDECAR_RAW_EXTENSIONS = {}
+for ext in pairs(JPEG_SIDECAR_RAW_EXTENSIONS) do
+    SORTED_JPEG_SIDECAR_RAW_EXTENSIONS[#SORTED_JPEG_SIDECAR_RAW_EXTENSIONS + 1] = ext
+end
+table.sort(SORTED_JPEG_SIDECAR_RAW_EXTENSIONS)
+
 local JPEG_EXTENSIONS = { jpe = true, jpeg = true, jpg = true }
 
 local function lowerExtension(path)
@@ -64,7 +70,7 @@ end
 
 local function rawFileProbedBeside(path)
     local stem = LrPathUtils.removeExtension(path)
-    for ext in pairs(JPEG_SIDECAR_RAW_EXTENSIONS) do
+    for _, ext in ipairs(SORTED_JPEG_SIDECAR_RAW_EXTENSIONS) do
         for _, spelling in ipairs({ ext, ext:upper() }) do
             local candidate = stem .. "." .. spelling
             if LrFileUtils.exists(candidate) == 'file' then
@@ -95,28 +101,28 @@ local function rawFileBeside(path)
     return nil
 end
 
-local function bothSpellingsOnDisk(path, otherPath)
-    local leaf = LrPathUtils.leafName(path)
-    local otherLeaf = LrPathUtils.leafName(otherPath)
-    if leaf == otherLeaf then
+local function volumeIgnoresCase(path)
+    local flipped = path:upper() == path and path:lower() or path:upper()
+    if LrFileUtils.exists(flipped) ~= 'file' then
         return false
     end
+    local leaf = LrPathUtils.leafName(path)
+    local flippedLeaf = LrPathUtils.leafName(flipped)
     local leafListed = false
-    local otherLeafListed = false
+    local flippedLeafListed = false
     for entry in LrFileUtils.directoryEntries(LrPathUtils.parent(path)) do
         local entryLeaf = LrPathUtils.leafName(entry)
         leafListed = leafListed or entryLeaf == leaf
-        otherLeafListed = otherLeafListed or entryLeaf == otherLeaf
+        flippedLeafListed = flippedLeafListed or entryLeaf == flippedLeaf
     end
-    return leafListed and otherLeafListed
+    return not (leafListed and flippedLeafListed)
 end
 
 local function isInCatalog(catalog, path)
     if catalog:findPhotoByPath(path, true) then
         return true
     end
-    local caseVariant = catalog:findPhotoByPath(path, false)
-    return caseVariant ~= nil and not bothSpellingsOnDisk(path, caseVariant:getRawMetadata('path'))
+    return catalog:findPhotoByPath(path, false) ~= nil and volumeIgnoresCase(path)
 end
 
 local function describeSkipped(skipped)

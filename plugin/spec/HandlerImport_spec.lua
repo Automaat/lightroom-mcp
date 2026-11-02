@@ -143,7 +143,15 @@ describe("HandlerImport.importPhotos", function()
         end)
 
         it("counts a file renamed in case only as already in the catalog", function()
-            local _, Handler = setupFolder({ "/dir/A.arw" }, { "/dir/a.arw", "/dir/new.arw" })
+            local _, Handler = setup({
+                photos = { helper.fakePhoto({ path = "/dir/A.arw", id = "/dir/A.arw" }) },
+                fs = {
+                    caseInsensitiveVolume = true,
+                    directories = { ["/dir"] = true },
+                    dirContents = { "/dir/a.arw", "/dir/new.arw" },
+                    exists = { ["/dir/a.arw"] = true, ["/dir/new.arw"] = true },
+                },
+            })
 
             local r = Handler.importPhotos({ source_path = "/dir" })
 
@@ -166,6 +174,40 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal(1, r.imported)
             assert.are.equal(1, r.already_in_catalog)
             assert.are.same({ "/dir/A.jpg", "/dir/a.jpg" }, importedPaths(catalog))
+        end)
+
+        for _, case in ipairs({
+            { name = "catalog entry in a folder differing in case", catalogPath = "/Dir/a.jpg",
+                onDisk = { "/Dir/a.jpg", "/dir/a.jpg" } },
+            { name = "catalog entry whose file is gone", catalogPath = "/dir/A.jpg", onDisk = { "/dir/a.jpg" } },
+            { name = "all-caps twin on disk", catalogPath = "/dir/A.JPG", onDisk = { "/dir/A.JPG", "/dir/a.jpg" } },
+        }) do
+            it("imports a new file on a case-sensitive volume: " .. case.name, function()
+                local exists = {}
+                for _, path in ipairs(case.onDisk) do exists[path] = true end
+                local catalog, Handler = setup({
+                    photos = { helper.fakePhoto({ path = case.catalogPath, id = case.catalogPath }) },
+                    fs = { exists = exists },
+                })
+
+                local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
+
+                assert.are.equal(1, r.imported)
+                assert.is_nil(r.already_in_catalog)
+                assert.are.same({ case.catalogPath, "/dir/a.jpg" }, importedPaths(catalog))
+            end)
+        end
+
+        it("counts a lowercase path to an all-caps file on a case-insensitive volume", function()
+            local _, Handler = setup({
+                photos = { helper.fakePhoto({ path = "/dir/A.JPG", id = "/dir/A.JPG" }) },
+                fs = { caseInsensitiveVolume = true, exists = { ["/dir/A.JPG"] = true } },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
+
+            assert.are.equal(0, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
         end)
 
         it("counts both spellings when both are in the catalog", function()
