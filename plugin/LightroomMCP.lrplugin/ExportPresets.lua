@@ -280,6 +280,14 @@ local function sizeSummary(value)
     return summary
 end
 
+-- The folder a specificFolder preset writes to, including its subfolder.
+local function specificFolderPath(prefix, useSubfolder, suffix)
+    if prefix and useSubfolder and suffix and suffix ~= "" then
+        return LrPathUtils.child(prefix, suffix)
+    end
+    return prefix
+end
+
 local function loadEntry(root, folder, file)
     local entry = {
         name = stem(file),
@@ -322,7 +330,8 @@ local function loadEntry(root, folder, file)
     entry.watermark = value.useWatermark == true
     entry.destination_type = value.export_destinationType
     if value.export_destinationType == "specificFolder" then
-        entry.destination_folder = value.export_destinationPathPrefix
+        entry.destination_folder = specificFolderPath(value.export_destinationPathPrefix,
+            value.export_useSubfolder, value.export_destinationPathSuffix)
     end
     entry.has_fixed_destination = FIXED_DESTINATION_TYPES[value.export_destinationType] == true
 
@@ -450,6 +459,7 @@ function ExportPresets.resolve(name, folder)
 end
 
 ExportPresets.FIXED_DESTINATION_TYPES = FIXED_DESTINATION_TYPES
+ExportPresets.specificFolderPath = specificFolderPath
 -- Exposed for the specs.
 ExportPresets._parse = readPresetSource
 

@@ -193,7 +193,8 @@ function ExportHandler.exportPhotos(args, context)
         exportSettings.LR_export_useSubfolder = false
     else
         destination = exportSettings.LR_export_destinationType == 'specificFolder'
-            and exportSettings.LR_export_destinationPathPrefix
+            and ExportPresets.specificFolderPath(exportSettings.LR_export_destinationPathPrefix,
+                exportSettings.LR_export_useSubfolder, exportSettings.LR_export_destinationPathSuffix)
             or exportSettings.LR_export_destinationType
     end
 
