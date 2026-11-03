@@ -239,7 +239,7 @@ end
 -- export_photos can be explained.
 function ExportHandler.listExportPresets(args)
     args = args or {}
-    if args.folder ~= nil and (type(args.folder) ~= "string" or args.folder == "") then
+    if args.folder ~= nil and (type(args.folder) ~= "string" or args.folder:match("^%s*$")) then
         error("folder must be a non-empty string")
     end
     local presets = ExportPresets.list(args.folder)

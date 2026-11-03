@@ -244,6 +244,15 @@ describe("ExportPresets.list", function()
         assert.are.equal(0, Handler.listExportPresets({ folder = "Nope" }).count)
     end)
 
+    it("rejects an empty or whitespace-only folder", function()
+        local _, Handler = setup()
+        for _, folder in ipairs({ "", "   ", "\t\n" }) do
+            assert.has_error(function()
+                Handler.listExportPresets({ folder = folder })
+            end, "folder must be a non-empty string")
+        end
+    end)
+
     it("includes presets stored with the catalog, after user presets", function()
         local files = defaultFiles()
         files[CATALOG_ROOT .. "/User Presets/Catalog Only.lrtemplate"] = SPECIFIC_FOLDER:gsub("To Prints", "Catalog Only")

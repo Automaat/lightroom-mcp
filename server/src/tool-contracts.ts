@@ -1273,6 +1273,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         folder: {
           type: "string",
           minLength: 1,
+          pattern: "\\S",
           description: "Only this folder",
         },
       },
