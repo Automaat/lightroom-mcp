@@ -354,6 +354,15 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         assert.is_true(s.LR_outputSharpeningOn)
     end)
 
+    it("rejects an invalid quality override", function()
+        local _, Handler, calls = setup({ photos = { photo() } })
+
+        assert.has_error(function()
+            Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "BlueSky", quality = "high" })
+        end, "quality must be a number between 0 and 100")
+        assert.are.equal(0, #calls)
+    end)
+
     it("does not apply the tool's defaults over the preset", function()
         local _, Handler, calls = setup({ photos = { photo() } })
 

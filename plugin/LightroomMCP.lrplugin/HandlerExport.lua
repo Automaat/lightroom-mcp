@@ -60,11 +60,18 @@ local function requireFormat(requestedFormat)
     return resolvedFormat
 end
 
--- Export settings when no preset is given: the tool's own defaults.
 -- Lightroom's jpeg_quality is 0-1; the tool's quality is 0-100.
+local function jpegQuality(quality)
+    if type(quality) ~= "number" or quality ~= quality or quality < 0 or quality > 100 then
+        error("quality must be a number between 0 and 100")
+    end
+    return quality / 100
+end
+
+-- Export settings when no preset is given: the tool's own defaults.
 local function defaultSettings(args)
     local settings = {
-        LR_jpeg_quality = (args.quality or 90) / 100,
+        LR_jpeg_quality = jpegQuality(args.quality or 90),
     }
     local format = requireFormat(args.format)
     settings.LR_format = format
@@ -85,7 +92,7 @@ local function presetSettings(preset, args)
         settings.LR_format = requireFormat(args.format)
     end
     if args.quality ~= nil then
-        settings.LR_jpeg_quality = args.quality / 100
+        settings.LR_jpeg_quality = jpegQuality(args.quality)
     end
     -- Opening another application would leave it waiting for a user.
     settings.LR_export_postProcessing = 'doNothing'

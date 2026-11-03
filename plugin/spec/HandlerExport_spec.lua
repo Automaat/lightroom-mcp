@@ -139,12 +139,16 @@ describe("HandlerExport.exportPhotos", function()
         for _, bad in ipairs({
             { format = "gif", err = "format must be one of: jpeg, png, tiff, original" },
             { on_existing = "bogus", err = "on_existing must be one of: rename, overwrite, skip" },
+            { quality = "high", err = "quality must be a number between 0 and 100" },
+            { quality = 101, err = "quality must be a number between 0 and 100" },
+            { quality = -1, err = "quality must be a number between 0 and 100" },
         }) do
             local _, Handler, calls, createdDirs = setup({ photos = { p }, paths = { ["/out/new"] = false } })
 
             assert.has_error(function()
                 Handler.exportPhotos({
-                    photo_ids = { "1" }, destination = "/out/new", format = bad.format, on_existing = bad.on_existing,
+                    photo_ids = { "1" }, destination = "/out/new", format = bad.format,
+                    on_existing = bad.on_existing, quality = bad.quality,
                 })
             end, bad.err)
             assert.are.same({}, createdDirs)
