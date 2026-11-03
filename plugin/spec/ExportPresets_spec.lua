@@ -397,6 +397,36 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         assert.is_nil(s.LR_export_colorSpace)
     end)
 
+    it("creates a preset's missing folder when no destination is given", function()
+        local _, Handler, calls = setup({ photos = { photo() } })
+        local LrFileUtils = import 'LrFileUtils'
+        assert.is_false(LrFileUtils.exists("/prints/Batch"))
+
+        Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "To Prints" })
+
+        assert.are.equal("directory", LrFileUtils.exists("/prints/Batch"))
+        assert.are.equal(1, #calls)
+    end)
+
+    it("refuses a preset folder path that is a file", function()
+        local files = defaultFiles()
+        files["/prints/Batch"] = "not a folder"
+        local _, Handler, calls = setup({ files = files, photos = { photo() } })
+
+        assert.has_error(function()
+            Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "To Prints" })
+        end, "destination is not a directory: /prints/Batch")
+        assert.are.equal(0, #calls)
+    end)
+
+    it("creates no folder for a preset without a specific folder", function()
+        local _, Handler = setup({ photos = { photo() } })
+
+        Handler.exportPhotos({ photo_ids = { "1" }, export_preset = "BlueSky" })
+
+        assert.is_false((import 'LrFileUtils').exists("/Users/someone/Desktop"))
+    end)
+
     it("uses the preset's fixed destination when none is given", function()
         local _, Handler, calls = setup({ photos = { photo() } })
 

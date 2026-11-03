@@ -169,17 +169,24 @@ function ExportHandler.exportPhotos(args, context)
         error("No photos found to export")
     end
 
-    if destination then
+    local presetFolder
+    if not destination and exportSettings.LR_export_destinationType == 'specificFolder' then
+        presetFolder = ExportPresets.specificFolderPath(exportSettings.LR_export_destinationPathPrefix,
+            exportSettings.LR_export_useSubfolder, exportSettings.LR_export_destinationPathSuffix)
+    end
+
+    local exportFolder = destination or presetFolder
+    if exportFolder then
         -- Lightroom refuses a missing folder with its own error, in the UI
         -- language; create it as export_photo_metadata and export_develop_preset do.
-        local existing = LrFileUtils.exists(destination)
+        local existing = LrFileUtils.exists(exportFolder)
         if existing == false then
-            LrFileUtils.createAllDirectories(destination)
-            if LrFileUtils.exists(destination) ~= "directory" then
-                error("could not create destination folder: " .. destination)
+            LrFileUtils.createAllDirectories(exportFolder)
+            if LrFileUtils.exists(exportFolder) ~= "directory" then
+                error("could not create destination folder: " .. exportFolder)
             end
         elseif existing ~= "directory" then
-            error("destination is not a directory: " .. destination)
+            error("destination is not a directory: " .. exportFolder)
         end
     end
 
@@ -192,10 +199,7 @@ function ExportHandler.exportPhotos(args, context)
         exportSettings.LR_export_destinationPathPrefix = destination
         exportSettings.LR_export_useSubfolder = false
     else
-        destination = exportSettings.LR_export_destinationType == 'specificFolder'
-            and ExportPresets.specificFolderPath(exportSettings.LR_export_destinationPathPrefix,
-                exportSettings.LR_export_useSubfolder, exportSettings.LR_export_destinationPathSuffix)
-            or exportSettings.LR_export_destinationType
+        destination = presetFolder or exportSettings.LR_export_destinationType
     end
 
     local exportedCount = 0
