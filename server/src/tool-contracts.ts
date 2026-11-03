@@ -1255,6 +1255,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
       },
       required: ["photo_ids"],
+      anyOf: [{ required: ["destination"] }, { required: ["export_preset"] }],
     },
   },
   {

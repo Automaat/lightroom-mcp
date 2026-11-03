@@ -214,7 +214,7 @@ describe('published schema compatibility', () => {
       expect(JSON.stringify(contract.inputSchema)).toBe(original);
     }
     for (const name of ['set_ai_metadata', 'create_smart_collection', 'get_develop_preset',
-      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments']) {
+      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments', 'export_photos']) {
       expect(TOOL_CONTRACTS.find(tool => tool.name === name)!.inputSchema).toHaveProperty('anyOf');
     }
     const validate = new Ajv({ strict: false }).compile(

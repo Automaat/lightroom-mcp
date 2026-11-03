@@ -511,6 +511,14 @@ describe('validateToolArgs', () => {
     });
   });
 
+  it('requires a destination or an export preset for export_photos', () => {
+    expect(validateToolArgs('export_photos', { photo_ids: [1], destination: '/out' })).toBeNull();
+    expect(validateToolArgs('export_photos', { photo_ids: [1], export_preset: 'BlueSky' })).toBeNull();
+    expect(validateToolArgs('export_photos', { photo_ids: [1], destination: '/out', export_preset: 'BlueSky' })).toBeNull();
+    expect(validateToolArgs('export_photos', { photo_ids: [1] })).toContain('anyOf');
+    expect(validateToolArgs('export_photos', { photo_ids: [1], export_preset_folder: 'User Presets' })).toContain('anyOf');
+  });
+
   it('requires exactly one deletion target for delete_masks', () => {
     expect(validateToolArgs('delete_masks', { photo_id: 914, mask_ids: ['m-1'] })).toBeNull();
     expect(validateToolArgs('delete_masks', { photo_id: 914, tool_ids: ['t-1', 't-2'] })).toBeNull();
