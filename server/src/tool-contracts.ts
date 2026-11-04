@@ -1166,7 +1166,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRemoveFromCatalog.removePhotos",
     description:
-      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master; a path shared by a master and copies is refused, so use numeric IDs. Deduplicates; reports missing IDs. Opens Library grid/All Photographs, restores module/sources/surviving selection; Library stays in grid view.",
+      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master; a path shared by a master and copies is refused, so use numeric IDs. Deduplicates; reports missing IDs. Opens Library grid on the photos' folders (All Photographs if one is not found), restores module/sources/surviving selection; Library stays in grid view.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

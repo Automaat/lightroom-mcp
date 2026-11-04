@@ -1,5 +1,6 @@
 local LrApplication = import 'LrApplication'
 local LrApplicationView = import 'LrApplicationView'
+local LrPathUtils = import 'LrPathUtils'
 local LrSelection = import 'LrSelection'
 local LrTasks = import 'LrTasks'
 
@@ -7,6 +8,11 @@ local DevelopSession = require 'DevelopSession'
 local PhotoLookup = require 'PhotoLookup'
 
 local Handler = {}
+
+-- Lightroom drops a selection set while a huge source such as All Photographs is
+-- still loading, so the call is repeated until it sticks (#462).
+local SELECT_TIMEOUT_SECONDS = 30
+local RESELECT_SECONDS = 2
 
 local function sameSelection(catalog, photos)
     if catalog:getTargetPhoto() ~= photos[1] then return false end
@@ -19,6 +25,33 @@ local function sameSelection(catalog, photos)
         expected[photo] = nil
     end
     return next(expected) == nil
+end
+
+local function selectExactly(catalog, photos)
+    return DevelopSession.retryUntil(
+        function() return sameSelection(catalog, photos) end,
+        function() catalog:setSelectedPhotos(photos[1], photos) end,
+        SELECT_TIMEOUT_SECONDS, RESELECT_SECONDS)
+end
+
+-- The photos' own folders load far faster than All Photographs on a large catalog;
+-- any folder Lightroom cannot resolve sends the whole set back to All Photographs.
+local function sourcesFor(catalog, photos)
+    local raw = catalog:batchGetRawMetadata(photos, { 'path' }) or {}
+    local sources, seen = {}, {}
+    for _, photo in ipairs(photos) do
+        local path = (raw[photo] or {}).path
+        if type(path) ~= "string" then return { catalog.kAllPhotos } end
+        local parent = LrPathUtils.parent(path)
+        if not parent then return { catalog.kAllPhotos } end
+        if not seen[parent] then
+            local ok, folder = LrTasks.pcall(function() return catalog:getFolderByPath(parent) end)
+            if not ok or not folder then return { catalog.kAllPhotos } end
+            seen[parent] = true
+            sources[#sources + 1] = folder
+        end
+    end
+    return sources
 end
 
 local function surviving(catalog, photos)
@@ -43,8 +76,7 @@ local function restore(catalog, view)
             for _, photo in ipairs(photos) do
                 if photo ~= active then ordered[#ordered + 1] = photo end
             end
-            catalog:setSelectedPhotos(active, ordered)
-            if not DevelopSession.waitFor(function() return sameSelection(catalog, ordered) end, 10) then
+            if not selectExactly(catalog, ordered) then
                 error("Lightroom did not restore the surviving selection")
             end
         else
@@ -121,9 +153,8 @@ function Handler.removePhotos(args)
         local ok, result = LrTasks.pcall(function()
             LrApplicationView.switchToModule("library")
             LrApplicationView.gridView()
-            catalog:setActiveSources({ catalog.kAllPhotos })
-            catalog:setSelectedPhotos(photos[1], photos)
-            if not DevelopSession.waitFor(function() return sameSelection(catalog, photos) end, 10) then
+            catalog:setActiveSources(sourcesFor(catalog, photos))
+            if not selectExactly(catalog, photos) then
                 error("Lightroom did not select exactly the requested photos; nothing was removed")
             end
             if LrApplicationView.getCurrentModuleName() ~= "library" or not sameSelection(catalog, photos) then
