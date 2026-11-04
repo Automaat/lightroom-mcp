@@ -1213,7 +1213,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
     description:
-      "Export photos, optionally with a saved export preset; format/quality/width/height override only those preset settings. Never prompts or runs the preset's after-export action. Returns success, exported and skipped counts, failed, missing IDs, destination, preset, complete and remaining_ids to retry.",
+      "Export photos, optionally with a saved export preset; format/quality/width/height override only those preset settings. Skips the preset's collision prompt and after-export action. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. Returns success, exported and skipped counts, failed, missing IDs, destination, preset, complete and remaining_ids to retry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1227,7 +1227,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         export_preset: {
           type: "string",
           minLength: 1,
-          description: "Export preset title, file name or id (list_export_presets)",
+          description: "Export preset title, file name, id or file path (list_export_presets)",
         },
         export_preset_folder: {
           type: "string",

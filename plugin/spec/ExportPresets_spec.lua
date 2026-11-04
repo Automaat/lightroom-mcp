@@ -316,6 +316,70 @@ describe("ExportPresets.resolve", function()
         assert.are.equal("Other", Presets.resolve("BlueSky", "Other").folder)
     end)
 
+    it("selects a copy in another scope by its file path", function()
+        local files = defaultFiles()
+        local catalogFile = "/cat/Lightroom Settings/Export Presets/User Presets/BlueSky.lrtemplate"
+        files[catalogFile] = BLUESKY
+        local Presets = setup({ files = files })
+        for _, folder in ipairs({ false, "User Presets" }) do
+            assert.has_error(function() Presets.resolve("BlueSky", folder or nil) end,
+                "Export preset 'BlueSky' is ambiguous; pass its file path from list_export_presets "
+                .. "(found in user:User Presets, catalog:User Presets)")
+        end
+        assert.are.equal("catalog", Presets.resolve(catalogFile).scope)
+        assert.are.equal("user", Presets.resolve(ROOT .. "/User Presets/BlueSky.lrtemplate").scope)
+    end)
+
+    it("matches a file name with its extension", function()
+        local Presets = setup()
+        assert.are.equal("BlueSky", Presets.resolve("BlueSky.lrtemplate").name)
+    end)
+
+    it("folds non-ASCII case and Unicode form", function()
+        local files = defaultFiles()
+        files[ROOT .. "/User Presets/Lodz.lrtemplate"] =
+            's = { title = "\197\129\195\147D\197\185", type = "Export", value = {} }'
+        files[ROOT .. "/User Presets/Cafe.lrtemplate"] =
+            's = { title = "Cafe\204\129", type = "Export", value = {} }'
+        package.loaded.ExportPresets = nil
+        local LrFileUtils, LrPathUtils = fakeFs(files)
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return { getPath = function() return "/cat/Main.lrcat" end } end },
+            LrFileUtils = LrFileUtils, LrPathUtils = LrPathUtils,
+            LrStringUtils = { lower = function(text)
+                return (text:gsub("\197\129", "\197\130"):gsub("\195\147", "\195\179")
+                    :gsub("\197\185", "\197\186"):lower())
+            end },
+        })
+        local Presets = require 'ExportPresets'
+        assert.are.equal("\197\129\195\147D\197\185", Presets.resolve("\197\130\195\179d\197\186").name)
+        assert.are.equal("Cafe\204\129", Presets.resolve("caf\195\169").name)
+    end)
+
+    it("refuses a preset whose settings would hang the export", function()
+        local cases = {
+            { 'jpeg_quality = "high"', "invalid setting: jpeg_quality must be a number" },
+            { "jpeg_quality = 90", "invalid setting: jpeg_quality must be between 0 and 1" },
+            { 'size_maxWidth = "x"', "invalid setting: size_maxWidth must be a number" },
+            { "format = 5", "invalid setting: format must be a string" },
+            { 'size_doConstrain = "yes"', "invalid setting: size_doConstrain must be true or false" },
+            { 'size_doConstrain = true, size_resizeType = "percentage"',
+                "invalid setting: size_percentage must be above 0" },
+            { 'size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 0',
+                "invalid setting: size_megapixels must be above 0" },
+        }
+        for _, case in ipairs(cases) do
+            local files = { [ROOT .. "/F/Bad.lrtemplate"] =
+                's = { title = "Bad", type = "Export", value = { ' .. case[1] .. " } }" }
+            local Presets = setup({ files = files })
+            local listed = Presets.list()[1]
+            assert.is_false(listed.usable)
+            assert.are.equal(case[2], listed.unusable_reason)
+            assert.has_error(function() Presets.resolve("Bad") end,
+                "Export preset 'Bad' cannot be used: " .. case[2])
+        end
+    end)
+
     it("refuses a preset for another export service", function()
         local Presets = setup()
         assert.has_error(function() Presets.resolve("DxO PureRAW 6") end,
@@ -373,10 +437,118 @@ describe("HandlerExport.exportPhotos with export_preset", function()
         local s = calls[1].exportSettings
         assert.are.equal("PNG", s.LR_format)
         assert.are.equal(0.5, s.LR_jpeg_quality)
-        assert.are.equal("longEdge", s.LR_size_resizeType)
+        assert.are.equal("wh", s.LR_size_resizeType)
         assert.are.equal(2000, s.LR_size_maxWidth)
         assert.are.equal("sRGB", s.LR_export_colorSpace)
         assert.is_true(s.LR_outputSharpeningOn)
+    end)
+
+    describe("sizes", function()
+        local function exportWith(value, args, dimensions)
+            local files = { [ROOT .. "/F/Size.lrtemplate"] =
+                's = { title = "Size", type = "Export", value = { ' .. value .. " } }" }
+            local p = helper.fakePhoto({ id = "1", path = "/a.jpg", croppedDimensions = dimensions })
+            local _, Handler, calls = setup({ files = files, photos = { p } })
+            local request = { photo_ids = { "1" }, destination = "/out", export_preset = "Size" }
+            for key, v in pairs(args or {}) do request[key] = v end
+            local r = Handler.exportPhotos(request)
+            return calls[1] and calls[1].exportSettings, r, calls
+        end
+        local function settingsOf(value, args, dimensions)
+            local _, _, calls = exportWith(value, args, dimensions)
+            return calls[1].exportSettings
+        end
+
+        it("limits the given edge in pixels and never enlarges", function()
+            local s = settingsOf(
+                'size_doConstrain = true, size_resizeType = "longEdge", size_maxWidth = 5, size_maxHeight = 5, '
+                .. 'size_units = "inch", size_doNotEnlarge = false', { height = 400 })
+            assert.are.equal("wh", s.LR_size_resizeType)
+            assert.are.equal("pixels", s.LR_size_units)
+            assert.are.equal(400, s.LR_size_maxHeight)
+            assert.are.equal(65000, s.LR_size_maxWidth)
+            assert.is_true(s.LR_size_doNotEnlarge)
+        end)
+
+        it("keeps the other edge only of a width and height preset in pixels", function()
+            local wh = 'size_doConstrain = true, size_resizeType = "wh", size_maxWidth = 300, size_maxHeight = 600, '
+            assert.are.equal(300, settingsOf(wh .. 'size_units = "pixels"', { height = 400 }).LR_size_maxWidth)
+            assert.are.equal(600, settingsOf(wh .. 'size_units = "pixels"', { width = 200 }).LR_size_maxHeight)
+            assert.are.equal(65000, settingsOf(wh .. 'size_units = "cm"', { height = 400 }).LR_size_maxWidth)
+        end)
+
+        it("turns a percentage into a long edge for the photo", function()
+            local s = settingsOf('size_doConstrain = true, size_resizeType = "percentage", size_percentage = 25',
+                nil, { width = 1000, height = 800 })
+            assert.are.equal("longEdge", s.LR_size_resizeType)
+            assert.are.equal(250, s.LR_size_maxWidth)
+            assert.are.equal(250, s.LR_size_maxHeight)
+            assert.are.equal("pixels", s.LR_size_units)
+        end)
+
+        it("turns fractional megapixels into a long edge for the photo", function()
+            local s = settingsOf('size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 0.25',
+                nil, { width = 1000, height = 1000 })
+            assert.are.equal("longEdge", s.LR_size_resizeType)
+            assert.are.equal(500, s.LR_size_maxWidth)
+        end)
+
+        it("leaves whole megapixels and an unconstrained percentage to Lightroom", function()
+            local whole = settingsOf('size_doConstrain = true, size_resizeType = "megapixels", size_megapixels = 2',
+                nil, { width = 1000, height = 1000 })
+            assert.are.equal("megapixels", whole.LR_size_resizeType)
+            local off = settingsOf('size_doConstrain = false, size_resizeType = "percentage", size_percentage = 25',
+                nil, { width = 1000, height = 1000 })
+            assert.are.equal("percentage", off.LR_size_resizeType)
+        end)
+
+        it("reports a photo without dimensions and does not export it", function()
+            local _, r, calls = exportWith('size_doConstrain = true, size_resizeType = "percentage", size_percentage = 25')
+            assert.are.equal(0, #calls)
+            assert.is_false(r.success)
+            assert.are.equal("Lightroom reported no dimensions for this photo", r.failed[1].reason)
+        end)
+    end)
+
+    describe("numbering across photos", function()
+        local function exportThree(value)
+            local files = { [ROOT .. "/F/Seq.lrtemplate"] =
+                's = { title = "Seq", type = "Export", value = { ' .. value .. " } }" }
+            local photos = {
+                helper.fakePhoto({ id = "1", path = "/1.jpg" }),
+                helper.fakePhoto({ id = "2", path = "/2.jpg" }),
+                helper.fakePhoto({ id = "3", path = "/3.jpg" }),
+            }
+            local _, Handler, calls = setup({ files = files, photos = photos })
+            Handler.exportPhotos({ photo_ids = { "1", "2", "3" }, destination = "/out", export_preset = "Seq" })
+            return calls
+        end
+
+        it("continues the sequence from the preset's start number", function()
+            local calls = exportThree("initialSequenceNumber = 5")
+            assert.are.equal(5, calls[1].exportSettings.LR_initialSequenceNumber)
+            assert.are.equal(6, calls[2].exportSettings.LR_initialSequenceNumber)
+            assert.are.equal(7, calls[3].exportSettings.LR_initialSequenceNumber)
+        end)
+
+        it("starts at 1 without a start number", function()
+            assert.are.equal(3, exportThree("")[3].exportSettings.LR_initialSequenceNumber)
+        end)
+
+        it("writes the total the sessions cannot know", function()
+            local calls = exportThree('tokens = "x_{{naming_sequenceNumber_3Digits}}_{{naming_sequenceTotal_2Digits}}"')
+            assert.are.equal("x_{{naming_sequenceNumber_3Digits}}_03", calls[1].exportSettings.LR_tokens)
+        end)
+    end)
+
+    it("turns off a file size limit when quality is passed", function()
+        local files = { [ROOT .. "/F/Limit.lrtemplate"] =
+            's = { title = "Limit", type = "Export", value = { jpeg_useLimitSize = true, jpeg_limitSize = 20 } }' }
+        local _, Handler, calls = setup({ files = files, photos = { photo() } })
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "Limit" })
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", export_preset = "Limit", quality = 50 })
+        assert.is_true(calls[1].exportSettings.LR_jpeg_useLimitSize)
+        assert.is_false(calls[2].exportSettings.LR_jpeg_useLimitSize)
     end)
 
     it("rejects an invalid quality override", function()
@@ -523,6 +695,14 @@ line]],
             title = "Shown title",
             list = { "a", "b", { nested = 1 } },
         }, preset)
+    end)
+
+    it("reads a line continuation in a file with Windows line ends", function()
+        local Presets = setup({ files = {} })
+        for _, ending in ipairs({ "\n", "\r\n", "\r" }) do
+            local parsed = Presets._parse('s = { title = "a\\' .. ending .. 'b" }')
+            assert.are.equal("a\nb", parsed.title)
+        end
     end)
 
     it("reports where a file stops being a preset", function()

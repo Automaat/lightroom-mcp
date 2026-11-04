@@ -1,6 +1,9 @@
 local LrApplication = import 'LrApplication'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrStringUtils = import 'LrStringUtils'
+
+local PathForms = require 'PathForms'
 
 -- Lightroom Classic export presets (.lrtemplate files).
 --
@@ -85,7 +88,7 @@ local function parsePreset(source)
         local parts = {}
         while true do
             local c = source:sub(pos, pos)
-            if c == "" or c == "\n" then fail("unfinished string") end
+            if c == "" or c == "\n" or c == "\r" then fail("unfinished string") end
             if c == quote then
                 pos = pos + 1
                 return table.concat(parts)
@@ -98,6 +101,10 @@ local function parsePreset(source)
                     if code > 255 then fail("invalid escape") end
                     parts[#parts + 1] = string.char(code)
                     pos = pos + 1 + #digits
+                elseif nextChar == "\r" then
+                    -- A line continuation in a file saved with Windows line ends.
+                    parts[#parts + 1] = "\n"
+                    pos = pos + (source:sub(pos + 2, pos + 2) == "\n" and 3 or 2)
                 elseif ESCAPES[nextChar] then
                     parts[#parts + 1] = ESCAPES[nextChar]
                     pos = pos + 2
@@ -288,6 +295,52 @@ local function specificFolderPath(prefix, useSubfolder, suffix)
     return prefix
 end
 
+-- Lightroom hangs the export, with no error or dialog, on a setting of the wrong
+-- type, so such a preset is refused before it reaches an export session.
+local NUMBER_SETTINGS = {
+    "jpeg_quality", "jpeg_limitSize", "size_maxWidth", "size_maxHeight", "size_megapixels",
+    "size_percentage", "size_resolution", "initialSequenceNumber",
+}
+local TEXT_SETTINGS = {
+    "format", "tokens", "size_resizeType", "size_units", "export_colorSpace", "export_destinationType",
+}
+
+local BOOLEAN_SETTINGS = {
+    "size_doConstrain", "size_userWantsConstrain", "size_doNotEnlarge", "jpeg_useLimitSize",
+    "renamingTokensOn", "export_useSubfolder", "outputSharpeningOn", "useWatermark",
+}
+
+local function invalidSetting(value)
+    for _, key in ipairs(NUMBER_SETTINGS) do
+        local setting = value[key]
+        if setting ~= nil and (type(setting) ~= "number" or setting ~= setting) then
+            return key .. " must be a number"
+        end
+    end
+    for _, key in ipairs(TEXT_SETTINGS) do
+        if value[key] ~= nil and type(value[key]) ~= "string" then
+            return key .. " must be a string"
+        end
+    end
+    for _, key in ipairs(BOOLEAN_SETTINGS) do
+        if value[key] ~= nil and type(value[key]) ~= "boolean" then
+            return key .. " must be true or false"
+        end
+    end
+    if value.jpeg_quality and (value.jpeg_quality < 0 or value.jpeg_quality > 1) then
+        return "jpeg_quality must be between 0 and 1"
+    end
+    if value.size_doConstrain then
+        if value.size_resizeType == "percentage" and (value.size_percentage or 0) <= 0 then
+            return "size_percentage must be above 0"
+        end
+        if value.size_resizeType == "megapixels" and (value.size_megapixels or 0) <= 0 then
+            return "size_megapixels must be above 0"
+        end
+    end
+    return nil
+end
+
 local function loadEntry(root, folder, file)
     local entry = {
         name = stem(file),
@@ -339,6 +392,11 @@ local function loadEntry(root, folder, file)
     if entry.service ~= nil and entry.service ~= ExportPresets.FILE_SERVICE then
         entry.unusable_reason = "exports through " .. tostring(entry.service_title or entry.service)
             .. ", not Hard Drive"
+        return entry
+    end
+    local invalid = invalidSetting(value)
+    if invalid then
+        entry.unusable_reason = "invalid setting: " .. invalid
         return entry
     end
     entry.usable = true
@@ -395,10 +453,19 @@ function ExportPresets.list(folder)
     return result
 end
 
+-- string.lower leaves non-ASCII letters alone, and macOS can hand back a file
+-- name in a different Unicode form than the one a caller types.
+local function folded(text)
+    return LrStringUtils.lower(PathForms.toNfc(text))
+end
+
 local function matchesName(entry, name, fold)
-    local candidates = { entry.name, entry.internal_name, stem(entry.file), entry.id }
+    local candidates = {
+        entry.name, entry.internal_name, stem(entry.file), entry.id,
+        entry.file, LrPathUtils.leafName(entry.file),
+    }
     for _, candidate in pairs(candidates) do
-        if candidate == name or (fold and candidate:lower() == name:lower()) then
+        if candidate == name or (fold and folded(candidate) == folded(name)) then
             return true
         end
     end
@@ -415,7 +482,7 @@ local function findMatches(entries, name, folder, fold)
     return matches
 end
 
--- Finds one export preset by name (title, internal name, file name or id),
+-- Finds one export preset by name (title, internal name, file name, id or path),
 -- optionally within one folder. An exact match wins over a case-insensitive
 -- one. Returns the entry with `settings`: the LrExportSession settings
 -- table, LR_-prefixed and safe to modify.
@@ -437,10 +504,13 @@ function ExportPresets.resolve(name, folder)
     end
     if #matches > 1 then
         local locations = {}
+        local sharedFolder = true
         for _, match in ipairs(matches) do
             table.insert(locations, match.scope .. ":" .. match.folder)
+            sharedFolder = sharedFolder and match.folder == matches[1].folder
         end
-        error("Export preset '" .. name .. "' is ambiguous; pass export_preset_folder (found in "
+        local advice = sharedFolder and "pass its file path from list_export_presets" or "pass export_preset_folder"
+        error("Export preset '" .. name .. "' is ambiguous; " .. advice .. " (found in "
             .. table.concat(locations, ", ") .. ")")
     end
     local entry = matches[1]

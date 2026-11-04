@@ -32,6 +32,22 @@ local function setup(opts)
             }
         end,
     })
+    if opts.clock then
+        helper.installImport({
+            LrApplication = { activeCatalog = function() return catalog end },
+            LrLogger = helper.defaultLrLogger(),
+            LrDate = { currentTime = opts.clock },
+            LrFileUtils = { exists = function() return "directory" end },
+            LrPathUtils = {},
+            LrExportSession = function(args)
+                table.insert(exportSessionCalls, args)
+                return {
+                    doExportOnCurrentTask = function() end,
+                    renditions = function() return helper.fakeRenditions(args) end,
+                }
+            end,
+        })
+    end
     package.loaded.ExportPresets = nil
     package.loaded.HandlerExport = nil
     return catalog, require 'HandlerExport', exportSessionCalls, createdDirs
@@ -45,6 +61,49 @@ describe("HandlerExport.exportPhotos", function()
         Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" })
         assert.are.equal(0.5, calls[1].exportSettings.LR_jpeg_quality)
         assert.are.equal(0.9, calls[2].exportSettings.LR_jpeg_quality)
+    end)
+
+    it("refuses a second export while one runs, and frees the lock afterwards", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+        local secondError
+        local context = {
+            isCanceled = function()
+                local ok, message = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = "/out" })
+                secondError = not ok and message or nil
+                return false
+            end,
+            report = function() end,
+        }
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }, context)
+        assert.is_truthy(secondError:find("export_photos is already running; wait for it to finish, then call again", 1, true))
+
+        assert.has_error(function() Handler.exportPhotos({ photo_ids = { "1" } }) end, "destination is required")
+        assert.are.equal(1, Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }).exported)
+    end)
+
+    it("stops waiting for an export stuck on one photo", function()
+        local now = 1000
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p }, clock = function() return now end })
+        local outcomes = {}
+        local function retryAfter(seconds)
+            now = now + seconds
+            local ok = pcall(Handler.exportPhotos, { photo_ids = { "1" }, destination = "/out" })
+            table.insert(outcomes, ok)
+        end
+        local called = false
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" }, {
+            isCanceled = function()
+                if called then return false end
+                called = true
+                retryAfter(299)
+                retryAfter(1)
+                return false
+            end,
+            report = function() end,
+        })
+        assert.are.same({ false, true }, outcomes)
     end)
 
     it("lists ids that match no photo", function()
@@ -321,7 +380,11 @@ describe("HandlerExport.exportPhotos", function()
 
         local s = calls[1].exportSettings
         assert.is_true(s.LR_size_doConstrain)
+        assert.are.equal("wh", s.LR_size_resizeType)
+        assert.are.equal("pixels", s.LR_size_units)
         assert.are.equal(2000, s.LR_size_maxWidth)
+        assert.are.equal(65000, s.LR_size_maxHeight)
+        assert.is_true(s.LR_size_doNotEnlarge)
     end)
 
     it("maps format strings", function()
