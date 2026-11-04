@@ -326,6 +326,9 @@ local function shouldRestartForStaleConnection(idle, inFlightRequests, softSecon
     return restart, suffix
 end
 
+local TOKEN_MISMATCH_MESSAGE = "The Lightroom MCP token does not match the running plug-in. "
+    .. "Click Stop Server, then Start Server in Plug-in Manager, and check LIGHTROOM_MCP_TOKEN_PATH if it is set."
+
 local function sendResponse(response)
     if shutdownRequested() then
         addLog("Drop response (shutting down) id=" .. tostring(response.id))
@@ -470,10 +473,13 @@ local function consumeMessage(message)
     end
 
     if not pluginState.token or request.hello ~= pluginState.token then
-        -- Drop silently. We CANNOT call sendResponse here: onMessage runs
-        -- in a non-yielding context and sendResponse uses LrTasks.sleep.
-        -- Server will time out, which is correct behaviour for auth fail.
+        -- sendResponse uses LrTasks.sleep and onMessage cannot yield.
         addLog("Auth failed (token mismatch) id=" .. tostring(request.id))
+        if request.id then
+            LrTasks.startAsyncTask(function()
+                sendResponse({ id = request.id, error = TOKEN_MISMATCH_MESSAGE })
+            end)
+        end
         return nil
     end
 
@@ -692,7 +698,7 @@ local function startServer()
         -- which would read as "superseded" and stop this live server.
         local myToken = tokenWritten and pluginState.token or nil
         local ticks = 0
-        while pluginState.running and not shutdownRequested() do
+        while pluginState.running and pluginState.instanceId == instanceId and not shutdownRequested() do
             ticks = ticks + 1
             if ticks % SUPERSEDED_CHECK_TICKS == 0 and isSuperseded(myToken, readTokenFile()) then
                 addLog("Superseded by a newer plugin instance (token file changed), releasing ports")
@@ -748,7 +754,11 @@ local function startServer()
                 addLog("RESPONSE rebound on " .. responsePort .. " gen=" .. newGen)
             elseif pluginState.responseNeedsReconnect and pluginState.responseSocket then
                 pluginState.responseNeedsReconnect = false
-                pluginState.responseSocket:reconnect()
+                local reconnected, reconnectErr = LrTasks.pcall(function() pluginState.responseSocket:reconnect() end)
+                if not reconnected then
+                    addLog("RESPONSE reconnect failed, rebinding: " .. tostring(reconnectErr))
+                    pluginState.responseNeedsRebind = true
+                end
             end
             -- Full restart requested by stale detection
             if pluginState.needsFullRestart then
@@ -807,6 +817,7 @@ local function stopServer()
     end
     addLog("Stopping LrSocket servers")
     pluginState.running = false
+    for _, activeRequest in pairs(activeRequests) do activeRequest.cancelled = true end
 end
 
 -- Called by PluginInit on plugin load/reload (never on a Plug-in Manager

@@ -11,6 +11,38 @@ local function setup(opts)
     return catalog, require 'HandlerCollections'
 end
 
+describe("HandlerCollections fractional and smart paths", function()
+    it("floors a fractional offset and limit", function()
+        local _, Handler = setup({ collections = { helper.fakeCollection("A", {}), helper.fakeCollection("B", {}) } })
+        local r = Handler.listCollections({ offset = 0.5, limit = 1.5 })
+        assert.are.equal(1, #r.collections)
+        assert.are.equal("A", r.collections[1].name)
+    end)
+
+    it("reads a collection's photos before opening the write gate to delete it", function()
+        local photo = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local collection = helper.fakeCollection("Smart", { photo }, { smart = true })
+        local catalog, Handler = setup({ collections = { collection } })
+        local inside, insideWrite = nil, false
+        local photos = collection.getPhotos
+        local withWrite = catalog.withWriteAccessDo
+        catalog.withWriteAccessDo = function(...)
+            insideWrite = true
+            local result = withWrite(...)
+            insideWrite = false
+            return result
+        end
+        collection.getPhotos = function(...)
+            inside = insideWrite
+            return photos(...)
+        end
+        local r = Handler.deleteCollection({ collection_name = "Smart" })
+        assert.are.equal(1, r.photo_count)
+        assert.is_false(inside)
+        assert.is_true(collection.isDeleted())
+    end)
+end)
+
 describe("HandlerCollections.listCollections", function()
     it("lists top-level collections", function()
         local _, Handler = setup({

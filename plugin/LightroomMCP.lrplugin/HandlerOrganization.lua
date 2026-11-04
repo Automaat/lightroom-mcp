@@ -201,6 +201,14 @@ function OrganizationHandler.setKeywords(args)
     end
 
     local resolved = PhotoLookup.resolveMany(catalog, args.photo_ids)
+    local missingIds = {}
+    for _, entry in ipairs(resolved) do
+        if not entry.photo then missingIds[#missingIds + 1] = tostring(entry.id) end
+    end
+    if #missingIds == #resolved then
+        keywordCallFailed = false
+        return { success = true, updated = 0, missing = missingIds }
+    end
 
     -- A plain name is created at the top level, as it always was.
     if createMissing and #addEntries > 0 then
@@ -276,6 +284,7 @@ function OrganizationHandler.setKeywords(args)
     return {
         success = true,
         updated = updatedCount,
+        missing = missingIds,
     }
 end
 
