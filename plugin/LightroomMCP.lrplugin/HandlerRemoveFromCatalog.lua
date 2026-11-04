@@ -5,6 +5,7 @@ local LrSelection = import 'LrSelection'
 local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
+local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
 
 local Handler = {}
@@ -153,7 +154,10 @@ function Handler.removePhotos(args)
         local ok, result = LrTasks.pcall(function()
             LrApplicationView.switchToModule("library")
             LrApplicationView.gridView()
-            catalog:setActiveSources(sourcesFor(catalog, photos))
+            local sources = sourcesFor(catalog, photos)
+            Log.info(string.format("remove_photos_from_catalog: selecting %d photo(s) in %s", #photos,
+                sources[1] == catalog.kAllPhotos and "All Photographs" or (#sources .. " folder(s)")))
+            catalog:setActiveSources(sources)
             if not selectExactly(catalog, photos) then
                 error("Lightroom did not select exactly the requested photos; nothing was removed")
             end
