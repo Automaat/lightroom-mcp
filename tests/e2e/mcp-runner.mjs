@@ -419,6 +419,14 @@ async function main() {
       checkEq("path roundtrip", r.parsed.path, ctx.firstPhoto.path);
     });
 
+    await run("list_export_presets", async () => {
+      const r = await c.callTool("list_export_presets", {});
+      checkTrue("not error", !r.isError, r.text);
+      checkTrue("count is number", typeof r.parsed.count === "number");
+      const usable = r.parsed.presets.filter((preset) => preset.usable);
+      return `count=${r.parsed.count}, usable=${usable.length}`;
+    });
+
     await run("list_develop_presets", async () => {
       const r = await c.callTool("list_develop_presets", {});
       checkTrue("not error", !r.isError, r.text);

@@ -159,7 +159,11 @@
     },
     {
       "name": "export_photos",
-      "description": "Export photos with format/quality/dimensions."
+      "description": "Export photos with format/quality/dimensions or a saved export preset."
+    },
+    {
+      "name": "list_export_presets",
+      "description": "List saved export presets."
     },
     {
       "name": "export_photo_metadata",

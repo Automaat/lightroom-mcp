@@ -1212,13 +1212,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Export photos",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
-    description: "Export photos; returns success, exported and skipped counts, failed, missing IDs, destination, complete and remaining_ids to retry.",
+    description:
+      "Export photos, optionally with a saved export preset; format/quality/width/height override only those preset settings. Skips the preset's collision prompt and after-export action. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. Returns success, exported and skipped counts, failed, missing IDs, destination, preset, complete and remaining_ids to retry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_ids: photoIdArray("Array of photo IDs or file paths to export"),
-        destination: { type: "string", description: "Absolute path of the export folder, created if missing; ~/ is expanded" },
+        destination: {
+          type: "string",
+          description:
+            "Absolute path of the export folder, created if missing; ~/ is expanded. Optional if export_preset has a fixed destination",
+        },
+        export_preset: {
+          type: "string",
+          minLength: 1,
+          description: "Export preset title, file name, id or file path (list_export_presets)",
+        },
+        export_preset_folder: {
+          type: "string",
+          minLength: 1,
+          description: "Folder of an ambiguous export_preset",
+        },
         format: {
           type: "string",
           description: "Export format (jpeg, png, tiff, original)",
@@ -1239,7 +1254,29 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           enum: ["rename", "overwrite", "skip"],
         },
       },
-      required: ["photo_ids", "destination"],
+      required: ["photo_ids"],
+      anyOf: [{ required: ["destination"] }, { required: ["export_preset"] }],
+    },
+  },
+  {
+    name: "list_export_presets",
+    toolset: "core",
+    title: "List export presets",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    luaHandler: "HandlerExport.listExportPresets",
+    description:
+      "List saved export presets (not Lightroom's built-ins) with folder, file, id, format, quality, size, file_naming and destination. Only usable: true (Hard Drive) presets work with export_photos; others give unusable_reason.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        folder: {
+          type: "string",
+          minLength: 1,
+          pattern: "\\S",
+          description: "Only this folder",
+        },
+      },
     },
   },
   {

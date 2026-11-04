@@ -46,6 +46,7 @@ const EXPECTED_TOOL_NAMES = [
   'import_photos',
   'export_photos',
   'export_photo_metadata',
+  'list_export_presets',
   'list_develop_presets',
   'get_develop_preset',
   'compare_develop_presets',
@@ -105,8 +106,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 71 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(71);
+  it('contains exactly 72 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(72);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -213,7 +214,7 @@ describe('published schema compatibility', () => {
       expect(JSON.stringify(contract.inputSchema)).toBe(original);
     }
     for (const name of ['set_ai_metadata', 'create_smart_collection', 'get_develop_preset',
-      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments']) {
+      'export_develop_preset', 'apply_develop_preset', 'apply_auto_adjustments', 'export_photos']) {
       expect(TOOL_CONTRACTS.find(tool => tool.name === name)!.inputSchema).toHaveProperty('anyOf');
     }
     const validate = new Ajv({ strict: false }).compile(
@@ -281,7 +282,7 @@ describe('tool required fields', () => {
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
     ['import_photos', ['source_path']],
-    ['export_photos', ['photo_ids', 'destination']],
+    ['export_photos', ['photo_ids']],
     ['export_photo_metadata', ['destination']],
     ['compare_develop_presets', ['base', 'candidate']],
     ['create_develop_preset', ['photo_id', 'preset_name', 'settings']],
@@ -324,6 +325,7 @@ describe('tool required fields', () => {
     'get_selected_photos',
     'list_collections',
     'list_keywords',
+    'list_export_presets',
     'list_develop_presets',
     'get_develop_preset',
     'delete_masks',

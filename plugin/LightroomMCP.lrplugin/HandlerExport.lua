@@ -1,12 +1,15 @@
 local LrApplication = import 'LrApplication'
+local LrDate = import 'LrDate'
 local LrExportSession = import 'LrExportSession'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrTasks = import 'LrTasks'
 
 local JSON = require 'JSON'
 local KeywordTree = require 'KeywordTree'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
+local ExportPresets = require 'ExportPresets'
 
 local ExportHandler = {}
 
@@ -22,6 +25,8 @@ local COLLISION_HANDLING = {
 }
 local DEFAULT_COLLISION_HANDLING = 'rename'
 local DEFAULT_JPEG_QUALITY = 90
+-- Lightroom's largest exported edge; leaves an edge nobody limited unconstrained.
+local MAX_EXPORT_EDGE = 65000
 
 local EXPORT_FORMATS = {
     jpeg = 'JPEG',
@@ -49,18 +54,149 @@ local function absolutePath(destination)
     return destination
 end
 
-function ExportHandler.exportPhotos(args, context)
+local function requireFormat(requestedFormat)
+    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+    local resolvedFormat = EXPORT_FORMATS[requestedFormat and requestedFormat:lower() or 'jpeg']
+    if not resolvedFormat then
+        error("format must be one of: jpeg, png, tiff, original")
+    end
+    return resolvedFormat
+end
+
+-- Lightroom's jpeg_quality is 0-1; the tool's quality is 0-100.
+local function jpegQuality(quality)
+    if type(quality) ~= "number" or quality ~= quality or quality < 0 or quality > 100 then
+        error("quality must be a number between 0 and 100")
+    end
+    return quality / 100
+end
+
+-- Export settings when no preset is given: the tool's own defaults.
+local function defaultSettings(args)
+    local settings = {
+        LR_jpeg_quality = jpegQuality(args.quality or DEFAULT_JPEG_QUALITY),
+    }
+    local format = requireFormat(args.format)
+    settings.LR_format = format
+    if format == 'JPEG' then
+        settings.LR_export_colorSpace = 'sRGB'
+    elseif format == 'TIFF' then
+        settings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
+    end
+    return settings
+end
+
+-- Export settings from a saved preset, with only the arguments the caller
+-- passed layered on top: the preset's sharpening, renaming, metadata and
+-- watermark settings survive a quality or size override.
+local function presetSettings(preset, args)
+    local settings = preset.settings
+    if args.format ~= nil then
+        settings.LR_format = requireFormat(args.format)
+    end
+    if args.quality ~= nil then
+        settings.LR_jpeg_quality = jpegQuality(args.quality)
+        -- Lightroom ignores the quality while a file size limit is on.
+        settings.LR_jpeg_useLimitSize = false
+    end
+    -- Opening another application would leave it waiting for a user.
+    settings.LR_export_postProcessing = 'doNothing'
+    return settings
+end
+
+-- width and height limit each edge in pixels. 'wh' is the only resize type that
+-- reads them that way: 'longEdge' ignores width and treats height as the long
+-- edge. A preset's other edge survives only if it already means the same thing.
+local function applySizeLimit(settings, args)
+    if not args.width and not args.height then return end
+    local keepsOtherEdge = settings.LR_size_doConstrain
+        and settings.LR_size_resizeType == 'wh'
+        and (settings.LR_size_units == nil or settings.LR_size_units == 'pixels')
+    settings.LR_size_maxWidth = args.width or (keepsOtherEdge and settings.LR_size_maxWidth) or MAX_EXPORT_EDGE
+    settings.LR_size_maxHeight = args.height or (keepsOtherEdge and settings.LR_size_maxHeight) or MAX_EXPORT_EDGE
+    settings.LR_size_doConstrain = true
+    settings.LR_size_resizeType = 'wh'
+    settings.LR_size_units = 'pixels'
+    settings.LR_size_doNotEnlarge = true
+end
+
+-- Lightroom's export session ignores size_percentage and truncates
+-- size_megapixels to a whole number (0.5 writes no file), so these sizes are
+-- turned into a long edge for each photo.
+local function scaleForPhoto(settings, dimensions)
+    if settings.LR_size_resizeType == 'percentage' then
+        return settings.LR_size_percentage / 100
+    end
+    return math.sqrt(settings.LR_size_megapixels * 1000000 / (dimensions.width * dimensions.height))
+end
+
+local function needsProportionalSize(settings)
+    if not settings.LR_size_doConstrain then return false end
+    local megapixels = settings.LR_size_megapixels
+    return settings.LR_size_resizeType == 'percentage'
+        or (settings.LR_size_resizeType == 'megapixels' and megapixels ~= math.floor(megapixels))
+end
+
+-- Each photo gets its own session so a batch can be cancelled between photos,
+-- so what Lightroom would count across one session is set for each photo here.
+-- Returns nil and a reason when the photo's size cannot be worked out.
+local function settingsForPhoto(baseSettings, photo, index, total)
+    local settings = {}
+    for key, value in pairs(baseSettings) do settings[key] = value end
+    settings.LR_initialSequenceNumber = (settings.LR_initialSequenceNumber or 1) + index - 1
+    if type(settings.LR_tokens) == "string" then
+        settings.LR_tokens = settings.LR_tokens:gsub("{{naming_sequenceTotal_(%d)Digits?}}", function(digits)
+            return string.format("%0" .. digits .. "d", total)
+        end)
+    end
+    if needsProportionalSize(settings) then
+        local dimensions = photo:getRawMetadata('croppedDimensions')
+        if type(dimensions) ~= "table" or not dimensions.width or not dimensions.height then
+            return nil, "Lightroom reported no dimensions for this photo"
+        end
+        local edge = math.max(dimensions.width, dimensions.height) * scaleForPhoto(settings, dimensions)
+        edge = math.max(1, math.floor(edge + 0.5))
+        settings.LR_size_resizeType = 'longEdge'
+        settings.LR_size_units = 'pixels'
+        settings.LR_size_maxWidth = edge
+        settings.LR_size_maxHeight = edge
+    end
+    return settings
+end
+
+local function runExport(args, context, run)
     if not args.photo_ids or #args.photo_ids == 0 then
         error("photo_ids is required")
     end
 
-    if type(args.destination) ~= "string" or args.destination:match("^%s*$") then
+    local preset
+    if args.export_preset ~= nil then
+        preset = ExportPresets.resolve(args.export_preset, args.export_preset_folder)
+    elseif args.export_preset_folder ~= nil then
+        error("export_preset_folder requires export_preset")
+    end
+
+    local destination
+    if args.destination ~= nil then
+        if type(args.destination) ~= "string" or args.destination:match("^%s*$") then
+            error("destination is required")
+        end
+        if args.destination:find("[%z\1-\31]") then
+            error("destination must not contain control characters")
+        end
+        destination = absolutePath(args.destination)
+    elseif not preset then
         error("destination is required")
+    else
+        local destinationType = preset.settings.LR_export_destinationType
+        if not ExportPresets.FIXED_DESTINATION_TYPES[destinationType]
+            or (destinationType == 'specificFolder' and not preset.settings.LR_export_destinationPathPrefix) then
+            error("Export preset '" .. preset.name .. "' has no fixed destination ("
+                .. tostring(destinationType) .. "); pass destination")
+        end
     end
-    if args.destination:find("[%z\1-\31]") then
-        error("destination must not contain control characters")
-    end
-    local destination = absolutePath(args.destination)
 
     -- Every argument is checked before the folder is created, so a rejected
     -- call leaves nothing behind.
@@ -69,15 +205,10 @@ function ExportHandler.exportPhotos(args, context)
         error("on_existing must be one of: rename, overwrite, skip")
     end
 
-    local requestedFormat = args.format
-    if requestedFormat ~= nil and type(requestedFormat) ~= "string" then
-        error("format must be one of: jpeg, png, tiff, original")
-    end
-    local formatKey = requestedFormat and requestedFormat:lower() or 'jpeg'
-    local resolvedFormat = EXPORT_FORMATS[formatKey]
-    if not resolvedFormat then
-        error("format must be one of: jpeg, png, tiff, original")
-    end
+    local exportSettings = preset and presetSettings(preset, args) or defaultSettings(args)
+    exportSettings.LR_collisionHandling = COLLISION_HANDLING[collisionHandling]
+
+    applySizeLimit(exportSettings, args)
 
     local catalog = LrApplication.activeCatalog()
 
@@ -102,44 +233,37 @@ function ExportHandler.exportPhotos(args, context)
         error("No photos found to export")
     end
 
-    -- Lightroom refuses a missing folder with its own error, in the UI
-    -- language; create it as export_photo_metadata and export_develop_preset do.
-    local existing = LrFileUtils.exists(destination)
-    if existing == false then
-        LrFileUtils.createAllDirectories(destination)
-        if LrFileUtils.exists(destination) ~= "directory" then
-            error("could not create destination folder: " .. destination)
+    local presetFolder
+    if not destination and exportSettings.LR_export_destinationType == 'specificFolder' then
+        presetFolder = ExportPresets.specificFolderPath(exportSettings.LR_export_destinationPathPrefix,
+            exportSettings.LR_export_useSubfolder, exportSettings.LR_export_destinationPathSuffix)
+    end
+
+    local exportFolder = destination or presetFolder
+    if exportFolder then
+        -- Lightroom refuses a missing folder with its own error, in the UI
+        -- language; create it as export_photo_metadata and export_develop_preset do.
+        local existing = LrFileUtils.exists(exportFolder)
+        if existing == false then
+            LrFileUtils.createAllDirectories(exportFolder)
+            if LrFileUtils.exists(exportFolder) ~= "directory" then
+                error("could not create destination folder: " .. exportFolder)
+            end
+        elseif existing ~= "directory" then
+            error("destination is not a directory: " .. exportFolder)
         end
-    elseif existing ~= "directory" then
-        error("destination is not a directory: " .. destination)
     end
 
     -- destinationType=specificFolder makes LR honour
     -- LR_export_destinationPathPrefix; sourceFolder ignores it and
-    -- writes next to the original. LR_format is set in the
-    -- format-specific block below.
-    local exportSettings = {
-        LR_export_destinationType = 'specificFolder',
-        LR_export_destinationPathPrefix = destination,
-        LR_export_useSubfolder = false,
-        LR_jpeg_quality = (args.quality or DEFAULT_JPEG_QUALITY) / 100,
-        LR_collisionHandling = COLLISION_HANDLING[collisionHandling],
-    }
-
-    -- Set dimensions if specified
-    if args.width or args.height then
-        exportSettings.LR_size_doConstrain = true
-        exportSettings.LR_size_maxWidth = args.width
-        exportSettings.LR_size_maxHeight = args.height
-        exportSettings.LR_size_resizeType = 'longEdge'
-    end
-
-    -- Handle different formats
-    exportSettings.LR_format = resolvedFormat
-    if resolvedFormat == 'JPEG' then
-        exportSettings.LR_export_colorSpace = 'sRGB'
-    elseif resolvedFormat == 'TIFF' then
-        exportSettings.LR_tiff_compressionMethod = 'compressionMethod_LZW'
+    -- writes next to the original. Without a destination argument the
+    -- preset's own destination (type, folder, subfolder) is kept.
+    if destination then
+        exportSettings.LR_export_destinationType = 'specificFolder'
+        exportSettings.LR_export_destinationPathPrefix = destination
+        exportSettings.LR_export_useSubfolder = false
+    else
+        destination = presetFolder or exportSettings.LR_export_destinationType
     end
 
     local exportedCount = 0
@@ -154,32 +278,41 @@ function ExportHandler.exportPhotos(args, context)
             end
             break
         end
+        run.lastPhotoAt = LrDate.currentTime()
         local name = photo:getFormattedMetadata("fileName") or tostring(photo.localIdentifier)
         if context then context:report(exportedCount, #photosToExport, name) end
-        local exportSession = LrExportSession {
-            photosToExport = { photo },
-            exportSettings = exportSettings,
-        }
-        exportSession:doExportOnCurrentTask()
-        local renditionCount = 0
-        for _, rendition in exportSession:renditions() do
-            renditionCount = renditionCount + 1
-            local rendered, pathOrMessage = rendition:waitForRender()
-            if rendered and LrFileUtils.exists(pathOrMessage) then
-                exportedCount = exportedCount + 1
-            else
-                failed[#failed + 1] = {
-                    id = tostring(photo.localIdentifier),
-                    reason = rendered and "Lightroom wrote no file" or tostring(pathOrMessage),
-                }
-            end
+        local photoSettings, settingsError = exportSettings, nil
+        if preset then
+            photoSettings, settingsError = settingsForPhoto(exportSettings, photo, index, #photosToExport)
         end
-        if renditionCount == 0 then
-            if collisionHandling == 'skip' then
-                skippedCount = skippedCount + 1
-            else
-                failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = "Lightroom rendered no file" }
+        if photoSettings then
+            local exportSession = LrExportSession {
+                photosToExport = { photo },
+                exportSettings = photoSettings,
+            }
+            exportSession:doExportOnCurrentTask()
+            local renditionCount = 0
+            for _, rendition in exportSession:renditions() do
+                renditionCount = renditionCount + 1
+                local rendered, pathOrMessage = rendition:waitForRender()
+                if rendered and LrFileUtils.exists(pathOrMessage) then
+                    exportedCount = exportedCount + 1
+                else
+                    failed[#failed + 1] = {
+                        id = tostring(photo.localIdentifier),
+                        reason = rendered and "Lightroom wrote no file" or tostring(pathOrMessage),
+                    }
+                end
             end
+            if renditionCount == 0 then
+                if collisionHandling == 'skip' then
+                    skippedCount = skippedCount + 1
+                else
+                    failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = "Lightroom rendered no file" }
+                end
+            end
+        else
+            failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = settingsError }
         end
         lastName = name
     end
@@ -197,6 +330,43 @@ function ExportHandler.exportPhotos(args, context)
         complete = #remainingIds == 0,
         remaining_ids = #remainingIds > 0 and remainingIds or nil,
         destination = destination,
+        preset = preset and {
+            name = preset.name, folder = preset.folder, scope = preset.scope, file = preset.file,
+        } or nil,
+    }
+end
+
+-- Parallel export sessions wrote no file at all (6 calls, empty folder, LrC 15.6).
+local currentRun = nil
+-- An export session can hang without an error and never return. Without a limit
+-- that one call would refuse every later export until the plug-in reloads.
+local STALE_PHOTO_SECONDS = 300
+
+function ExportHandler.exportPhotos(args, context)
+    local now = LrDate.currentTime()
+    if currentRun and now - currentRun.lastPhotoAt < STALE_PHOTO_SECONDS then
+        error("export_photos is already running; wait for it to finish, then call again")
+    end
+    local run = { lastPhotoAt = now }
+    currentRun = run
+    local ok, result = LrTasks.pcall(runExport, args, context, run)
+    if currentRun == run then currentRun = nil end
+    if not ok then error(result, 0) end
+    return result
+end
+
+-- Lists the export presets saved on disk, including ones that cannot run over
+-- the bridge (other export services) with the reason, so a failed lookup in
+-- export_photos can be explained.
+function ExportHandler.listExportPresets(args)
+    args = args or {}
+    if args.folder ~= nil and (type(args.folder) ~= "string" or args.folder:match("^%s*$")) then
+        error("folder must be a non-empty string")
+    end
+    local presets = ExportPresets.list(args.folder)
+    return {
+        presets = presets,
+        count = #presets,
     }
 end
 

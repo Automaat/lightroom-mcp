@@ -136,6 +136,8 @@ Positions are always in the displayed frame of the uncropped photo; Lightroom st
 | `edit_mask_point_colors`, `get_mask` (`kinds: ["point_colors"]`) | `chart80` | A point-color edit changes the patches near the sampled color and leaves distant patches alone; round trip through `get_mask` with `kinds: ["point_colors"]`. |
 | `delete_masks` | any, `batch.ids` | With `photo_id` plus `mask_ids`, `tool_ids` or `all`, remaining count matches and the photo stays in the catalog. With only `photo_ids`, empty masks are removed, nonempty masks and photos remain, `photos_checked`/`photos_changed`/`missing` match, and module/selection stay unchanged without opening Develop. Mixed selector forms fail before dispatch. |
 
+`node tests/e2e/live/export-presets.mjs` writes its own presets to a new folder beside `User Presets` and the catalog's preset folder, then checks numbering across photos, size overrides and units, fractional megapixels and percentages, skipped and unwritable exports, parallel calls, malformed presets, the quality override with a file size limit, the same preset in two scopes, non-ASCII names and Windows line ends. It removes its presets and exports. Check `AI Updates Recommended` by hand on `arw_14bit` after its AI masks are outdated: the call waits, Cancel returns the photo in `failed`, Export writes the file.
+
 Run `node tests/e2e/live/folders.mjs` after importing the 200-photo batch to verify folder paths, fixture membership, pagination, direct counts, and count timing.
 
 ## Catalog removal check

@@ -20,6 +20,8 @@ end
 -- ASCII-only here; Lightroom's folds Unicode.
 local defaultImports = {
     LrStringUtils = { lower = string.lower },
+    LrTasks = { pcall = pcall },
+    LrDate = { currentTime = function() return 0 end },
 }
 
 function M.installImport(modules)
