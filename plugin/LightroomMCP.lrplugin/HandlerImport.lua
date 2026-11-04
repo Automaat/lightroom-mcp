@@ -2,9 +2,11 @@ local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
+local LrStringUtils = import 'LrStringUtils'
 
 local CollectionsHandler = require 'HandlerCollections'
 local Log = require 'Log'
+local PathForms = require 'PathForms'
 local PhotoLookup = require 'PhotoLookup'
 
 local ImportHandler = {}
@@ -162,6 +164,77 @@ local function rawFileBeside(path)
     return nil
 end
 
+local function foldedPath(path)
+    return LrStringUtils.lower(PathForms.toNfc((path:gsub("[/\\]+$", ""))))
+end
+
+local function rememberFolder(known, path)
+    local key = foldedPath(path)
+    known[key] = known[key] or {}
+    for _, spelling in ipairs(known[key]) do
+        if PathForms.same(spelling, path) then return end
+    end
+    table.insert(known[key], path)
+end
+
+local function catalogFolders(catalog)
+    local known = {}
+    local function visit(folder)
+        rememberFolder(known, folder:getPath())
+        for _, child in ipairs(folder:getChildren() or {}) do visit(child) end
+    end
+    for _, folder in ipairs(catalog:getFolders() or {}) do visit(folder) end
+    return known
+end
+
+local function bothOnDisk(first, second)
+    local parent = LrPathUtils.parent(first)
+    if not parent or not PathForms.same(parent, LrPathUtils.parent(second) or "") then return false end
+    local seenFirst, seenSecond = false, false
+    for entry in LrFileUtils.directoryEntries(parent) do
+        local leaf = LrPathUtils.leafName(entry)
+        seenFirst = seenFirst or PathForms.same(leaf, LrPathUtils.leafName(first))
+        seenSecond = seenSecond or PathForms.same(leaf, LrPathUtils.leafName(second))
+    end
+    return seenFirst and seenSecond
+end
+
+local function eachAncestor(directory)
+    local current = directory
+    return function()
+        local this = current
+        if not this or this == "" then return nil end
+        local parent = LrPathUtils.parent(this)
+        current = parent ~= this and parent or nil
+        return this
+    end
+end
+
+-- Lightroom files a photo under an existing folder that differs only in case,
+-- so on a case-sensitive volume a file in dir2 lands in Dir2 as a duplicate
+-- record of its own path, and a later import of the folder never answers (#473).
+-- Returns the folder spelled differently on disk from `directory`, or nil.
+local function caseVariantFolder(known, directory)
+    local fresh = {}
+    for folder in eachAncestor(directory) do
+        local spellings = known[foldedPath(folder)]
+        if spellings then
+            local own = false
+            for _, spelling in ipairs(spellings) do
+                own = own or PathForms.same(spelling, folder)
+            end
+            if not own then
+                for _, spelling in ipairs(spellings) do
+                    if bothOnDisk(spelling, folder) then return spelling end
+                end
+            end
+        end
+        fresh[#fresh + 1] = folder
+    end
+    for _, folder in ipairs(fresh) do rememberFolder(known, folder) end
+    return nil
+end
+
 local function describeSkipped(skipped)
     local names = {}
     for ext in pairs(skipped) do names[#names + 1] = ext end
@@ -279,6 +352,18 @@ function ImportHandler.importPhotos(args, context)
     local remainingPaths = {}
     local alreadyInCatalogCount = 0
     local processed = 0
+    local knownFolders = nil
+    local function refuseCaseVariantFolder(path)
+        knownFolders = knownFolders or catalogFolders(catalog)
+        local directory = LrPathUtils.parent(path)
+        local other = caseVariantFolder(knownFolders, directory)
+        if other then
+            error(string.format(
+                "%s: folder %s differs only in case from %s, which is in the catalog or earlier in this import; "
+                    .. "Lightroom would file the photo under %s",
+                path, directory, other, other), 0)
+        end
+    end
     for index, filePath in ipairs(photosToImport) do
         if context and context:isCanceled() then
             for nextIndex = index, #photosToImport do remainingPaths[#remainingPaths + 1] = photosToImport[nextIndex] end
@@ -292,7 +377,10 @@ function ImportHandler.importPhotos(args, context)
                     or LrPathUtils.leafName(filePath)
                 local companions = companionsOf[LrPathUtils.removeExtension(filePath)]
                     or (sourceKind ~= 'directory' and companionsBeside(filePath, args.separate_jpegs)) or {}
+                refuseCaseVariantFolder(LrPathUtils.child(args.copy_to, relativePath))
                 photoPath = copiedTarget(filePath, relativePath, args.copy_to, companions)
+            else
+                refuseCaseVariantFolder(photoPath)
             end
             local existing = PhotoLookup.findByPath(catalog, photoPath, false)
             if existing then
