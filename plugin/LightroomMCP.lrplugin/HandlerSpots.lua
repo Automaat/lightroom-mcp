@@ -103,8 +103,13 @@ local function withSelected(index, body)
             end, 5) then error('Lightroom did not restore tool ' .. tostring(previousTool)) end
         end
     end)
-    if not restored then error('Could not restore Remove tool state: ' .. tostring(restoreError)) end
-    if not ok then error(result, 0) end
+    if not ok then
+        if not restored then
+            error(tostring(result) .. '; could not restore Remove tool state: ' .. tostring(restoreError), 0)
+        end
+        error(result, 0)
+    end
+    if not restored then result.warning = 'Could not restore Remove tool state: ' .. tostring(restoreError) end
     return result
 end
 

@@ -14,6 +14,14 @@ local function mask(id, name, hidden, tools)
     return { ID = id, Name = name, Hidden = hidden, Tools = tools }
 end
 
+local function maskErrorWhenSavedMasksAreHidden(setupFn)
+    local entry = { What = "Correction", CorrectionMasks = {} }
+    local handler = setupFn({
+        photos = { { id = "1", masks = {}, developSettings = { MaskGroupBasedCorrections = { entry } } } },
+    })
+    return errorOf(function() handler.listMasks({ photo_id = "1" }) end)
+end
+
 local function setup(opts)
     local photos, masksOf, outside, failuresLeft, readErrorOf = {}, {}, {}, {}, {}
     for _, spec in ipairs(opts.photos) do
@@ -421,5 +429,12 @@ describe("HandlerMasks.listMasks", function()
 
         assert.are.equal(0, catalog.getWriteAccessCount())
         assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("fails instead of reporting no masks when saved settings still hold some", function()
+        local message = maskErrorWhenSavedMasksAreHidden(function(opts)
+            return (setup(opts))
+        end)
+        assert.truthy(message:find("saved settings hold 1", 1, true), message)
     end)
 end)

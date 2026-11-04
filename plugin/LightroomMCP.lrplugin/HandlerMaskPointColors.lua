@@ -127,13 +127,18 @@ local function listHolds(actual, expected)
     return true
 end
 
-local function confirmPersisted(expected, maskId, what)
+local function confirmPersisted(expected, maskId, what, restoreLost)
     LrTasks.sleep(PERSIST_SETTLE_SECONDS)
+    local stillSelected = MaskSelection.readSelectedMask() == maskId
     if not listHolds(readSwatches(), expected) then
+        if restoreLost and stillSelected then
+            restoreLost()
+            error("Lightroom did not keep " .. what .. "; the original values were restored", 0)
+        end
         error("Lightroom did not keep " .. what, 0)
     end
-    if MaskSelection.readSelectedMask() ~= maskId then
-        error("Another mask became selected while writing " .. what, 0)
+    if not stillSelected then
+        error("Another mask became selected while writing " .. what .. "; the swatch was not restored", 0)
     end
 end
 
@@ -219,7 +224,10 @@ local function updateSwatch(request, maskId)
 
     local expected = copyList(before)
     expected[index] = merged
-    confirmPersisted(expected, maskId, string.format("the update of swatch %d", index))
+    confirmPersisted(expected, maskId, string.format("the update of swatch %d", index), function()
+        LrTasks.pcall(LrDevelopController.updateSelectedPointColorSwatch,
+            MaskPointColors.copySwatch(original), FOR_MASKING)
+    end)
     restoreSelection(previousIndex, #before)
     return { index = index, changed = true }
 end

@@ -144,6 +144,9 @@ local function parseStroke(stroke, index)
     local erase = parseErase(stroke.erase, field .. ".erase")
     local density = parseDensity(stroke.density, erase, field .. ".density")
     local radius = roundStored(brushSize * BrushFeather.radiusScale(feather))
+    if radius <= 0 then
+        fail(field .. ".radius is too small to paint")
+    end
     requireDabBudget(field, dabCountOf(points, radius), radius)
     return {
         points = points,
