@@ -9,6 +9,7 @@ local LrTasks = import 'LrTasks'
 local AIMaskData = require 'AIMaskData'
 local PhotoLookup = require 'PhotoLookup'
 local DevelopSession = require 'DevelopSession'
+local GuardedMaskWrite = require 'GuardedMaskWrite'
 local Log = require 'Log'
 local JSON = require 'JSON'
 
@@ -118,6 +119,51 @@ local POINT_CURVE_SETTING_LOOKUP = {}
 for _, key in ipairs(POINT_CURVE_SETTING_KEYS) do
     POINT_CURVE_SETTING_LOOKUP[key] = true
 end
+
+local DEVELOP_SETTING_STRINGS = {
+    WhiteBalance = {
+        ["As Shot"] = true, Auto = true, Daylight = true, Cloudy = true, Shade = true,
+        Tungsten = true, Fluorescent = true, Flash = true, Custom = true,
+    },
+    ToneCurveName2012 = true,
+}
+
+local DEVELOP_SETTING_BOOLEANS = { ConvertToGrayscale = true }
+local DEVELOP_SETTING_FLAGS = { LensProfileEnable = true }
+
+local DEVELOP_SETTING_RANGES = {}
+local function addRange(low, high, keys)
+    for key in keys:gmatch("%S+") do DEVELOP_SETTING_RANGES[key] = { low, high } end
+end
+addRange(-100, 50000, "Temperature")
+addRange(-150, 150, "Tint")
+addRange(-5, 5, "Exposure2012")
+addRange(-100, 100, [[
+    Contrast2012 Highlights2012 Shadows2012 Whites2012 Blacks2012 Texture Clarity2012 Dehaze Vibrance Saturation
+    SaturationAdjustmentRed SaturationAdjustmentOrange SaturationAdjustmentYellow SaturationAdjustmentGreen
+    SaturationAdjustmentAqua SaturationAdjustmentBlue SaturationAdjustmentPurple SaturationAdjustmentMagenta
+    HueAdjustmentRed HueAdjustmentOrange HueAdjustmentYellow HueAdjustmentGreen
+    HueAdjustmentAqua HueAdjustmentBlue HueAdjustmentPurple HueAdjustmentMagenta
+    LuminanceAdjustmentRed LuminanceAdjustmentOrange LuminanceAdjustmentYellow LuminanceAdjustmentGreen
+    LuminanceAdjustmentAqua LuminanceAdjustmentBlue LuminanceAdjustmentPurple LuminanceAdjustmentMagenta
+    ParametricShadows ParametricDarks ParametricLights ParametricHighlights
+    LensManualDistortionAmount PerspectiveVertical PerspectiveHorizontal PerspectiveAspect
+    PostCropVignetteAmount PostCropVignetteRoundness
+]])
+addRange(0, 100, [[
+    ParametricShadowSplit ParametricMidtoneSplit ParametricHighlightSplit
+    SharpenDetail SharpenEdgeMasking LuminanceSmoothing LuminanceNoiseReductionDetail
+    LuminanceNoiseReductionContrast ColorNoiseReduction ColorNoiseReductionDetail ColorNoiseReductionSmoothness
+    PostCropVignetteMidpoint PostCropVignetteFeather GrainAmount GrainSize GrainFrequency
+]])
+addRange(0, 150, "Sharpness")
+addRange(0.5, 3, "SharpenRadius")
+addRange(-10, 10, "PerspectiveRotate")
+addRange(50, 150, "PerspectiveScale")
+addRange(0, 5, "PerspectiveUpright")
+addRange(1, 3, "PostCropVignetteStyle")
+addRange(0, 1, "CropTop CropLeft CropBottom CropRight")
+addRange(-45, 45, "CropAngle")
 
 local function requireString(value, name)
     if type(value) ~= "string" or value == "" then
@@ -248,9 +294,36 @@ local function requireDevelopSettingValue(key, value)
         return
     end
 
-    local valueType = type(value)
-    if valueType ~= "number" and valueType ~= "string" and valueType ~= "boolean" then
-        error("Unsupported value for develop setting key: " .. tostring(key))
+    local allowedStrings = DEVELOP_SETTING_STRINGS[key]
+    if allowedStrings then
+        if type(value) ~= "string" or (allowedStrings ~= true and not allowedStrings[value]) then
+            error("Invalid value for develop setting " .. key .. ": " .. tostring(value))
+        end
+        return
+    end
+    if DEVELOP_SETTING_BOOLEANS[key] then
+        if type(value) ~= "boolean" then
+            error("Develop setting " .. key .. " must be true or false")
+        end
+        return
+    end
+    if DEVELOP_SETTING_FLAGS[key] then
+        if value ~= 0 and value ~= 1 then
+            error("Develop setting " .. key .. " must be 0 or 1")
+        end
+        return
+    end
+    local range = DEVELOP_SETTING_RANGES[key]
+    if type(value) ~= "number" or value ~= value or value < range[1] or value > range[2] then
+        error(string.format("Develop setting %s must be a number from %s to %s, got %s",
+            key, tostring(range[1]), tostring(range[2]), tostring(value)))
+    end
+end
+
+local function requireOrderedCrop(settings, lowKey, highKey)
+    local low, high = settings[lowKey], settings[highKey]
+    if low and high and low >= high then
+        error(string.format("%s must be less than %s", lowKey, highKey))
     end
 end
 
@@ -296,6 +369,8 @@ local function requireDevelopSettingsObject(settings)
     if count == 0 then
         error("settings is required")
     end
+    requireOrderedCrop(settings, "CropLeft", "CropRight")
+    requireOrderedCrop(settings, "CropTop", "CropBottom")
 end
 
 local function requireDevelopSettingWhitelist(settings)
@@ -913,7 +988,15 @@ function DevelopHandler.copyDevelopSettings(args)
             toApply[key] = sourceSettings[key]
         end
     end
+    if type(toApply.MaskGroupBasedCorrections) == "table" and #toApply.MaskGroupBasedCorrections > 0 then
+        local safe, reason = LrTasks.pcall(GuardedMaskWrite.preflight, catalog, source)
+        if not safe then
+            error("The source masks cannot be copied safely: " .. tostring(reason)
+                .. " Name the settings to copy with settings to leave masks out.", 0)
+        end
+    end
     toApply = withoutComputedAIMaskData(toApply)
+    if not args.settings then toApply.orientation = nil end
 
     local copiedCount = 0
     local missingIds = {}

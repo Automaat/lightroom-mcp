@@ -12,10 +12,8 @@ function CollectionsHandler.listCollections(args)
     local catalog = LrApplication.activeCatalog()
     local all = {}
 
-    local limit = tonumber(args.limit) or 100
-    if limit < 0 then limit = 0 end
-    local offset = tonumber(args.offset) or 0
-    if offset < 0 then offset = 0 end
+    local limit = math.max(0, math.floor(tonumber(args.limit) or 100))
+    local offset = math.max(0, math.floor(tonumber(args.offset) or 0))
 
     catalog:withReadAccessDo(function()
         for _, collection in ipairs(catalog:getChildCollections()) do
@@ -256,6 +254,8 @@ local function findOneCollection(catalog, name)
     return matches[1]
 end
 
+CollectionsHandler.findOneCollection = findOneCollection
+
 function CollectionsHandler.addToCollection(args)
     if not args.collection_name then
         error("collection_name is required")
@@ -464,20 +464,14 @@ function CollectionsHandler.deleteCollection(args)
     end
 
     local catalog = LrApplication.activeCatalog()
-    local photoCount = 0
+    local found
+    catalog:withReadAccessDo(function()
+        found = findOneCollection(catalog, args.collection_name)
+    end)
+    local photoCount = #(found:getPhotos() or {})
 
     catalog:withWriteAccessDo("Delete Collection", function()
-        local matches = findAllCollections(catalog, args.collection_name)
-        if #matches == 0 then
-            error("Collection not found: " .. args.collection_name)
-        end
-        if #matches > 1 then
-            error(string.format("%d collections are named '%s'; use a collection path",
-                #matches, args.collection_name))
-        end
-
-        photoCount = #matches[1]:getPhotos()
-        matches[1]:delete()
+        findOneCollection(catalog, args.collection_name):delete()
     end)
 
     Log.info(string.format("Deleted collection: %s (%d photos, still in the catalog)",

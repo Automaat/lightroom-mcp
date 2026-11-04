@@ -113,6 +113,26 @@ local function readAllMasks(photoId)
     return masks or {}
 end
 
+local function savedMaskCount(catalog, photo)
+    local ok, entries = LrTasks.pcall(GuardedMaskWrite.readEntries, catalog, photo)
+    return ok and #entries or 0
+end
+
+local function readMasksChecked(catalog, photo, photoId)
+    local masks = readAllMasks(photoId)
+    if #masks > 0 or savedMaskCount(catalog, photo) == 0 then return masks end
+    local agreed = DevelopSession.waitFor(function()
+        masks = readAllMasks(photoId)
+        return #masks > 0 or savedMaskCount(catalog, photo) == 0
+    end, MASK_READ_TIMEOUT_SECONDS)
+    if not agreed then
+        error(string.format("Lightroom lists no masks on photo %s, but its saved settings hold %d. "
+            .. "A Lightroom alert such as \"No sky detected\" may be open: click OK in Lightroom, then call again.",
+            photoId, savedMaskCount(catalog, photo)))
+    end
+    return masks
+end
+
 function MaskHandler.listMasks(args)
     local photoId = requirePhotoId(args.photo_id)
     DevelopSession.requireMaskApi("list_masks")
@@ -124,7 +144,7 @@ function MaskHandler.listMasks(args)
     end
 
     local raw = DevelopSession.withPhoto("list_masks", catalog, photo, function()
-        return { masks = readAllMasks(photoId), ranges = rangesByToolId(catalog, photo) }
+        return { masks = readMasksChecked(catalog, photo, photoId), ranges = rangesByToolId(catalog, photo) }
     end)
 
     local masks = {}

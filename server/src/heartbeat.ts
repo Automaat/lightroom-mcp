@@ -25,11 +25,16 @@ export function startHeartbeat(
   intervalMs: number,
   onError: (err: Error) => void = (err) => console.error(`[heartbeat] ping failed: ${err.message}`),
   onSuccess: () => void = () => {},
+  connectionGeneration: () => number = () => 0,
 ): NodeJS.Timeout {
   return setInterval(() => {
+    const generation = connectionGeneration();
+    const ifCurrent = (settle: () => void) => {
+      if (generation === connectionGeneration()) settle();
+    };
     dispatcher.call("ping", {}).then(
-      () => onSuccess(),
-      (err: Error) => onError(err),
+      () => ifCurrent(onSuccess),
+      (err: Error) => ifCurrent(() => onError(err)),
     );
   }, intervalMs);
 }

@@ -79,6 +79,7 @@ local function setup(opts)
         LrTasks = opts.tasks or { sleep = function() end, pcall = pcall },
         LrLogger = helper.defaultLrLogger(),
     })
+    package.loaded.GuardedMaskWrite = opts.guardedMaskWrite or { preflight = function() end }
     package.loaded.HandlerDevelop = nil
     package.loaded.DevelopSession = nil
     return catalog, require 'HandlerDevelop', {
@@ -705,6 +706,77 @@ describe("HandlerDevelop numeric photo ids", function()
         assert.has_error(function()
             Handler.copyDevelopSettings({ source_id = "s", target_ids = { {} } })
         end, "target_ids[1] must be a photo id or file path")
+    end)
+end)
+
+describe("HandlerDevelop.setDevelopSettings values", function()
+    local function reject(settings, text)
+        local p = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+        local Handler = select(2, setup({ photos = { p } }))
+        local ok, err = pcall(Handler.setDevelopSettings, { photo_id = "1", settings = settings })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find(text, 1, true), tostring(err))
+    end
+
+    it("accepts the lens profile flag as Lightroom stores it", function()
+        for _, flag in ipairs({ 0, 1 }) do
+            local p = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+            local Handler = select(2, setup({ photos = { p } }))
+            assert.is_true(Handler.setDevelopSettings({
+                photo_id = "1", settings = { LensProfileEnable = flag },
+            }).success)
+        end
+    end)
+
+    it("refuses out-of-range, wrongly typed and unknown enum values", function()
+        reject({ Exposure2012 = 1e9 }, "Exposure2012 must be a number from -5 to 5")
+        reject({ Contrast2012 = "abc" }, "Contrast2012 must be a number")
+        reject({ WhiteBalance = "Nope" }, "Invalid value for develop setting WhiteBalance")
+        reject({ ConvertToGrayscale = "maybe" }, "ConvertToGrayscale must be true or false")
+        reject({ LensProfileEnable = true }, "LensProfileEnable must be 0 or 1")
+        reject({ LensProfileEnable = 2 }, "LensProfileEnable must be 0 or 1")
+        reject({ CropTop = 5 }, "CropTop must be a number from 0 to 1")
+        reject({ CropTop = 0.8, CropBottom = 0.2 }, "CropTop must be less than CropBottom")
+    end)
+
+    it("accepts values at the limits", function()
+        local p = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+        local Handler = select(2, setup({ photos = { p } }))
+        local r = Handler.setDevelopSettings({
+            photo_id = "1",
+            settings = {
+                Exposure2012 = 5, Contrast2012 = -100, WhiteBalance = "As Shot", ConvertToGrayscale = true,
+                CropTop = 0, CropBottom = 1, ToneCurveName2012 = "Linear",
+            },
+        })
+        assert.is_true(r.success)
+    end)
+end)
+
+describe("HandlerDevelop.copyDevelopSettings guards", function()
+    local function photos()
+        return {
+            helper.fakePhoto({ id = "10", path = "/s.jpg", developSettings = {
+                Exposure2012 = 1, orientation = "BC", MaskGroupBasedCorrections = { { What = "Correction" } },
+            } }),
+            helper.fakePhoto({ id = "11", path = "/t.jpg", developSettings = { orientation = "DC" } }),
+        }
+    end
+
+    it("refuses source masks that fail the guarded format check", function()
+        local Handler = select(2, setup({
+            photos = photos(),
+            guardedMaskWrite = { preflight = function() error("a color range needs exactly one PointModels entry", 0) end },
+        }))
+        local ok, err = pcall(Handler.copyDevelopSettings, { source_id = "10", target_ids = { "11" } })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("exactly one PointModels entry", 1, true))
+    end)
+
+    it("does not preview or copy the source's orientation", function()
+        local Handler = select(2, setup({ photos = photos() }))
+        local preview = Handler.copyDevelopSettings({ source_id = "10", target_ids = { "11" }, dry_run = true })
+        assert.is_nil(preview.setting_totals.orientation)
     end)
 end)
 

@@ -22,6 +22,16 @@ local function load()
     BrushStrokes = require 'BrushStrokes'
 end
 
+describe("BrushStrokes.parseStrokes radius", function()
+    it("refuses a radius that rounds to zero", function()
+        load()
+        local message = errorOf(function()
+            BrushStrokes.parseStrokes({ stroke({ points = { point(0.2, 0.3) }, radius = 1e-7 }) })
+        end)
+        assert.truthy(message:find("too small", 1, true))
+    end)
+end)
+
 describe("BrushStrokes.parseStrokes", function()
     before_each(load)
 

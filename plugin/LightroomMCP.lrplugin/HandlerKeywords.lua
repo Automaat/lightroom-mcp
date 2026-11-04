@@ -122,26 +122,33 @@ function KeywordsHandler.renameKeyword(args)
     local catalog = LrApplication.activeCatalog()
     local keyword, oldPath, newPath, photoCount, tempName
 
-    catalog:withWriteAccessDo("Rename Keyword", function()
+    local function findKeyword()
         if parts then
-            keyword = KeywordTree.resolve(catalog, parts)
-            if not keyword then
+            local resolved = KeywordTree.resolve(catalog, parts)
+            if not resolved then
                 error("Keyword not found: " .. KeywordTree.join(parts))
             end
-        else
-            local matches = KeywordTree.findByName(catalog, oldName)
-            if #matches == 0 then
-                error("Keyword not found: " .. oldName)
-            elseif #matches > 1 then
-                local found = {}
-                for _, match in ipairs(matches) do
-                    table.insert(found, match.path)
-                end
-                error("Keyword is ambiguous, give its path: " .. oldName
-                    .. " (" .. table.concat(found, ", ") .. ")")
-            end
-            keyword = matches[1].keyword
+            return resolved
         end
+        local matches = KeywordTree.findByName(catalog, oldName)
+        if #matches == 0 then
+            error("Keyword not found: " .. oldName)
+        elseif #matches > 1 then
+            local found = {}
+            for _, match in ipairs(matches) do
+                table.insert(found, match.path)
+            end
+            error("Keyword is ambiguous, give its path: " .. oldName
+                .. " (" .. table.concat(found, ", ") .. ")")
+        end
+        return matches[1].keyword
+    end
+
+    catalog:withReadAccessDo(function() keyword = findKeyword() end)
+    photoCount = #(keyword:getPhotos() or {})
+
+    catalog:withWriteAccessDo("Rename Keyword", function()
+        keyword = findKeyword()
 
         local currentName = keyword:getName()
         if currentName == newName then
@@ -161,8 +168,6 @@ function KeywordsHandler.renameKeyword(args)
         -- Built rather than read back: until this transaction commits,
         -- getName() still returns the old name.
         newPath = parent and (KeywordTree.pathOf(parent) .. KeywordTree.SEPARATOR .. newName) or newName
-        photoCount = #(keyword:getPhotos() or {})
-
         -- Lightroom silently ignores a rename that changes only the case, so
         -- that goes through a temporary name, committed first.
         if KeywordTree.fold(currentName) == KeywordTree.fold(newName) then

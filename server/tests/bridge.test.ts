@@ -4,7 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { Bridge, NO_OWNER_MESSAGE, unreachableOwnerMessage, type Leader } from '../src/bridge.js';
-import { BrokerClient, BrokerServer, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
+import { BrokerClient, BrokerServer, MAX_FRAME_BYTES, OWNER_LOST_MESSAGE, brokerPath, signNonce, type ToolCaller } from '../src/broker.js';
 import { acquireInstanceLock, LockHeldError, type InstanceLock } from '../src/instance-lock.js';
 import type { ToolResponse } from '../src/tool-handler.js';
 
@@ -129,6 +129,24 @@ describe('broker', () => {
 
     expect(text(a)).toBe('get_selection:{}');
     expect(text(b)).toBe('search_photos:{"query":"x"}');
+  });
+
+  it('returns an error instead of dropping the connection for an oversized reply', async () => {
+    const dir = tmpDir();
+    const huge = 'x'.repeat(MAX_FRAME_BYTES + 1);
+    const server = new BrokerServer({ path: ipcPath(dir), callTool: async () => ok(huge), readToken: () => 't' });
+    await server.listen();
+    let closed = false;
+    const client = new BrokerClient({ path: ipcPath(dir), readToken: () => 't', onClose: () => { closed = true; } });
+    await client.connect();
+
+    const reply = await client.callTool('search_photos', {});
+
+    expect(reply.isError).toBe(true);
+    expect(text(reply)).toContain('too large');
+    expect(closed).toBe(false);
+    client.close();
+    await server.close();
   });
 
   it('refuses to connect a follower whose token does not match', async () => {

@@ -21,7 +21,7 @@ local function setup(options)
     local controller = {
         getAllSpots = function() return clone(spots) end,
         getSelectedTool = function() return tool end,
-        selectTool = function(value) tool = value end,
+        selectTool = function(value) if not options.ignoreRestore then tool = value end end,
         goToRemove = function() tool = 'dust'; calls.opens = calls.opens + 1 end,
         setSelectedSpotIndex = function(index)
             if options.refuse or not spots[index] then return false, 'not selectable' end
@@ -162,5 +162,14 @@ describe('Remove spots', function()
         local handler, calls = setup({ old = true })
         assert.truthy(failure(function() handler.list({ photo_id = '1' }) end):find('14.1', 1, true))
         assert.are.equal(0, calls.opens)
+    end)
+
+    it('keeps a finished delete when the tool cannot be restored', function()
+        local handler, calls, spots = setup({ ignoreRestore = true })
+        local result = handler.delete({ photo_id = '1', index = 1, confirm = true })
+        assert.is_true(result.success)
+        assert.truthy(result.warning:find('Could not restore', 1, true))
+        assert.are.equal(1, calls.deletes)
+        assert.are.equal(1, #spots())
     end)
 end)

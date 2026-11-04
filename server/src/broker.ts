@@ -95,6 +95,15 @@ function errorResponse(text: string): ToolResponse {
   return { content: [{ type: "text", text }], isError: true };
 }
 
+function replyFrame(reply: BrokerReply): string {
+  const frame = JSON.stringify(reply);
+  if (Buffer.byteLength(frame) < MAX_FRAME_BYTES) return frame;
+  return JSON.stringify({
+    id: reply.id,
+    result: errorResponse("The result is too large to return; request fewer items with limit and offset."),
+  } satisfies BrokerReply);
+}
+
 function onLines(sock: net.Socket, handle: (line: string) => void, maxBytes: () => number): void {
   const lines = new LineBuffer();
   sock.setEncoding("utf8");
@@ -223,7 +232,7 @@ export class BrokerServer {
       return;
     }
     const reply: BrokerReply = { id, result };
-    sock.write(JSON.stringify(reply) + "\n", () => sent());
+    sock.write(replyFrame(reply) + "\n", () => sent());
   }
 
   private callDone(): void {

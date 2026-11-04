@@ -65,6 +65,10 @@ export class Dispatcher {
       this.log(`Bad JSON from plugin (${msg}): ${line}`);
       return;
     }
+    if (typeof resp !== "object" || resp === null || Array.isArray(resp)) {
+      this.log(`Non-object JSON from plugin: ${line}`);
+      return;
+    }
     const event = resp as unknown as { progressFor?: string; progress?: ToolProgress };
     if (event.progressFor && event.progress) {
       this.pending.get(event.progressFor)?.onProgress?.(event.progress);
@@ -125,6 +129,15 @@ export class Dispatcher {
     }
 
     return responsePromise;
+  }
+
+  rejectPending(reason: string): void {
+    for (const [id, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.cleanup();
+      this.pending.delete(id);
+      p.reject(new Error(reason));
+    }
   }
 
   pendingCount(): number {
