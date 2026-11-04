@@ -395,6 +395,34 @@ describe("HandlerImport.importPhotos", function()
             assert.is_nil(r.already_in_catalog)
         end)
 
+        it("counts an NFC folder listing against the NFD path in the catalog", function()
+            local catalog, Handler = setupFolder({ "/dir/cafe\204\129.jpg" }, { "/dir/caf\195\169.jpg" })
+            catalog.addPhoto = function() error("failed to import photo") end
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.is_true(r.success)
+            assert.are.equal(0, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.is_nil(r.failed)
+        end)
+
+        it("keeps the count of added photos and names the file that failed", function()
+            local catalog, Handler = setupFolder({}, { "/dir/a.arw", "/dir/bad.arw" })
+            local addPhoto = catalog.addPhoto
+            catalog.addPhoto = function(self, path)
+                if path == "/dir/bad.arw" then error("failed to import photo") end
+                return addPhoto(self, path)
+            end
+
+            local r = Handler.importPhotos({ source_path = "/dir" })
+
+            assert.is_false(r.success)
+            assert.are.equal(1, r.imported)
+            assert.are.equal(1, #r.failed)
+            assert.are.equal("/dir/bad.arw", r.failed[1].path)
+        end)
+
         it("still surfaces a file that fails for another reason", function()
             local catalog, Handler = setupFolder({ "/dir/a.arw" }, { "/dir/a.arw", "/dir/bad.arw", "/dir/c.arw" })
             catalog.addPhoto = function() error("failed to import photo") end
