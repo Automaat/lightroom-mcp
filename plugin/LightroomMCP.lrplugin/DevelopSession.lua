@@ -30,7 +30,7 @@ end
 function DevelopSession.retryUntil(done, action, timeoutSeconds, intervalSeconds)
     intervalSeconds = intervalSeconds or RESELECT_SECONDS
     local sinceAction = intervalSeconds
-    return DevelopSession.waitFor(function()
+    local reached = DevelopSession.waitFor(function()
         if done() then return true end
         if sinceAction >= intervalSeconds then
             action()
@@ -39,6 +39,8 @@ function DevelopSession.retryUntil(done, action, timeoutSeconds, intervalSeconds
         sinceAction = sinceAction + POLL_SECONDS
         return false
     end, timeoutSeconds or SELECT_TIMEOUT_SECONDS)
+    -- the closing poll may fire one last action, so judge its result
+    return reached or done()
 end
 
 local retryUntil = DevelopSession.retryUntil
