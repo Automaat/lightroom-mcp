@@ -1,4 +1,19 @@
+local PathForms = require 'PathForms'
+
 local PhotoLookup = {}
+
+function PhotoLookup.findByPath(catalog, path, caseSensitive)
+    local photo = catalog:findPhotoByPath(path, caseSensitive)
+    if photo or PathForms.isAscii(path) then return photo end
+    local nfd = PathForms.toNfd(path)
+    if nfd ~= path then
+        photo = catalog:findPhotoByPath(nfd, caseSensitive)
+        if photo then return photo end
+    end
+    local nfc = PathForms.toNfc(path)
+    if nfc ~= path then return catalog:findPhotoByPath(nfc, caseSensitive) end
+    return nil
+end
 
 local function directLocalId(id)
     if type(id) == "number" and id == math.floor(id) then return id end
@@ -64,9 +79,9 @@ function PhotoLookup.resolveMany(catalog, photoIds)
             await(tostring(id))
         elseif byPath[id] == nil then
             byPath[id] = false
-            local photo = catalog:findPhotoByPath(id)
+            local photo = PhotoLookup.findByPath(catalog, id)
             -- Exact, as the scan compared: findPhotoByPath may ignore case.
-            if photo and photo:getRawMetadata('path') == id then
+            if photo and PathForms.same(photo:getRawMetadata('path'), id) then
                 local master = photo:getRawMetadata('masterPhoto') or photo
                 byPath[id] = master
                 local sharing = { master }

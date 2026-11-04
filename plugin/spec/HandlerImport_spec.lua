@@ -45,6 +45,16 @@ local function fakeFileUtils(opts)
                 return entries[i]
             end
         end,
+        copy = function(source, target)
+            if opts.copyFails then return false end
+            opts.exists[target] = true
+            opts.copies = opts.copies or {}
+            opts.copies[#opts.copies + 1] = { source, target }
+            return true
+        end,
+        createAllDirectories = function() return true end,
+        fileAttributes = function(p) return { fileSize = (opts.sizes or {})[p] or 1 } end,
+        chooseUniqueFileName = function(p) return (p:gsub("(%.[^.]+)$", "-2%1")) end,
         recursiveFiles = function(_)
             local i = 0
             local list = opts.dirContents or {}
@@ -63,15 +73,16 @@ local function fakePathUtils()
         removeExtension = function(p) return (p:gsub("%.[^.]+$", "")) end,
         leafName = function(p) return p:match("([^/]+)$") end,
         parent = function(p) return p:match("^(.*)/[^/]+$") end,
+        child = function(parent, child) return parent .. "/" .. child end,
     }
 end
 
 local function setup(opts)
-    local catalog = helper.fakeCatalog({ collections = opts.collections or {}, photos = opts.photos })
+    local catalog = helper.fakeCatalog({ collectionSets = opts.collectionSets, collections = opts.collections or {}, photos = opts.photos })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrLogger = helper.defaultLrLogger(),
-        LrTasks = {},
+        LrTasks = { pcall = pcall, sleep = function() end },
         LrFileUtils = fakeFileUtils(opts.fs or {}),
         LrPathUtils = fakePathUtils(),
     })
@@ -88,6 +99,135 @@ local function importedPaths(catalog)
 end
 
 describe("HandlerImport.importPhotos", function()
+    describe("collection_name", function()
+        local function folder(extra)
+            local opts = {
+                fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg", "/dir/b.jpg" } },
+            }
+            for key, value in pairs(extra) do opts[key] = value end
+            return setup(opts)
+        end
+
+        it("fails before importing when the collection does not exist", function()
+            local catalog, Handler = folder({})
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir", collection_name = "Trip" })
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("Collection not found: Trip", 1, true))
+            assert.are.equal(0, #catalog:getAllPhotos())
+        end)
+
+        it("refuses a smart collection before importing", function()
+            local smart = helper.fakeCollection("Smart", {}, { smart = true })
+            local catalog, Handler = folder({ collections = { smart } })
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir", collection_name = "Smart" })
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("smart collection", 1, true))
+            assert.are.equal(0, #catalog:getAllPhotos())
+        end)
+
+        it("adds new and already cataloged photos, including to a nested path", function()
+            local nested = helper.fakeCollection("City", {})
+            local set = helper.fakeCollectionSet("Trips", { collections = { nested } })
+            local existing = helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" })
+            local _, Handler = folder({ collectionSets = { set }, photos = { existing } })
+
+            local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Trips / City" })
+
+            assert.are.equal(2, r.added_to_collection)
+            assert.are.equal(2, #nested.getAddedPhotos())
+        end)
+    end)
+
+    describe("a file Lightroom cannot import", function()
+        it("still imports the others, reports it and fills the collection", function()
+            local collection = helper.fakeCollection("Shoot", {})
+            local catalog, Handler = setup({
+                collections = { collection },
+                fs = { directories = { ["/dir"] = true }, dirContents = { "/dir/a.jpg", "/dir/bad.jpg", "/dir/c.jpg" } },
+            })
+            local addPhoto = catalog.addPhoto
+            catalog.addPhoto = function(self, path)
+                if path == "/dir/bad.jpg" then error("dng_error_bad_format") end
+                return addPhoto(self, path)
+            end
+
+            local r = Handler.importPhotos({ source_path = "/dir", collection_name = "Shoot" })
+
+            assert.is_false(r.success)
+            assert.are.equal(2, r.imported)
+            assert.are.equal("/dir/bad.jpg", r.failed[1].path)
+            assert.truthy(r.failed[1].error:find("dng_error_bad_format", 1, true))
+            assert.are.equal(2, #collection.getAddedPhotos())
+        end)
+
+        it("names the file when a single import fails", function()
+            local catalog, Handler = setup({ fs = { exists = { ["/a.jpg"] = true } } })
+            catalog.addPhoto = function() error("dng_error_bad_format") end
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/a.jpg" })
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("/a.jpg: ", 1, true))
+        end)
+    end)
+
+    it("skips files inside library packages", function()
+        local catalog, Handler = setup({
+            fs = {
+                directories = { ["/dir"] = true },
+                dirContents = { "/dir/top.jpg", "/dir/Cat Previews.lrdata/0/a.dng", "/dir/x.LRLIBRARY/b.jpg" },
+            },
+        })
+        local r = Handler.importPhotos({ source_path = "/dir" })
+        assert.are.equal(1, r.imported)
+        assert.are.equal(2, r.skipped_package_files)
+        assert.are.same({ "/dir/top.jpg" }, importedPaths(catalog))
+    end)
+
+    describe("copy_to", function()
+        it("imports a copy that keeps subfolders and brings sidecars along", function()
+            local fs = {
+                directories = { ["/card"] = true },
+                exists = { ["/card/d/a.arw"] = true },
+                dirContents = { "/card/d/a.arw", "/card/d/a.jpg", "/card/d/a.xmp" },
+            }
+            local catalog, Handler = setup({ fs = fs })
+
+            local r = Handler.importPhotos({ source_path = "/card", copy_to = "/archive" })
+
+            assert.are.equal(1, r.imported)
+            assert.are.same({ "/archive/d/a.arw" }, importedPaths(catalog))
+            local copied = {}
+            for _, pair in ipairs(fs.copies) do copied[pair[2]] = pair[1] end
+            assert.are.equal("/card/d/a.arw", copied["/archive/d/a.arw"])
+            assert.are.equal("/card/d/a.jpg", copied["/archive/d/a.jpg"])
+            assert.are.equal("/card/d/a.xmp", copied["/archive/d/a.xmp"])
+        end)
+
+        it("reuses an identical copy and renames a different file in the way", function()
+            local fs = {
+                exists = { ["/card/a.jpg"] = true, ["/archive/a.jpg"] = true },
+                sizes = { ["/archive/a.jpg"] = 1 },
+            }
+            local catalog, Handler = setup({ fs = fs })
+            Handler.importPhotos({ source_path = "/card/a.jpg", copy_to = "/archive" })
+            assert.is_nil(fs.copies)
+            assert.are.same({ "/archive/a.jpg" }, importedPaths(catalog))
+
+            fs.sizes["/archive/a.jpg"] = 2
+            fs.exists["/card/b.jpg"] = true
+            fs.exists["/archive/b.jpg"] = true
+            fs.sizes["/archive/b.jpg"] = 2
+            Handler.importPhotos({ source_path = "/card/b.jpg", copy_to = "/archive" })
+            assert.are.equal("/archive/b-2.jpg", fs.copies[1][2])
+        end)
+
+        it("fails a single import when the copy fails", function()
+            local _, Handler = setup({ fs = { copyFails = true, exists = { ["/card/a.jpg"] = true } } })
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/card/a.jpg", copy_to = "/archive" })
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("could not copy", 1, true))
+        end)
+    end)
+
     describe("files already in the catalog", function()
         local function setupFolder(existingPaths, dirContents)
             local photos = {}
@@ -215,10 +355,11 @@ describe("HandlerImport.importPhotos", function()
             local catalog, Handler = setupFolder({ "/dir/a.arw" }, { "/dir/a.arw", "/dir/bad.arw", "/dir/c.arw" })
             catalog.addPhoto = function() error("failed to import photo") end
 
-            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir" })
+            local r = Handler.importPhotos({ source_path = "/dir" })
 
-            assert.is_false(ok)
-            assert.truthy(tostring(err):find("failed to import photo", 1, true))
+            assert.is_false(r.success)
+            assert.are.equal(2, #r.failed)
+            assert.truthy(r.failed[1].error:find("failed to import photo", 1, true))
         end)
     end)
 
@@ -282,6 +423,8 @@ describe("HandlerImport.importPhotos", function()
             local added = {}
             local collection = {
                 getName = function() return "Shoot" end,
+                type = function() return "LrCollection" end,
+                isSmartCollection = function() return false end,
                 addPhotos = function(_, photos) added = photos end,
             }
             local catalog, Handler = setup({

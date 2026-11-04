@@ -982,7 +982,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerOrganization.setKeywords",
     description:
-      "Add/remove keyword names or parent-first '|' paths from list_keywords, ignoring case. Missing names create top-level keywords; paths create missing levels unless create_missing=false. Returns success and updated count.",
+      "Add/remove keyword names or parent-first '|' paths from list_keywords, ignoring case. Missing names create top-level keywords; paths create missing levels unless create_missing=false. Returns success, updated count and missing IDs; a call matching no photo creates no keyword.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1095,7 +1095,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerUndo.undoLastStep",
     description:
-      "Undo one shared Lightroom history step (confirm:true), including a user/other plug-in action after your edit. Ownership is unknown: call only if undoing the current last step is acceptable. Returns undone and can_undo for another undo.",
+      "Undo one shared Lightroom history step (confirm:true), including a user/other plug-in action after your edit. Ownership is unknown: call only if undoing the current last step is acceptable. Lightroom can merge recent plug-in writes, even across photos, into one step. Returns undone, can_undo and message.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1166,7 +1166,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerRemoveFromCatalog.removePhotos",
     description:
-      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master. Deduplicates; reports missing IDs. Opens Library grid/All Photographs, restores module/sources/surviving selection; Library stays in grid view.",
+      "Remove up to 100 IDs/paths from catalog, losing catalog edits/metadata; files remain on disk (LrC 14.3+, confirm:true). Include every virtual copy with its master; a path shared by a master and copies is refused, so use numeric IDs. Deduplicates; reports missing IDs. Opens Library grid/All Photographs, restores module/sources/surviving selection; Library stays in grid view.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1184,7 +1184,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerImport.importPhotos",
     description:
-      "Import a photo or a folder recursively. A JPEG with a non-DNG raw file of exactly the same name (only the extension's case may differ) stays the raw's sidecar: folders leave it out and report skipped_sidecar_jpegs; importing that JPEG alone fails and names the raw. Lightroom makes no sidecar for other JPEGs, so they import as their own photos. Files already in the catalog are left unchanged and counted in already_in_catalog. Returns success, imported/skipped counts, skipped_by_extension, skipped_sidecar_jpegs, already_in_catalog, complete and remaining_paths. Only unsupported-extension notes remain in message.",
+      "Import a photo or a folder recursively. A JPEG with a non-DNG raw file of exactly the same name (only the extension's case may differ) stays the raw's sidecar: folders leave it out and report skipped_sidecar_jpegs; importing that JPEG alone fails and names the raw. Lightroom makes no sidecar for other JPEGs, so they import as their own photos. Files already in the catalog are left unchanged and counted in already_in_catalog. Lightroom and Photos library packages are skipped. Returns success, imported/skipped counts, failed per file, added_to_collection, skipped_by_extension, skipped_sidecar_jpegs, skipped_package_files, already_in_catalog, complete and remaining_paths. Only unsupported-extension notes remain in message.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1192,11 +1192,11 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         source_path: { type: "string", description: "Photo or folder to import. Folder imports accept camera raw (CR3, RAF, ORF, RW2, NEF, ARW, DNG and other Camera Raw formats), JPEG, HEIC/HEIF, AVIF, JPEG XL, TIFF, PNG and PSD/PSB; other files are skipped by extension." },
         collection_name: {
           type: "string",
-          description: "Collection to add imported photos to (optional)",
+          description: "Collection name or list_collections path to add imported and already cataloged photos to; an unknown or smart collection fails before importing (optional)",
         },
         copy_to: {
           type: "string",
-          description: "Destination folder for copying files (optional)",
+          description: "Copy files and sidecars here, keeping subfolders, and import the copies (optional)",
         },
         separate_jpegs: {
           type: "boolean",
@@ -1212,7 +1212,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     title: "Export photos",
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerExport.exportPhotos",
-    description: "Export photos; returns success, exported count, destination, complete and remaining_ids to retry.",
+    description: "Export photos; returns success, exported and skipped counts, failed, missing IDs, destination, complete and remaining_ids to retry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1230,8 +1230,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           minimum: 0,
           maximum: 100,
         },
-        width: { type: "number", description: "Max width in pixels (optional)" },
-        height: { type: "number", description: "Max height in pixels (optional)" },
+        width: { type: "integer", minimum: 1, description: "Max width in pixels (optional)" },
+        height: { type: "integer", minimum: 1, description: "Max height in pixels (optional)" },
         on_existing: {
           type: "string",
           description:

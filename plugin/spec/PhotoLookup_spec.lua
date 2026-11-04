@@ -1,3 +1,39 @@
+describe("PhotoLookup.findByPath", function()
+    local NFC, NFD = "/w\196\133.jpg", "/wa\204\168.jpg"
+
+    local function lookup(storedPath)
+        package.loaded.PhotoLookup = nil
+        local PhotoLookup = require 'PhotoLookup'
+        local photo = {
+            localIdentifier = 1,
+            getRawMetadata = function(_, key)
+                if key == 'path' then return storedPath end
+                return nil
+            end,
+        }
+        local catalog = {
+            findPhotoByPath = function(_, path) return path == storedPath and photo or nil end,
+        }
+        return PhotoLookup, catalog, photo
+    end
+
+    it("finds a decomposed catalog path from a composed one", function()
+        local PhotoLookup, catalog, photo = lookup(NFD)
+        assert.are.equal(photo, PhotoLookup.findByPath(catalog, NFC))
+        assert.are.equal(photo, PhotoLookup.resolveOne(catalog, NFC))
+    end)
+
+    it("finds a composed catalog path from a decomposed one", function()
+        local PhotoLookup, catalog, photo = lookup(NFC)
+        assert.are.equal(photo, PhotoLookup.findByPath(catalog, NFD))
+    end)
+
+    it("returns nil for a path in neither form", function()
+        local PhotoLookup, catalog = lookup(NFD)
+        assert.is_nil(PhotoLookup.findByPath(catalog, "/other\196\133.jpg"))
+    end)
+end)
+
 local function fakePhoto(id, path, state)
     local meta = { path = path, uuid = path and ("uuid-" .. tostring(id)) or nil }
     return {

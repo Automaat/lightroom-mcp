@@ -3,7 +3,9 @@ local LrTasks = import 'LrTasks'
 local LrFileUtils = import 'LrFileUtils'
 local LrPathUtils = import 'LrPathUtils'
 
+local CollectionsHandler = require 'HandlerCollections'
 local Log = require 'Log'
+local PhotoLookup = require 'PhotoLookup'
 
 local ImportHandler = {}
 
@@ -23,6 +25,8 @@ for ext in ([[
 end
 
 local JPEG_EXTENSIONS = { jpe = true, jpeg = true, jpg = true }
+local PACKAGE_EXTENSIONS = { lrdata = true, lrlibrary = true, photoslibrary = true }
+local IMPORT_WRITE_TIMEOUT = { timeout = 30 }
 
 local function lowerExtension(path)
     return LrPathUtils.extension(path):lower()
@@ -36,15 +40,66 @@ local function withoutSidecarJpegs(files)
         end
     end
     local kept = {}
-    local sidecarCount = 0
+    local sidecars = {}
     for _, file in ipairs(files) do
         if JPEG_EXTENSIONS[lowerExtension(file)] and rawStems[LrPathUtils.removeExtension(file)] then
-            sidecarCount = sidecarCount + 1
+            sidecars[#sidecars + 1] = file
         else
             kept[#kept + 1] = file
         end
     end
-    return kept, sidecarCount
+    return kept, sidecars
+end
+
+local function insidePackage(file, root)
+    local relative = file:sub(1, #root) == root and file:sub(#root + 1) or file
+    for folder in relative:gmatch("([^/\\]+)[/\\]") do
+        local extension = folder:match("%.([^.]+)$")
+        if extension and PACKAGE_EXTENSIONS[extension:lower()] then return true end
+    end
+    return false
+end
+
+local function copyFile(source, target)
+    if not LrFileUtils.copy(source, target) or LrFileUtils.exists(target) ~= 'file' then
+        error("could not copy " .. source .. " to " .. target)
+    end
+end
+
+local function sameSize(left, right)
+    local leftSize = LrFileUtils.fileAttributes(left).fileSize
+    return leftSize ~= nil and leftSize == LrFileUtils.fileAttributes(right).fileSize
+end
+
+local function copiedTarget(source, relativePath, folder, companions)
+    local target = LrPathUtils.child(folder, relativePath)
+    LrFileUtils.createAllDirectories(LrPathUtils.parent(target))
+    if LrFileUtils.exists(target) == 'file' and sameSize(source, target) then return target end
+    if LrFileUtils.exists(target) then target = LrFileUtils.chooseUniqueFileName(target) end
+    copyFile(source, target)
+    local targetStem = LrPathUtils.removeExtension(target)
+    for _, companion in ipairs(companions) do
+        local companionTarget = targetStem .. "." .. LrPathUtils.extension(companion)
+        if not LrFileUtils.exists(companionTarget) then copyFile(companion, companionTarget) end
+    end
+    return target
+end
+
+local function companionsBeside(source)
+    local companions = {}
+    local stem = LrPathUtils.removeExtension(source)
+    for _, extension in ipairs({ "xmp", "XMP" }) do
+        if LrFileUtils.exists(stem .. "." .. extension) == 'file' then
+            companions[#companions + 1] = stem .. "." .. extension
+            break
+        end
+    end
+    return companions
+end
+
+local function relativeTo(root, file)
+    local relative = file:sub(#root + 1):gsub("^[/\\]+", "")
+    return relative
 end
 
 local function leafSpelledOnDisk(path, entries)
@@ -132,6 +187,13 @@ function ImportHandler.importPhotos(args, context)
     local skippedByExtension = {}
     local skippedCount = 0
     local sidecarJpegCount = 0
+    local packageFileCount = 0
+    local companionsOf = {}
+    local function addCompanion(file)
+        local stem = LrPathUtils.removeExtension(file)
+        companionsOf[stem] = companionsOf[stem] or {}
+        table.insert(companionsOf[stem], file)
+    end
     if sourceKind == 'directory' then
         -- Import all photos from directory, including nested subfolders.
         -- LrFileUtils.files lists only the immediate directory, so a source
@@ -142,15 +204,21 @@ function ImportHandler.importPhotos(args, context)
             -- the previous call was nil and raised "attempt to call field
             -- 'extension' (a nil value)" on every directory import.
             local ext = lowerExtension(file)
-            if IMPORTABLE_EXTENSIONS[ext] then
+            if insidePackage(file, args.source_path) then
+                packageFileCount = packageFileCount + 1
+            elseif IMPORTABLE_EXTENSIONS[ext] then
                 table.insert(photosToImport, file)
             else
+                if ext == "xmp" then addCompanion(file) end
                 skippedByExtension[ext] = (skippedByExtension[ext] or 0) + 1
                 skippedCount = skippedCount + 1
             end
         end
         if not args.separate_jpegs then
-            photosToImport, sidecarJpegCount = withoutSidecarJpegs(photosToImport)
+            local sidecars
+            photosToImport, sidecars = withoutSidecarJpegs(photosToImport)
+            sidecarJpegCount = #sidecars
+            for _, sidecar in ipairs(sidecars) do addCompanion(sidecar) end
         end
     else
         -- Import single photo
@@ -167,10 +235,24 @@ function ImportHandler.importPhotos(args, context)
     end
 
     if #photosToImport == 0 then
+        if packageFileCount > 0 then
+            error("No photos found to import; files inside Lightroom or Photos library packages are not imported")
+        end
         if skippedCount > 0 then
             error("No photos found to import; skipped files by extension: " .. describeSkipped(skippedByExtension))
         end
         error("No photos found to import")
+    end
+
+    local function requireTargetCollection()
+        local collection = CollectionsHandler.findOneCollection(catalog, args.collection_name)
+        if collection:isSmartCollection() then
+            error("Cannot add photos to smart collection: " .. args.collection_name)
+        end
+        return collection
+    end
+    if args.collection_name then
+        catalog:withReadAccessDo(requireTargetCollection)
     end
 
     -- Add each photo in its OWN write transaction rather than holding the
@@ -183,7 +265,8 @@ function ImportHandler.importPhotos(args, context)
     -- LrExportSession does, so a per-photo lock is the bounded-hold
     -- equivalent: the lock is released between photos, letting queued
     -- handlers interleave.
-    local addedPhotos = {}
+    local collectionPhotos = {}
+    local failed = {}
     local remainingPaths = {}
     local alreadyInCatalogCount = 0
     local processed = 0
@@ -193,42 +276,42 @@ function ImportHandler.importPhotos(args, context)
             break
         end
         if context then context:report(processed, #photosToImport, filePath) end
-        if catalog:findPhotoByPath(filePath, false) then
-            alreadyInCatalogCount = alreadyInCatalogCount + 1
-        else
+        local imported, importError = LrTasks.pcall(function()
+            local photoPath = filePath
+            if args.copy_to then
+                local relativePath = sourceKind == 'directory' and relativeTo(args.source_path, filePath)
+                    or LrPathUtils.leafName(filePath)
+                local companions = companionsOf[LrPathUtils.removeExtension(filePath)]
+                    or (sourceKind ~= 'directory' and companionsBeside(filePath)) or {}
+                photoPath = copiedTarget(filePath, relativePath, args.copy_to, companions)
+            end
+            local existing = PhotoLookup.findByPath(catalog, photoPath, false)
+            if existing then
+                table.insert(collectionPhotos, existing)
+                alreadyInCatalogCount = alreadyInCatalogCount + 1
+                return
+            end
             catalog:withWriteAccessDo("Import Photo", function()
-                local photo = catalog:addPhoto(filePath)
-                if photo then
-                    table.insert(addedPhotos, photo)
-                    importedCount = importedCount + 1
-                end
-            end)
+                local photo = catalog:addPhoto(photoPath)
+                if not photo then error("Lightroom did not add the photo") end
+                table.insert(collectionPhotos, photo)
+                importedCount = importedCount + 1
+            end, IMPORT_WRITE_TIMEOUT)
+        end)
+        if not imported then
+            if sourceKind ~= 'directory' then error(filePath .. ": " .. tostring(importError), 0) end
+            failed[#failed + 1] = { path = filePath, error = tostring(importError) }
         end
         processed = processed + 1
     end
     if context and processed > 0 then context:report(processed, #photosToImport, photosToImport[processed]) end
 
     -- Add to collection if specified, in its own short write transaction.
-    if args.collection_name and #addedPhotos > 0 then
+    if args.collection_name and #collectionPhotos > 0 then
         catalog:withWriteAccessDo("Add Imported Photos to Collection", function()
-            local targetCollection = nil
-            local collections = catalog:getChildCollections()
-
-            for _, collection in ipairs(collections) do
-                if collection:getName() == args.collection_name then
-                    targetCollection = collection
-                    break
-                end
-            end
-
-            if targetCollection then
-                targetCollection:addPhotos(addedPhotos)
-                Log.info(string.format("Added %d imported photos to collection: %s",
-                    #addedPhotos, args.collection_name))
-            else
-                Log.warn("Collection not found: " .. args.collection_name)
-            end
-        end)
+            requireTargetCollection():addPhotos(collectionPhotos)
+        end, IMPORT_WRITE_TIMEOUT)
+        Log.info(string.format("Added %d photos to collection: %s", #collectionPhotos, args.collection_name))
     end
 
     Log.info(string.format("Imported %d photos from: %s (skipped %d, sidecar JPEGs %d, already in catalog %d)",
@@ -240,8 +323,11 @@ function ImportHandler.importPhotos(args, context)
             skippedCount, describeSkipped(skippedByExtension))
     end
     return {
-        success = true,
+        success = #failed == 0,
         imported = importedCount,
+        failed = #failed > 0 and failed or nil,
+        added_to_collection = args.collection_name and #collectionPhotos or nil,
+        skipped_package_files = packageFileCount > 0 and packageFileCount or nil,
         complete = #remainingPaths == 0,
         remaining_paths = #remainingPaths > 0 and remainingPaths or nil,
         skipped = skippedCount,

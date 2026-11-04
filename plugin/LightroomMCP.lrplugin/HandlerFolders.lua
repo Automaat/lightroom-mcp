@@ -1,4 +1,5 @@
 local LrApplication = import 'LrApplication'
+local PathForms = require 'PathForms'
 local PhotoSummary = require 'PhotoSummary'
 
 local FoldersHandler = {}
@@ -55,7 +56,7 @@ function FoldersHandler.getFolderPhotos(args)
     local catalog = LrApplication.activeCatalog()
     local target
     for _, entry in ipairs(foldersInTreeOrder(catalog)) do
-        if entry.path == args.folder_path then target = entry.folder end
+        if PathForms.same(entry.path, args.folder_path) then target = entry.folder end
     end
     if not target then error("Folder not found: " .. args.folder_path) end
     local photos = target:getPhotos(args.include_subfolders == true) or {}
