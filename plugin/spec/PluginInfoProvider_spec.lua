@@ -780,6 +780,56 @@ describe("cooperative shutdown at Lightroom quit (issue 195)", function()
         assert.is_true(_G.LightroomMCP_State.shuttingDown)
     end)
 
+    it("PluginShutdown.lua stops the server and reports done at once", function()
+        installStubs(nil, nil, { runTask = true, stopLoopOnSleep = true, cleanups = {} })
+        local mod = loadInfoProvider()
+        mod.startServer()
+        local state = _G.LightroomMCP_State
+        state.running = true
+        state.requestNeedsRebind = true
+
+        package.loaded.PluginShutdown = nil
+        local shutdownModule = require 'PluginShutdown'
+        local done = false
+        shutdownModule.LrShutdownFunction(function() done = true end)
+
+        assert.is_true(done)
+        assert.is_true(state.shuttingDown)
+        assert.is_false(state.running)
+        assert.is_false(state.requestNeedsRebind)
+    end)
+
+    it("PluginShutdown.lua tolerates Lightroom omitting the callbacks", function()
+        installStubs(nil, nil, { runTask = false })
+        loadInfoProvider()
+
+        package.loaded.PluginShutdown = nil
+        local shutdownModule = require 'PluginShutdown'
+
+        assert.has_no.errors(function() shutdownModule.LrShutdownFunction() end)
+    end)
+
+    it("PluginShutdown.lua leaves a plugin that never built its state alone", function()
+        _G.LightroomMCP_State = nil
+        package.loaded.PluginShutdown = nil
+        package.loaded.PluginInfoProvider = nil
+
+        local shutdownModule = require 'PluginShutdown'
+        local done = false
+        shutdownModule.LrShutdownFunction(function() done = true end)
+
+        assert.is_true(done)
+        assert.is_nil(_G.LightroomMCP_State)
+        assert.is_nil(package.loaded.PluginInfoProvider)
+    end)
+
+    it("Info.lua registers PluginShutdown.lua as the LrShutdownApp script", function()
+        local info = dofile("plugin/LightroomMCP.lrplugin/Info.lua")
+
+        assert.are.equal("PluginShutdown.lua", info.LrShutdownApp)
+        assert.is_nil(info.LrShutdownPlugin)
+    end)
+
     it("leaves the monitor loop on the first tick after quit begins", function()
         local ticks = 0
         installStubs(nil, {}, {
