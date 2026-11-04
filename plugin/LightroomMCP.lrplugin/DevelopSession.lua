@@ -27,18 +27,23 @@ function DevelopSession.waitFor(predicate, timeoutSeconds)
     return predicate()
 end
 
-local function retryUntil(done, action)
-    local sinceAction = RESELECT_SECONDS
-    return DevelopSession.waitFor(function()
+function DevelopSession.retryUntil(done, action, timeoutSeconds, intervalSeconds)
+    intervalSeconds = intervalSeconds or RESELECT_SECONDS
+    local sinceAction = intervalSeconds
+    local reached = DevelopSession.waitFor(function()
         if done() then return true end
-        if sinceAction >= RESELECT_SECONDS then
+        if sinceAction >= intervalSeconds then
             action()
             sinceAction = 0
         end
         sinceAction = sinceAction + POLL_SECONDS
         return false
-    end, SELECT_TIMEOUT_SECONDS)
+    end, timeoutSeconds or SELECT_TIMEOUT_SECONDS)
+    -- the closing poll may fire one last action, so judge its result
+    return reached or done()
 end
+
+local retryUntil = DevelopSession.retryUntil
 
 local function selectAndWait(catalog, photo, selection)
     return retryUntil(

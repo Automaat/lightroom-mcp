@@ -206,7 +206,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `rename_keyword` | Rename a keyword everywhere it is used. |
 | `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
 | `set_rating_and_flag` | Set a 0-5 star rating, a pick flag (`pick`, `reject`, `none`), or both in one write. |
-| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
+| `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Selects in the photos' folders (All Photographs if one is not found), retrying for up to 30 s on large catalogs. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |
 | `set_color_label` | Set a red, yellow, green, blue or purple label, or clear it. |
 | `import_photos` | Import a file or folder into the catalog. A JPEG with a non-DNG raw file of exactly the same name stays the raw's sidecar unless `separate_jpegs` is set. Files already in the catalog are counted and left unchanged. |
 | `export_photos` | Export with format / quality / maximum width and height, or with a saved export preset. One export runs at a time. A photo with outdated AI settings can open Lightroom's AI Updates dialog, which blocks until dismissed. |

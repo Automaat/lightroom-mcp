@@ -20,9 +20,16 @@ local function setup(opts)
         calls.sources[#calls.sources + 1] = value
     end
     catalog.kAllPhotos = "all"
+    calls.folderLookups = {}
+    catalog.getFolderByPath = function(_, path)
+        calls.folderLookups[#calls.folderLookups + 1] = path
+        if opts.unknownFolder then return nil end
+        return { folder = path }
+    end
     catalog.setSelectedPhotos = function(_, p, value)
         calls.selections[#calls.selections + 1] = value
         if opts.ignoreSelection then return end
+        if opts.ignoreSelections and #calls.selections <= opts.ignoreSelections then return end
         active, selected = p, value
         if opts.extraSelection then selected = { p, photos[4] } end
     end
@@ -57,6 +64,7 @@ local function setup(opts)
             switchToModule = function(value) module = value end,
             gridView = function() calls.grids = calls.grids + 1 end,
         },
+        LrPathUtils = { parent = function(path) return (path:gsub("/[^/]*$", "")) end },
         LrSelection = selection,
         LrDevelopController = {},
         LrTasks = { pcall = pcall, sleep = function() end },
@@ -119,6 +127,45 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
         assert.is_nil(alive[photos[1]])
         assert.is_true(alive[photos[3]])
         assert.is_false(catalog.getQueriedInsideReadAccess())
+    end)
+
+    it("selects in the photos' own folders instead of All Photographs", function()
+        local handler, calls, photos = setup()
+        handler.removePhotos({ photo_ids = { "1", "2" }, confirm = true })
+        assert.are.same({ { folder = "" } }, calls.sources[1])
+        assert.are.same({ "" }, calls.folderLookups)
+        assert.are.same({ photos[1], photos[2] }, calls.removed)
+    end)
+
+    it("falls back to All Photographs when a folder is not found", function()
+        local handler, calls, photos = setup({ unknownFolder = true })
+        handler.removePhotos({ photo_ids = { "1" }, confirm = true })
+        assert.are.same({ "all" }, calls.sources[1])
+        assert.are.same({ photos[1] }, calls.removed)
+    end)
+
+    it("repeats the selection until Lightroom keeps it", function()
+        local handler, calls, photos = setup({ ignoreSelections = 4 })
+        local result = handler.removePhotos({ photo_ids = { "1", "2" }, confirm = true })
+        assert.are.equal(2, result.removed)
+        assert.is_true(#calls.selections >= 5)
+        assert.are.same({ photos[1], photos[2] }, calls.removed)
+    end)
+
+    it("gives up after 30 seconds without removing anything", function()
+        local handler, calls = setup({ ignoreSelection = true })
+        failure(function() handler.removePhotos({ photo_ids = { "1" }, confirm = true }) end,
+            "did not select exactly")
+        assert.are.equal(16, #calls.selections)
+        assert.are.equal(0, calls.removes)
+    end)
+
+    it("accepts a selection that sticks on the last attempt", function()
+        local handler, calls, photos = setup({ ignoreSelections = 15 })
+        local result = handler.removePhotos({ photo_ids = { "1" }, confirm = true })
+        assert.are.equal(1, result.removed)
+        assert.is_true(#calls.selections >= 16)
+        assert.are.same({ photos[1] }, calls.removed)
     end)
 
     it("makes a surviving photo active when the original active photo was removed", function()
