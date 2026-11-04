@@ -93,7 +93,7 @@ end
 
 local function createTemplateInDevelop(catalog, candidates, request, hasTimeLeft, report)
     local outcome = { alertPossible = false }
-    DevelopSession.run(TOOL_NAME, catalog, true, function(state)
+    DevelopSession.restoringView(TOOL_NAME, catalog, function(state)
         for _, item in ipairs(candidates) do
             if not hasTimeLeft() then return end
             report(item)
@@ -282,22 +282,22 @@ local function runBatch(args, context)
     local outcome = { alertPossible = false }
     local candidates = pendingItems(items)
     if #candidates > 0 then
-        outcome = createTemplateInDevelop(catalog, candidates, request, hasTimeLeft, report)
-    end
-
-    if outcome.template then
-        outcome.template.status = STATUS_CREATED
-        outcome.template.maskId = outcome.maskId
-        local correction = readSavedCorrection(catalog, outcome.template.photo, outcome.maskId)
-        local targets = pendingItems(items)
-        if correction then
-            addMasksToTargets(catalog, targets, recomputableCopyOf(correction), request, hasTimeLeft, report)
-        else
-            for _, item in ipairs(targets) do
-                fail(item, "Lightroom did not save the new mask on photo " .. outcome.template.id
-                    .. ", so it could not be added here")
+        DevelopSession.run(TOOL_NAME, catalog, false, function()
+            outcome = createTemplateInDevelop(catalog, candidates, request, hasTimeLeft, report)
+            if not outcome.template then return end
+            outcome.template.status = STATUS_CREATED
+            outcome.template.maskId = outcome.maskId
+            local correction = readSavedCorrection(catalog, outcome.template.photo, outcome.maskId)
+            local targets = pendingItems(items)
+            if correction then
+                addMasksToTargets(catalog, targets, recomputableCopyOf(correction), request, hasTimeLeft, report)
+            else
+                for _, item in ipairs(targets) do
+                    fail(item, "Lightroom did not save the new mask on photo " .. outcome.template.id
+                        .. ", so it could not be added here")
+                end
             end
-        end
+        end)
     end
 
     if context and lastReportedItem then report(lastReportedItem) end

@@ -241,6 +241,28 @@ describe("HandlerOrganization.setColorLabel", function()
 end)
 
 describe("HandlerOrganization.setKeywords", function()
+    it("reports unknown ids", function()
+        local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p1 } })
+        local r = Handler.setKeywords({ photo_ids = { "1", "999" }, add_keywords = { "summer" } })
+        assert.are.equal(1, r.updated)
+        assert.are.same({ "999" }, r.missing)
+    end)
+
+    it("creates no keyword when no photo matched", function()
+        local catalog, Handler = setup({ photos = {} })
+        local create = catalog.createKeyword
+        local created = 0
+        catalog.createKeyword = function(...)
+            created = created + 1
+            return create(...)
+        end
+        local r = Handler.setKeywords({ photo_ids = { "999" }, add_keywords = { "summer" } })
+        assert.are.equal(0, r.updated)
+        assert.are.same({ "999" }, r.missing)
+        assert.are.equal(0, created)
+    end)
+
     it("resolves photos OUTSIDE the write-access gate", function()
         local p1 = helper.fakePhoto({ id = "1", path = "/a.jpg", keywords = {} })
         local catalog, Handler = setup({ photos = { p1 } })

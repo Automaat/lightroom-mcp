@@ -80,7 +80,8 @@ function Handler.removePhotos(args)
     end
     local catalog = LrApplication.activeCatalog()
     local photos, missing, seen, missingSeen = {}, {}, {}, {}
-    for _, entry in ipairs(PhotoLookup.resolveMany(catalog, ids)) do
+    local resolved = PhotoLookup.resolveMany(catalog, ids)
+    for _, entry in ipairs(resolved) do
         if entry.photo then
             if not seen[entry.photo] then
                 photos[#photos + 1] = entry.photo
@@ -93,7 +94,14 @@ function Handler.removePhotos(args)
     end
     if #photos == 0 then error("No photos matched photo_ids") end
     catalog:withReadAccessDo(function()
-        local raw = catalog:batchGetRawMetadata(photos, { 'virtualCopies' }) or {}
+        local raw = catalog:batchGetRawMetadata(photos, { 'virtualCopies', 'masterPhoto' }) or {}
+        for _, entry in ipairs(resolved) do
+            local info = entry.photo and raw[entry.photo] or {}
+            if tonumber(entry.id) == nil and (info.masterPhoto or #(info.virtualCopies or {}) > 0) then
+                error("The path " .. tostring(entry.id) .. " names a master and its virtual copies; "
+                    .. "pass each photo's numeric id instead")
+            end
+        end
         for _, photo in ipairs(photos) do
             for _, copy in ipairs((raw[photo] or {}).virtualCopies or {}) do
                 if not seen[copy] then

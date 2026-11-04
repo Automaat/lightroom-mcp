@@ -28,6 +28,7 @@ local function setup(opts)
             table.insert(exportSessionCalls, args)
             return {
                 doExportOnCurrentTask = function() end,
+                renditions = function() return helper.fakeRenditions(args) end,
             }
         end,
     })
@@ -37,6 +38,78 @@ local function setup(opts)
 end
 
 describe("HandlerExport.exportPhotos", function()
+    it("converts quality to Lightroom's 0 to 1 scale", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler, calls = setup({ photos = { p } })
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out", quality = 50 })
+        Handler.exportPhotos({ photo_ids = { "1" }, destination = "/out" })
+        assert.are.equal(0.5, calls[1].exportSettings.LR_jpeg_quality)
+        assert.are.equal(0.9, calls[2].exportSettings.LR_jpeg_quality)
+    end)
+
+    it("lists ids that match no photo", function()
+        local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local _, Handler = setup({ photos = { p } })
+        local r = Handler.exportPhotos({ photo_ids = { "1", "999" }, destination = "/out" })
+        assert.are.equal(1, r.exported)
+        assert.are.same({ "999" }, r.missing)
+    end)
+
+    describe("rendition results", function()
+        local function exportWith(renditions, args)
+            local p = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+            local catalog = helper.fakeCatalog({ photos = { p } })
+            helper.installImport({
+                LrApplication = { activeCatalog = function() return catalog end },
+                LrLogger = helper.defaultLrLogger(),
+                LrFileUtils = { exists = function(path) return path == "/out" and "directory" or false end },
+                LrPathUtils = { child = function(dir, name) return dir .. "/" .. name end },
+                LrExportSession = function()
+                    return {
+                        doExportOnCurrentTask = function() end,
+                        renditions = function()
+                            local index = 0
+                            return function()
+                                index = index + 1
+                                if renditions[index] then return index, renditions[index] end
+                            end
+                        end,
+                    }
+                end,
+            })
+            package.loaded.HandlerExport = nil
+            local request = { photo_ids = { "1" }, destination = "/out" }
+            for key, value in pairs(args or {}) do request[key] = value end
+            return require('HandlerExport').exportPhotos(request)
+        end
+
+        it("counts a skipped existing file as skipped, not exported", function()
+            local r = exportWith({}, { on_existing = "skip" })
+            assert.is_true(r.success)
+            assert.are.equal(0, r.exported)
+            assert.are.equal(1, r.skipped)
+        end)
+
+        it("reports a render Lightroom refused", function()
+            local r = exportWith({ { waitForRender = function() return false, "could not be written" end } })
+            assert.is_false(r.success)
+            assert.are.equal(0, r.exported)
+            assert.are.same({ { id = "1", reason = "could not be written" } }, r.failed)
+        end)
+
+        it("reports a render that left no file", function()
+            local r = exportWith({ { waitForRender = function() return true, "/out/a.jpg" end } })
+            assert.is_false(r.success)
+            assert.are.equal("Lightroom wrote no file", r.failed[1].reason)
+        end)
+
+        it("reports no rendition when not skipping", function()
+            local r = exportWith({})
+            assert.is_false(r.success)
+            assert.are.equal(0, r.skipped)
+        end)
+    end)
+
     it("reports rising progress with the photo currently being exported", function()
         local photos = {
             helper.fakePhoto({ id = "1", path = "/a.jpg", fileName = "a.jpg" }),
@@ -306,6 +379,7 @@ describe("HandlerExport.exportPhotos", function()
                     doExportOnCurrentTask = function()
                         exportRanInsideReadAccess = insideReadAccess
                     end,
+                    renditions = function() return helper.fakeRenditions({ photosToExport = { "x" }, exportSettings = {} }) end,
                 }
             end,
         })

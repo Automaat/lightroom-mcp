@@ -22,5 +22,5 @@ export const REAL_CATALOG_PATH = path.join(REAL_CATALOG_DIR, "Lightroom Catalog.
 export const THROWAWAY_MARKER_FILE = "lrmcp-live-catalog.json";
 export const THROWAWAY_CATALOG_ENV = "LRMCP_LIVE_THROWAWAY_CATALOG";
 
-export const PLUGINS_DIR = path.join(os.homedir(), "Library", "Application Support", "Adobe", "Lightroom", "Plugins");
+export const PLUGINS_DIR = path.join(os.homedir(), "Library", "Application Support", "Adobe", "Lightroom", "Modules");
 export const INSTALLED_BUNDLE_DIR = path.join(PLUGINS_DIR, "LightroomMCP.lrplugin");

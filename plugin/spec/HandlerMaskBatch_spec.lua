@@ -84,6 +84,7 @@ local function setup(opts)
                     if component then computing = computing or { entry = entry, component = component } end
                 end
                 calls.updates[#calls.updates + 1] = spec.id
+                if opts.onUpdate then opts.onUpdate() end
                 calls.updateSawDigests[spec.id] = computing ~= nil and computing.component.MaskDigest ~= nil
                 clock.now = clock.now + (opts.secondsPerUpdate or 0)
                 if mode == "fail" then error("AI update failed") end
@@ -225,6 +226,21 @@ local function entriesOf(world, photoId)
 end
 
 describe("HandlerMaskBatch.createMaskBatch", function()
+    it("keeps other Develop-driving calls out until the targets are done", function()
+        local blocked = {}
+        local Handler = setup({
+            onUpdate = function()
+                local ok, err = pcall(require('DevelopSession').run, "create_gradient_mask", {}, false, function() end)
+                blocked[#blocked + 1] = ok and "accepted" or tostring(err)
+            end,
+        })
+
+        Handler.createMaskBatch({ photo_ids = { "1", "2", "3" }, type = "sky" })
+
+        assert.are.equal(2, #blocked)
+        assert.truthy(blocked[1]:find("create_mask_batch is already running", 1, true))
+    end)
+
     it("cancel keeps the source mask and leaves the later photos untouched", function()
         local Handler, world = setup({})
         local progress = {}

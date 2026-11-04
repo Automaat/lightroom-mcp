@@ -46,6 +46,23 @@ local function selectAndWait(catalog, photo, selection)
         function() catalog:setSelectedPhotos(photo, selection) end)
 end
 
+local function selectionMatches(catalog, photo, selection)
+    if catalog:getTargetPhoto() ~= photo then return false end
+    local expected = {}
+    for _, selected in ipairs(selection or { photo }) do expected[selected] = true end
+    for _, selected in ipairs(catalog:getTargetPhotos() or {}) do
+        if not expected[selected] then return false end
+        expected[selected] = nil
+    end
+    return next(expected) == nil
+end
+
+local function restoreSelectionAndWait(catalog, photo, selection)
+    return retryUntil(
+        function() return selectionMatches(catalog, photo, selection) end,
+        function() catalog:setSelectedPhotos(photo, selection) end)
+end
+
 local function selectNoneAndWait(catalog)
     local quietChecks = 0
     return retryUntil(function()
@@ -81,7 +98,7 @@ local function restoreView(catalog, view, state)
         LrTasks.pcall(function() catalog:setActiveSources(view.sources) end)
     end
     if view.active then
-        LrTasks.pcall(function() selectAndWait(catalog, view.active, view.selection) end)
+        LrTasks.pcall(function() restoreSelectionAndWait(catalog, view.active, view.selection) end)
     else
         LrTasks.pcall(function() selectNoneAndWait(catalog) end)
     end
@@ -100,12 +117,7 @@ function DevelopSession.openDevelop(isReady)
     end
 end
 
-function DevelopSession.run(toolName, catalog, restore, body)
-    if runningTool then
-        error(runningTool .. " is already running; wait for it to finish, then call again")
-    end
-    runningTool = toolName
-
+local function runBody(toolName, catalog, restore, body)
     local state = {}
     local view
     local ok, result = LrTasks.pcall(function()
@@ -118,9 +130,23 @@ function DevelopSession.run(toolName, catalog, restore, body)
             Log.warn(string.format("%s could not restore the Develop view: %s", toolName, tostring(restoreError)))
         end
     end
+    if not ok then error(result, 0) end
+    return result
+end
+
+function DevelopSession.run(toolName, catalog, restore, body)
+    if runningTool then
+        error(runningTool .. " is already running; wait for it to finish, then call again")
+    end
+    runningTool = toolName
+    local ok, result = LrTasks.pcall(runBody, toolName, catalog, restore, body)
     runningTool = nil
     if not ok then error(result, 0) end
     return result
+end
+
+function DevelopSession.restoringView(toolName, catalog, body)
+    return runBody(toolName, catalog, true, body)
 end
 
 function DevelopSession.flushPendingEdits()

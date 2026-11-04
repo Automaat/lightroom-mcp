@@ -11,6 +11,14 @@ local function setup(opts)
 end
 
 describe("HandlerFolders", function()
+    it("finds a folder whose path is in another Unicode form", function()
+        local photo = helper.fakePhoto({ id = "1", path = "/Zdje\204\168cia/a.jpg" })
+        local root = helper.fakeFolder("/Zdje\204\168cia", { photo })
+        local _, handler = setup({ folders = { root } })
+        local r = handler.getFolderPhotos({ folder_path = "/Zdj\196\153cia" })
+        assert.are.equal(1, r.count)
+    end)
+
     it("lists paths in tree order with direct photo counts", function()
         local grandchild = helper.fakeFolder("/root/child/grandchild", { 3 })
         local child = helper.fakeFolder("/root/child", { 2 }, { grandchild })

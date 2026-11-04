@@ -22,6 +22,7 @@ local COLLISION_HANDLING = {
     skip = 'skip',
 }
 local DEFAULT_COLLISION_HANDLING = 'rename'
+local DEFAULT_JPEG_QUALITY = 90
 
 local EXPORT_FORMATS = {
     jpeg = 'JPEG',
@@ -71,7 +72,7 @@ end
 -- Export settings when no preset is given: the tool's own defaults.
 local function defaultSettings(args)
     local settings = {
-        LR_jpeg_quality = jpegQuality(args.quality or 90),
+        LR_jpeg_quality = jpegQuality(args.quality or DEFAULT_JPEG_QUALITY),
     }
     local format = requireFormat(args.format)
     settings.LR_format = format
@@ -159,9 +160,12 @@ function ExportHandler.exportPhotos(args, context)
     -- bridge until a manual restart (issue #128). LrExportSession acquires
     -- its own catalog access during rendering.
     local photosToExport = {}
+    local missingIds = {}
     for _, entry in ipairs(PhotoLookup.resolveMany(catalog, args.photo_ids)) do
         if entry.photo then
             table.insert(photosToExport, entry.photo)
+        else
+            missingIds[#missingIds + 1] = tostring(entry.id)
         end
     end
 
@@ -203,6 +207,8 @@ function ExportHandler.exportPhotos(args, context)
     end
 
     local exportedCount = 0
+    local skippedCount = 0
+    local failed = {}
     local remainingIds = {}
     local lastName
     for index, photo in ipairs(photosToExport) do
@@ -219,16 +225,39 @@ function ExportHandler.exportPhotos(args, context)
             exportSettings = exportSettings,
         }
         exportSession:doExportOnCurrentTask()
-        exportedCount = exportedCount + 1
+        local renditionCount = 0
+        for _, rendition in exportSession:renditions() do
+            renditionCount = renditionCount + 1
+            local rendered, pathOrMessage = rendition:waitForRender()
+            if rendered and LrFileUtils.exists(pathOrMessage) then
+                exportedCount = exportedCount + 1
+            else
+                failed[#failed + 1] = {
+                    id = tostring(photo.localIdentifier),
+                    reason = rendered and "Lightroom wrote no file" or tostring(pathOrMessage),
+                }
+            end
+        end
+        if renditionCount == 0 then
+            if collisionHandling == 'skip' then
+                skippedCount = skippedCount + 1
+            else
+                failed[#failed + 1] = { id = tostring(photo.localIdentifier), reason = "Lightroom rendered no file" }
+            end
+        end
         lastName = name
     end
     if context and lastName then context:report(exportedCount, #photosToExport, lastName) end
 
-    Log.info(string.format("Exported %d photos to: %s", exportedCount, destination))
+    Log.info(string.format("Exported %d photos to: %s (skipped %d, failed %d)",
+        exportedCount, destination, skippedCount, #failed))
 
     return {
-        success = true,
+        success = #failed == 0,
         exported = exportedCount,
+        skipped = skippedCount,
+        failed = #failed > 0 and failed or nil,
+        missing = missingIds,
         complete = #remainingIds == 0,
         remaining_ids = #remainingIds > 0 and remainingIds or nil,
         destination = destination,

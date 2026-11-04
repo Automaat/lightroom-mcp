@@ -39,5 +39,5 @@ try {
   console.log(JSON.stringify({ passed: true, folders: folders.length, fixturePhotos: ids.length,
     batchPhotos: batchIds.length, elapsedMs: performance.now() - started }));
 } finally {
-  await session.close();
+  await session.stop();
 }

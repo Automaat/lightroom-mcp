@@ -69,6 +69,16 @@ local function setup(opts)
     return handler, calls, photos, alive, catalog
 end
 
+describe("remove_photos_from_catalog by path", function()
+    it("refuses a path shared with a virtual copy and removes nothing", function()
+        local handler, calls = setup({ virtualCopies = true })
+        local ok, err = pcall(handler.removePhotos, { photo_ids = { "/1.jpg" }, confirm = true })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("numeric id", 1, true))
+        assert.are.equal(0, calls.removes)
+    end)
+end)
+
 local function failure(fn, text)
     local ok, err = pcall(fn)
     assert.is_false(ok)

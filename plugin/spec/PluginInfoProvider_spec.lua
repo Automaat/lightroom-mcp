@@ -250,6 +250,17 @@ describe("PluginInfoProvider server task", function()
             assert.is_not_nil(sends[1]:find('Malformed request', 1, true))
         end)
 
+        it("answers a well-formed request with a wrong token", function()
+            local sends = {}
+            local binds = startServerCapturing(sends)
+
+            binds[1].onMessage(nil, '{"hello":"not-the-token","id":"req_1","action":"ping"}')
+
+            assert.is_not_nil(sends[1])
+            assert.is_not_nil(sends[1]:find('"id":"req_1"', 1, true))
+            assert.is_not_nil(sends[1]:find('token does not match', 1, true))
+        end)
+
         it("stays silent when the salvaged token does not match", function()
             local sends = {}
             local binds = startServerCapturing(sends)
@@ -443,6 +454,23 @@ describe("PluginInfoProvider server task", function()
         assert.are.equal(2, #bindsInMode(binds, "receive"))
         assert.is_true(contains(ops, "reconnect"))
         assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+    end)
+
+    it("rebinds the response listener when reconnecting it fails", function()
+        local binds, ops = runTicks({ reconnectError = "socket closed" }, function(tick)
+            if tick == 1 then _G.LightroomMCP_State.responseNeedsReconnect = true end
+        end, 6)
+
+        assert.are.equal(2, #bindsInMode(binds, "send"))
+        assert.is_true(contains(ops, "reconnect"))
+    end)
+
+    it("leaves the running flag alone when a newer instance replaced this loop", function()
+        runTicks({}, function(tick)
+            if tick == 1 then _G.LightroomMCP_State.instanceId = _G.LightroomMCP_State.instanceId + 1 end
+        end, 50)
+
+        assert.is_true(_G.LightroomMCP_State.running)
     end)
 
     it("clears running when the live server task's context is cleaned up", function()

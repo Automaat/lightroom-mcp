@@ -18,6 +18,24 @@ describe('startHeartbeat', () => {
     jest.useRealTimers();
   });
 
+  it('ignores a ping result from an earlier connection', async () => {
+    let rejectPing: (err: Error) => void = () => {};
+    const dispatcher: HeartbeatDispatcher = {
+      call: () => new Promise((_resolve, reject) => { rejectPing = reject; }),
+    };
+    let generation = 1;
+    const errors: Error[] = [];
+    startHeartbeat(dispatcher, 30_000, (err) => errors.push(err), () => {}, () => generation);
+
+    jest.advanceTimersByTime(30_000);
+    generation = 2;
+    rejectPing(new Error('late timeout'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(errors).toEqual([]);
+  });
+
   it('does not ping before the interval elapses', () => {
     const dispatcher = okDispatcher();
     startHeartbeat(dispatcher, 30_000);

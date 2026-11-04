@@ -610,4 +610,18 @@ function M.fakeCatalog(opts)
     }
 end
 
+function M.fakeRenditions(session)
+    local photos = session.photosToExport or {}
+    local index = 0
+    return function()
+        index = index + 1
+        if not photos[index] then return nil end
+        local path = tostring(session.exportSettings.LR_export_destinationPathPrefix) .. "/" .. tostring(index)
+        return index, {
+            destinationPath = path,
+            waitForRender = function() return true, path end,
+        }
+    end
+end
+
 return M

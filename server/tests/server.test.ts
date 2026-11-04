@@ -98,6 +98,19 @@ interface Pair {
   client: Client;
 }
 
+describe('unknown tools', () => {
+  it.each(['set_selection', 'cancel', 'ping', 'not_a_tool'])('refuses %s before dispatch', async (name) => {
+    const call = jest.fn<CallFn>();
+    const pair = await connect({ readOnly: false, call });
+    const result = asToolResult(await pair.client.callTool({ name, arguments: {} }));
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Unknown tool');
+    expect(call).not.toHaveBeenCalled();
+    await pair.client.close();
+    await pair.server.close();
+  });
+});
+
 describe('read-only mode', () => {
   let pair: Pair | undefined;
   afterEach(async () => {

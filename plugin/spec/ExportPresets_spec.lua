@@ -165,7 +165,10 @@ local function setup(opts)
         LrPathUtils = LrPathUtils,
         LrExportSession = function(args)
             table.insert(exportSessionCalls, args)
-            return { doExportOnCurrentTask = function() end }
+            return {
+                doExportOnCurrentTask = function() end,
+                renditions = function() return helper.fakeRenditions(args) end,
+            }
         end,
     })
     package.loaded.ExportPresets = nil
