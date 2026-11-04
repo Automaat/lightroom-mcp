@@ -31,6 +31,22 @@ describe('Dispatcher', () => {
     });
   });
 
+  it.each(['null', '3', '"text"', '[]'])('ignores the non-object JSON line %s', (line) => {
+    expect(() => dispatcher.handleResponseLine(line)).not.toThrow();
+    expect(logs.at(-1)).toContain('Non-object JSON');
+  });
+
+  it('rejects every pending call with the given reason', async () => {
+    const first = dispatcher.call('export_photos', {});
+    const second = dispatcher.call('ping', {});
+
+    dispatcher.rejectPending('connection lost');
+
+    await expect(first).rejects.toThrow('connection lost');
+    await expect(second).rejects.toThrow('connection lost');
+    expect(dispatcher.pendingCount()).toBe(0);
+  });
+
   it('progress does not resolve a pending request or consume its final response', async () => {
     const progress: unknown[] = [];
     const pending = dispatcher.call('export_photos', {}, undefined, { onProgress: (value) => progress.push(value) });

@@ -16,6 +16,7 @@ export function createMcpServer(deps: ServerDeps, options: { toolsets?: readonly
   const readOnly = options.readOnly ?? parseReadOnly(process.env.LIGHTROOM_MCP_READ_ONLY);
   const tools = listToolsHandler(enabledToolsets, readOnly);
   const allowedTools = new Set(tools.tools.map((tool) => tool.name));
+  const knownTools = new Set(TOOL_CONTRACTS.map((tool) => tool.name));
   const hiddenTools = new Map(TOOL_CONTRACTS.filter((tool) => !enabledToolsets.has(tool.toolset))
     .map((tool) => [tool.name, tool.toolset]));
   const server = new Server(
@@ -34,6 +35,9 @@ export function createMcpServer(deps: ServerDeps, options: { toolsets?: readonly
     const { name, arguments: args } = request.params;
     if (readOnly && !allowedTools.has(name)) {
       return { isError: true, content: [{ type: "text", text: `Tool "${name}" is unavailable with LIGHTROOM_MCP_READ_ONLY enabled and the selected LIGHTROOM_MCP_TOOLSETS. Only listed read tools can be called. Change the settings and restart the server to enable other tools.` }] };
+    }
+    if (!knownTools.has(name)) {
+      return { isError: true, content: [{ type: "text", text: `Unknown tool "${name}".` }] };
     }
     const toolset = hiddenTools.get(name);
     if (toolset) {

@@ -85,6 +85,10 @@ export class PluginLiveness {
     await this.pending;
   }
 
+  connectionGeneration(): number {
+    return this.generation;
+  }
+
   current(): PluginLivenessState {
     return this.state;
   }

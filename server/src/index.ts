@@ -48,6 +48,11 @@ const PROBE_RECOVERY_INTERVAL_MS = 5_000;
 // a lie about a perfectly healthy Lightroom. Wait out the connect instead.
 const STARTUP_GRACE_MS = 3_000;
 const CONNECT_POLL_MS = 50;
+const PENDING_AFTER_DISCONNECT_MS = 30_000;
+const PLUGIN_RESTARTED_MESSAGE =
+  "The Lightroom plug-in restarted during this call, so its result is unknown. Check the catalog before retrying.";
+const PLUGIN_CONNECTION_LOST_MESSAGE =
+  "The connection to the Lightroom plug-in was lost during this call, so its result is unknown. Check the catalog before retrying.";
 const ACTION_TIMEOUTS_MS: Record<string, number> = {
   get_photo_previews: 30_000,
   export_photos: LONG_RUNNING_TIMEOUT_MS,
@@ -157,6 +162,8 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
   let requestSocket: PluginSocket;
   let responseSocket: PluginSocket | null = null;
   let responseConnectTimer: NodeJS.Timeout | null = null;
+  let lostConnectionTimer: NodeJS.Timeout | null = null;
+  let connectedToken: string | null = null;
   const dispatcher = new Dispatcher({
     send: (line) => requestSocket.send(line),
     getToken: () => readToken(),
@@ -200,6 +207,12 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     });
     responseSocket.connect();
   };
+  const clearLostConnectionTimer = () => {
+    if (lostConnectionTimer) {
+      clearTimeout(lostConnectionTimer);
+      lostConnectionTimer = null;
+    }
+  };
   const stopResponseSocket = () => {
     liveness.reset();
     unresponsive.clear();
@@ -214,6 +227,12 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     port: REQUEST_PORT,
     label: "request",
     onConnect: () => {
+      clearLostConnectionTimer();
+      const token = tryReadToken();
+      if (connectedToken !== null && token !== connectedToken) {
+        dispatcher.rejectPending(PLUGIN_RESTARTED_MESSAGE);
+      }
+      connectedToken = token;
       if (responseConnectTimer) clearTimeout(responseConnectTimer);
       responseConnectTimer = setTimeout(() => {
         responseConnectTimer = null;
@@ -222,6 +241,12 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     },
     onDisconnect: () => {
       stopResponseSocket();
+      if (!lostConnectionTimer) {
+        lostConnectionTimer = setTimeout(() => {
+          lostConnectionTimer = null;
+          dispatcher.rejectPending(PLUGIN_CONNECTION_LOST_MESSAGE);
+        }, PENDING_AFTER_DISCONNECT_MS);
+      }
     },
   });
   requestSocket.connect();
@@ -249,6 +274,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
       liveness.markResponsive();
       unresponsive.clear();
     },
+    () => liveness.connectionGeneration(),
   );
 
   const callTool = createCallToolHandler({
@@ -270,6 +296,7 @@ function startLeader(REQUEST_PORT: number, RESPONSE_PORT: number): Leader {
     callTool,
     stop: () => {
       clearInterval(heartbeat);
+      clearLostConnectionTimer();
       if (recoveryTimer) clearInterval(recoveryTimer);
       stopResponseSocket();
       requestSocket.stop();
