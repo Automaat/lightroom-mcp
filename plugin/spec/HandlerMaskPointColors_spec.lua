@@ -282,6 +282,30 @@ describe("HandlerMaskPointColors.editMaskPointColors update", function()
         assert.are.same(original, listOf(ctx, 1, "mask-a")[2])
     end)
 
+    it("does not overwrite another swatch selected during the settle", function()
+        local changed = false
+        local ctx
+        ctx = setup({
+            onSleep = function(world)
+                if not changed and world.controllerCalls.update > 0 then
+                    changed = true
+                    world.valuesOf[world.active]["mask-a"].local_PointColors[2].SatScale = 0.9
+                    ctx.selectedSwatch[world.selectedMaskOf[world.active]] = 1
+                end
+            end,
+        })
+        local first = fake.deepCopy(listOf(ctx, 1, "mask-a")[1])
+
+        local message = errorOf(function()
+            ctx.Handler.editMaskPointColors({
+                photo_id = "1", mask_id = "mask-a", action = "update", index = 2, swatch = { SatScale = 0.4 },
+            })
+        end)
+
+        assert.truthy(message:find("could not be restored", 1, true), message)
+        assert.are.same(first, listOf(ctx, 1, "mask-a")[1])
+    end)
+
     it("changes only the given fields of the numbered swatch", function()
         local ctx = setup()
         local untouched = fake.deepCopy(listOf(ctx, 1, "mask-a")[1])

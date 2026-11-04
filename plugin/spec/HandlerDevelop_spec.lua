@@ -718,11 +718,23 @@ describe("HandlerDevelop.setDevelopSettings values", function()
         assert.truthy(tostring(err):find(text, 1, true), tostring(err))
     end
 
+    it("accepts the lens profile flag as Lightroom stores it", function()
+        for _, flag in ipairs({ 0, 1 }) do
+            local p = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+            local Handler = select(2, setup({ photos = { p } }))
+            assert.is_true(Handler.setDevelopSettings({
+                photo_id = "1", settings = { LensProfileEnable = flag },
+            }).success)
+        end
+    end)
+
     it("refuses out-of-range, wrongly typed and unknown enum values", function()
         reject({ Exposure2012 = 1e9 }, "Exposure2012 must be a number from -5 to 5")
         reject({ Contrast2012 = "abc" }, "Contrast2012 must be a number")
         reject({ WhiteBalance = "Nope" }, "Invalid value for develop setting WhiteBalance")
         reject({ ConvertToGrayscale = "maybe" }, "ConvertToGrayscale must be true or false")
+        reject({ LensProfileEnable = true }, "LensProfileEnable must be 0 or 1")
+        reject({ LensProfileEnable = 2 }, "LensProfileEnable must be 0 or 1")
         reject({ CropTop = 5 }, "CropTop must be a number from 0 to 1")
         reject({ CropTop = 0.8, CropBottom = 0.2 }, "CropTop must be less than CropBottom")
     end)

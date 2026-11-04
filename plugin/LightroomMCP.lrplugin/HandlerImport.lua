@@ -51,9 +51,8 @@ local function withoutSidecarJpegs(files)
     return kept, sidecars
 end
 
-local function insidePackage(file, root)
-    local relative = file:sub(1, #root) == root and file:sub(#root + 1) or file
-    for folder in relative:gmatch("([^/\\]+)[/\\]") do
+local function insidePackage(file)
+    for folder in file:gmatch("([^/\\]+)[/\\]") do
         local extension = folder:match("%.([^.]+)$")
         if extension and PACKAGE_EXTENSIONS[extension:lower()] then return true end
     end
@@ -66,17 +65,20 @@ local function copyFile(source, target)
     end
 end
 
-local function sameSize(left, right)
+local function sameContent(left, right)
     local leftSize = LrFileUtils.fileAttributes(left).fileSize
-    return leftSize ~= nil and leftSize == LrFileUtils.fileAttributes(right).fileSize
+    if leftSize == nil or leftSize ~= LrFileUtils.fileAttributes(right).fileSize then return false end
+    local content = LrFileUtils.readFile(left)
+    return content ~= nil and content == LrFileUtils.readFile(right)
 end
 
 local function copiedTarget(source, relativePath, folder, companions)
     local target = LrPathUtils.child(folder, relativePath)
     LrFileUtils.createAllDirectories(LrPathUtils.parent(target))
-    if LrFileUtils.exists(target) == 'file' and sameSize(source, target) then return target end
-    if LrFileUtils.exists(target) then target = LrFileUtils.chooseUniqueFileName(target) end
-    copyFile(source, target)
+    if not (LrFileUtils.exists(target) == 'file' and sameContent(source, target)) then
+        if LrFileUtils.exists(target) then target = LrFileUtils.chooseUniqueFileName(target) end
+        copyFile(source, target)
+    end
     local targetStem = LrPathUtils.removeExtension(target)
     for _, companion in ipairs(companions) do
         local companionTarget = targetStem .. "." .. LrPathUtils.extension(companion)
@@ -85,14 +87,21 @@ local function copiedTarget(source, relativePath, folder, companions)
     return target
 end
 
-local function companionsBeside(source)
+local function firstExistingBeside(stem, extensions)
+    for _, extension in ipairs(extensions) do
+        if LrFileUtils.exists(stem .. "." .. extension) == 'file' then
+            return stem .. "." .. extension
+        end
+    end
+    return nil
+end
+
+local function companionsBeside(source, separateJpegs)
     local companions = {}
     local stem = LrPathUtils.removeExtension(source)
-    for _, extension in ipairs({ "xmp", "XMP" }) do
-        if LrFileUtils.exists(stem .. "." .. extension) == 'file' then
-            companions[#companions + 1] = stem .. "." .. extension
-            break
-        end
+    companions[#companions + 1] = firstExistingBeside(stem, { "xmp", "XMP" })
+    if not separateJpegs and JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(source)] then
+        companions[#companions + 1] = firstExistingBeside(stem, { "jpg", "JPG", "jpeg", "JPEG" })
     end
     return companions
 end
@@ -204,7 +213,7 @@ function ImportHandler.importPhotos(args, context)
             -- the previous call was nil and raised "attempt to call field
             -- 'extension' (a nil value)" on every directory import.
             local ext = lowerExtension(file)
-            if insidePackage(file, args.source_path) then
+            if insidePackage(file) then
                 packageFileCount = packageFileCount + 1
             elseif IMPORTABLE_EXTENSIONS[ext] then
                 table.insert(photosToImport, file)
@@ -282,7 +291,7 @@ function ImportHandler.importPhotos(args, context)
                 local relativePath = sourceKind == 'directory' and relativeTo(args.source_path, filePath)
                     or LrPathUtils.leafName(filePath)
                 local companions = companionsOf[LrPathUtils.removeExtension(filePath)]
-                    or (sourceKind ~= 'directory' and companionsBeside(filePath)) or {}
+                    or (sourceKind ~= 'directory' and companionsBeside(filePath, args.separate_jpegs)) or {}
                 photoPath = copiedTarget(filePath, relativePath, args.copy_to, companions)
             end
             local existing = PhotoLookup.findByPath(catalog, photoPath, false)

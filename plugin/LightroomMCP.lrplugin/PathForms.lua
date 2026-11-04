@@ -809,6 +809,9 @@ local TO_NFD = {
     ["\225\191\187"] = "\206\169\204\129",
     ["\225\191\188"] = "\206\169\205\133",
     ["\225\191\189"] = "\194\180",
+    ["\226\132\166"] = "\206\169",
+    ["\226\132\170"] = "\75",
+    ["\226\132\171"] = "\65\204\138",
     ["\227\129\140"] = "\227\129\139\227\130\153",
     ["\227\129\142"] = "\227\129\141\227\130\153",
     ["\227\129\144"] = "\227\129\143\227\130\153",
@@ -869,9 +872,79 @@ local TO_NFD = {
     ["\227\131\190"] = "\227\131\189\227\130\153",
 }
 
+local NOT_RECOMPOSED = {
+    ["\205\128"] = true,
+    ["\205\129"] = true,
+    ["\205\131"] = true,
+    ["\205\132"] = true,
+    ["\205\180"] = true,
+    ["\205\190"] = true,
+    ["\206\135"] = true,
+    ["\225\189\177"] = true,
+    ["\225\189\179"] = true,
+    ["\225\189\181"] = true,
+    ["\225\189\183"] = true,
+    ["\225\189\185"] = true,
+    ["\225\189\187"] = true,
+    ["\225\189\189"] = true,
+    ["\225\190\187"] = true,
+    ["\225\190\190"] = true,
+    ["\225\191\137"] = true,
+    ["\225\191\139"] = true,
+    ["\225\191\147"] = true,
+    ["\225\191\155"] = true,
+    ["\225\191\163"] = true,
+    ["\225\191\171"] = true,
+    ["\225\191\174"] = true,
+    ["\225\191\175"] = true,
+    ["\225\191\185"] = true,
+    ["\225\191\187"] = true,
+    ["\225\191\189"] = true,
+    ["\226\132\166"] = true,
+    ["\226\132\170"] = true,
+    ["\226\132\171"] = true,
+}
+
 local TO_NFC = {}
 for composed, decomposed in pairs(TO_NFD) do
-    TO_NFC[decomposed] = composed
+    if not NOT_RECOMPOSED[composed] then TO_NFC[decomposed] = composed end
+end
+
+local HANGUL_BASE = 0xAC00
+local HANGUL_LAST = 0xD7A3
+local LEAD_BASE = 0x1100
+local LEAD_COUNT = 19
+local VOWEL_BASE = 0x1161
+local VOWEL_COUNT = 21
+local TAIL_BASE = 0x11A8
+local TAIL_COUNT = 27
+local TAILS_PER_VOWEL = TAIL_COUNT + 1
+local SYLLABLES_PER_LEAD = VOWEL_COUNT * TAILS_PER_VOWEL
+
+local function codepointOf(character)
+    if #character ~= 3 then return nil end
+    local first, second, third = character:byte(1, 3)
+    return (first - 224) * 4096 + (second - 128) * 64 + (third - 128)
+end
+
+local function encode(codepoint)
+    return string.char(224 + math.floor(codepoint / 4096), 128 + math.floor(codepoint / 64) % 64, 128 + codepoint % 64)
+end
+
+local function decomposedHangul(character)
+    local codepoint = codepointOf(character)
+    if not codepoint or codepoint < HANGUL_BASE or codepoint > HANGUL_LAST then return nil end
+    local index = codepoint - HANGUL_BASE
+    local tail = index % TAILS_PER_VOWEL
+    return encode(LEAD_BASE + math.floor(index / SYLLABLES_PER_LEAD))
+        .. encode(VOWEL_BASE + math.floor((index % SYLLABLES_PER_LEAD) / TAILS_PER_VOWEL))
+        .. (tail > 0 and encode(TAIL_BASE + tail - 1) or "")
+end
+
+local function jamoIndex(character, base, count)
+    local codepoint = character and codepointOf(character)
+    if not codepoint or codepoint < base or codepoint >= base + count then return nil end
+    return codepoint - base
 end
 
 local UTF8_CHARACTER = "[%z\1-\127\194-\244][\128-\191]*"
@@ -887,7 +960,30 @@ function PathForms.isAscii(path)
 end
 
 function PathForms.toNfd(path)
-    return (path:gsub(UTF8_CHARACTER, TO_NFD))
+    return (path:gsub(UTF8_CHARACTER, function(character)
+        return TO_NFD[character] or decomposedHangul(character)
+    end))
+end
+
+local function composedHangul(path)
+    local characters = {}
+    for character in path:gmatch(UTF8_CHARACTER) do characters[#characters + 1] = character end
+    local parts = {}
+    local index = 1
+    while index <= #characters do
+        local lead = jamoIndex(characters[index], LEAD_BASE, LEAD_COUNT)
+        local vowel = jamoIndex(characters[index + 1], VOWEL_BASE, VOWEL_COUNT)
+        if lead and vowel then
+            local tail = jamoIndex(characters[index + 2], TAIL_BASE, TAIL_COUNT)
+            local syllable = HANGUL_BASE + lead * SYLLABLES_PER_LEAD + vowel * TAILS_PER_VOWEL + (tail and tail + 1 or 0)
+            parts[#parts + 1] = encode(syllable)
+            index = index + (tail and 3 or 2)
+        else
+            parts[#parts + 1] = characters[index]
+            index = index + 1
+        end
+    end
+    return table.concat(parts)
 end
 
 function PathForms.toNfc(path)
@@ -907,7 +1003,7 @@ function PathForms.toNfc(path)
         end
     end
     flush()
-    return table.concat(parts)
+    return composedHangul(table.concat(parts))
 end
 
 function PathForms.same(left, right)

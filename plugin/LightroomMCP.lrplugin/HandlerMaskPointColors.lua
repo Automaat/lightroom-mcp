@@ -132,8 +132,10 @@ local function confirmPersisted(expected, maskId, what, restoreLost)
     local stillSelected = MaskSelection.readSelectedMask() == maskId
     if not listHolds(readSwatches(), expected) then
         if restoreLost and stillSelected then
-            restoreLost()
-            error("Lightroom did not keep " .. what .. "; the original values were restored", 0)
+            if restoreLost() then
+                error("Lightroom did not keep " .. what .. "; the original values were restored", 0)
+            end
+            error("Lightroom did not keep " .. what .. "; the original values could not be restored", 0)
         end
         error("Lightroom did not keep " .. what, 0)
     end
@@ -188,6 +190,17 @@ local function addSwatch(request, maskId)
     return { index = index, changed = true }
 end
 
+local function restoreSwatch(index, original, count)
+    if #readSwatches() ~= count or readSelectedIndex() ~= index then return false end
+    local called, succeeded = LrTasks.pcall(LrDevelopController.updateSelectedPointColorSwatch,
+        MaskPointColors.copySwatch(original), FOR_MASKING)
+    if not called or succeeded ~= true then return false end
+    return DevelopSession.waitFor(function()
+        local now = readSwatches()
+        return #now == count and MaskPointColors.holds(now[index], original)
+    end, CHANGE_TIMEOUT_SECONDS)
+end
+
 local function updateSwatch(request, maskId)
     local before = readSwatches()
     local index = request.index
@@ -217,16 +230,15 @@ local function updateSwatch(request, maskId)
         if kept then break end
     end
     if not kept then
-        LrTasks.pcall(LrDevelopController.updateSelectedPointColorSwatch,
-            MaskPointColors.copySwatch(original), FOR_MASKING)
-        error(string.format("Lightroom did not keep the update of swatch %d; the original values were restored", index), 0)
+        local restored = restoreSwatch(index, original, #before)
+        error(string.format("Lightroom did not keep the update of swatch %d; the original values %s", index,
+            restored and "were restored" or "could not be restored"), 0)
     end
 
     local expected = copyList(before)
     expected[index] = merged
     confirmPersisted(expected, maskId, string.format("the update of swatch %d", index), function()
-        LrTasks.pcall(LrDevelopController.updateSelectedPointColorSwatch,
-            MaskPointColors.copySwatch(original), FOR_MASKING)
+        return restoreSwatch(index, original, #before)
     end)
     restoreSelection(previousIndex, #before)
     return { index = index, changed = true }

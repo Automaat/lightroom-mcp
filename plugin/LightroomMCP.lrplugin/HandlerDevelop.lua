@@ -128,7 +128,8 @@ local DEVELOP_SETTING_STRINGS = {
     ToneCurveName2012 = true,
 }
 
-local DEVELOP_SETTING_BOOLEANS = { ConvertToGrayscale = true, LensProfileEnable = true }
+local DEVELOP_SETTING_BOOLEANS = { ConvertToGrayscale = true }
+local DEVELOP_SETTING_FLAGS = { LensProfileEnable = true }
 
 local DEVELOP_SETTING_RANGES = {}
 local function addRange(low, high, keys)
@@ -303,6 +304,12 @@ local function requireDevelopSettingValue(key, value)
     if DEVELOP_SETTING_BOOLEANS[key] then
         if type(value) ~= "boolean" then
             error("Develop setting " .. key .. " must be true or false")
+        end
+        return
+    end
+    if DEVELOP_SETTING_FLAGS[key] then
+        if value ~= 0 and value ~= 1 then
+            error("Develop setting " .. key .. " must be 0 or 1")
         end
         return
     end

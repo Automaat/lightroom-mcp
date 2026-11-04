@@ -54,6 +54,7 @@ local function fakeFileUtils(opts)
         end,
         createAllDirectories = function() return true end,
         fileAttributes = function(p) return { fileSize = (opts.sizes or {})[p] or 1 } end,
+        readFile = function(p) return (opts.contents or {})[p] or "same" end,
         chooseUniqueFileName = function(p) return (p:gsub("(%.[^.]+)$", "-2%1")) end,
         recursiveFiles = function(_)
             local i = 0
@@ -169,6 +170,18 @@ describe("HandlerImport.importPhotos", function()
         end)
     end)
 
+    it("skips the contents of a library package chosen as the source", function()
+        local _, Handler = setup({
+            fs = {
+                directories = { ["/x.lrdata"] = true },
+                dirContents = { "/x.lrdata/0/a.dng" },
+            },
+        })
+        local ok, err = pcall(Handler.importPhotos, { source_path = "/x.lrdata" })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("library packages", 1, true), tostring(err))
+    end)
+
     it("skips files inside library packages", function()
         local catalog, Handler = setup({
             fs = {
@@ -218,6 +231,37 @@ describe("HandlerImport.importPhotos", function()
             fs.sizes["/archive/b.jpg"] = 2
             Handler.importPhotos({ source_path = "/card/b.jpg", copy_to = "/archive" })
             assert.are.equal("/archive/b-2.jpg", fs.copies[1][2])
+        end)
+
+        it("does not reuse a same-size file with different content", function()
+            local fs = {
+                exists = { ["/card/a.arw"] = true, ["/archive/a.arw"] = true },
+                contents = { ["/card/a.arw"] = "new", ["/archive/a.arw"] = "old" },
+            }
+            local _, Handler = setup({ fs = fs })
+            Handler.importPhotos({ source_path = "/card/a.arw", copy_to = "/archive" })
+            assert.are.equal("/archive/a-2.arw", fs.copies[1][2])
+        end)
+
+        it("still copies a missing companion when reusing the main file", function()
+            local fs = {
+                exists = { ["/card/a.arw"] = true, ["/card/a.xmp"] = true, ["/archive/a.arw"] = true },
+            }
+            local _, Handler = setup({ fs = fs })
+            Handler.importPhotos({ source_path = "/card/a.arw", copy_to = "/archive" })
+            assert.are.same({ { "/card/a.xmp", "/archive/a.xmp" } }, fs.copies)
+        end)
+
+        it("copies a single raw's sidecar JPEG unless JPEGs stay separate", function()
+            local fs = { exists = { ["/card/a.arw"] = true, ["/card/a.jpg"] = true } }
+            local _, Handler = setup({ fs = fs })
+            Handler.importPhotos({ source_path = "/card/a.arw", copy_to = "/archive" })
+            assert.are.same({ { "/card/a.arw", "/archive/a.arw" }, { "/card/a.jpg", "/archive/a.jpg" } }, fs.copies)
+
+            local separate = { exists = { ["/card/a.arw"] = true, ["/card/a.jpg"] = true } }
+            local _, SeparateHandler = setup({ fs = separate })
+            SeparateHandler.importPhotos({ source_path = "/card/a.arw", copy_to = "/archive", separate_jpegs = true })
+            assert.are.same({ { "/card/a.arw", "/archive/a.arw" } }, separate.copies)
         end)
 
         it("fails a single import when the copy fails", function()
