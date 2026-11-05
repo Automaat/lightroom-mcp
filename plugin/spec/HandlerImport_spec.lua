@@ -896,7 +896,7 @@ describe("HandlerImport.importPhotos", function()
             assert.are.same({ "/dir/a.jpg" }, importedPaths(catalog))
         end)
 
-        it("finds the raw when the path uses another Unicode form than the disk", function()
+        it("names the raw as on disk when the path uses another Unicode form", function()
             local catalog, Handler = setup({ fs = {
                 caseInsensitiveVolume = true,
                 normalizationInsensitiveVolume = true,
@@ -906,11 +906,11 @@ describe("HandlerImport.importPhotos", function()
             local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
 
             assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/cafe\204\129.ARW instead", 1, true))
+            assert.truthy(tostring(err):find("Import /dir/caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 
-        it("finds a mixed-case raw extension across Unicode forms on a case-sensitive volume", function()
+        it("names a mixed-case raw extension as on disk across Unicode forms on a case-sensitive volume", function()
             local catalog, Handler = setup({ fs = {
                 normalizationInsensitiveVolume = true,
                 exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ArW"] = true },
@@ -919,7 +919,61 @@ describe("HandlerImport.importPhotos", function()
             local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/cafe\204\129.jpg" })
 
             assert.is_false(ok)
-            assert.truthy(tostring(err):find("Import /dir/cafe\204\129.ArW instead", 1, true))
+            assert.truthy(tostring(err):find("Import /dir/caf\195\169.ArW instead", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        for _, case in ipairs({
+            { name = "NFD path, NFC disk", path = "/dir/Cafe\204\129.jpg",
+              exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true } },
+            { name = "NFC path, NFD disk", path = "/dir/Caf\195\169.jpg",
+              exists = { ["/dir/Cafe\204\129.jpg"] = true, ["/dir/cafe\204\129.ARW"] = true } },
+        }) do
+            for _, volume in ipairs({
+                { name = "case-sensitive volume", caseInsensitiveVolume = false },
+                { name = "case-insensitive volume", caseInsensitiveVolume = true },
+            }) do
+                it("imports a JPEG in another Unicode form beside a raw whose stem differs in case: "
+                    .. case.name .. ", " .. volume.name, function()
+                    local catalog, Handler = setup({ fs = {
+                        caseInsensitiveVolume = volume.caseInsensitiveVolume,
+                        normalizationInsensitiveVolume = true,
+                        exists = case.exists,
+                    } })
+
+                    local r = Handler.importPhotos({ source_path = case.path })
+
+                    assert.are.equal(1, r.imported)
+                    assert.are.same({ case.path }, importedPaths(catalog))
+                end)
+            end
+        end
+
+        it("refuses a JPEG in another Unicode form whose raw has the same stem as on disk", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                normalizationInsensitiveVolume = true,
+                exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
+            } })
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/Cafe\204\129.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("Import /dir/Caf\195\169.ARW instead", 1, true))
+            assert.are.same({}, importedPaths(catalog))
+        end)
+
+        it("matches the on-disk name across Unicode forms and case together", function()
+            local catalog, Handler = setup({ fs = {
+                caseInsensitiveVolume = true,
+                normalizationInsensitiveVolume = true,
+                exists = { ["/dir/caf\195\169.jpg"] = true, ["/dir/caf\195\169.ARW"] = true },
+            } })
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/Cafe\204\129.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("Import /dir/caf\195\169.ARW instead", 1, true))
             assert.are.same({}, importedPaths(catalog))
         end)
 

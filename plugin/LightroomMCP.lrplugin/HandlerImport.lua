@@ -113,19 +113,30 @@ local function relativeTo(root, file)
     return relative
 end
 
+local function nameKey(name)
+    return PathForms.isAscii(name) and name or PathForms.toNfd(name)
+end
+
+-- The name the directory lists for `path`'s leaf: the exact bytes if present,
+-- else the same name in another Unicode form (the volume ignores the form),
+-- else one that differs in case too. Returns nil when the listing has none.
 local function leafSpelledOnDisk(path, entries)
     local leaf = LrPathUtils.leafName(path)
-    local spelling = nil
+    local key = nameKey(leaf)
+    local sameName, foldedName = nil, nil
     for _, entry in ipairs(entries) do
         local entryLeaf = LrPathUtils.leafName(entry)
         if entryLeaf == leaf then
             return leaf
         end
-        if entryLeaf:lower() == leaf:lower() then
-            spelling = entryLeaf
+        local entryKey = nameKey(entryLeaf)
+        if entryKey == key then
+            sameName = entryLeaf
+        elseif entryKey:lower() == key:lower() then
+            foldedName = entryLeaf
         end
     end
-    return spelling
+    return sameName or foldedName
 end
 
 local function rawFileProbedBeside(path, entries)
@@ -191,10 +202,6 @@ local function catalogFolders(catalog)
     end
     for _, folder in ipairs(catalog:getFolders() or {}) do visit(folder) end
     return known
-end
-
-local function nameKey(name)
-    return PathForms.isAscii(name) and name or PathForms.toNfd(name)
 end
 
 local function distinctOnDisk(existing, folder)
