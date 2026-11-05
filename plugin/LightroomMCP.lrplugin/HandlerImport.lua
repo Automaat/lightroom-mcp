@@ -164,10 +164,10 @@ local function rawFileBeside(path)
     if not leafOnDisk then
         return rawFileProbedBeside(path, entries)
     end
-    local stem = LrPathUtils.removeExtension(leafOnDisk)
+    local stem = nameKey(LrPathUtils.removeExtension(leafOnDisk))
     for _, entry in ipairs(entries) do
         if JPEG_SIDECAR_RAW_EXTENSIONS[lowerExtension(entry)]
-            and LrPathUtils.leafName(LrPathUtils.removeExtension(entry)) == stem
+            and nameKey(LrPathUtils.leafName(LrPathUtils.removeExtension(entry))) == stem
             and LrFileUtils.exists(entry) == 'file' then
             return entry
         end

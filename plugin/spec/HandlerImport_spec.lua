@@ -963,6 +963,38 @@ describe("HandlerImport.importPhotos", function()
             assert.are.same({}, importedPaths(catalog))
         end)
 
+        for _, case in ipairs({
+            { name = "NFD path, NFC jpeg, NFD raw", path = "/dir/Cafe\204\129.jpg",
+              exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Cafe\204\129.ARW"] = true },
+              raw = "/dir/Cafe\204\129.ARW" },
+            { name = "NFC path, NFC jpeg, NFD raw", path = "/dir/Caf\195\169.jpg",
+              exists = { ["/dir/Caf\195\169.jpg"] = true, ["/dir/Cafe\204\129.ARW"] = true },
+              raw = "/dir/Cafe\204\129.ARW" },
+            { name = "NFD path, NFD jpeg, NFC raw", path = "/dir/Cafe\204\129.jpg",
+              exists = { ["/dir/Cafe\204\129.jpg"] = true, ["/dir/Caf\195\169.ARW"] = true },
+              raw = "/dir/Caf\195\169.ARW" },
+        }) do
+            for _, volume in ipairs({
+                { name = "case-sensitive volume", caseInsensitiveVolume = false },
+                { name = "case-insensitive volume", caseInsensitiveVolume = true },
+            }) do
+                it("refuses a JPEG whose raw has the same stem in another Unicode form on disk: "
+                    .. case.name .. ", " .. volume.name, function()
+                    local catalog, Handler = setup({ fs = {
+                        caseInsensitiveVolume = volume.caseInsensitiveVolume,
+                        normalizationInsensitiveVolume = true,
+                        exists = case.exists,
+                    } })
+
+                    local ok, err = pcall(Handler.importPhotos, { source_path = case.path })
+
+                    assert.is_false(ok)
+                    assert.truthy(tostring(err):find("Import " .. case.raw .. " instead", 1, true))
+                    assert.are.same({}, importedPaths(catalog))
+                end)
+            end
+        end
+
         it("matches the on-disk name across Unicode forms and case together", function()
             local catalog, Handler = setup({ fs = {
                 caseInsensitiveVolume = true,
