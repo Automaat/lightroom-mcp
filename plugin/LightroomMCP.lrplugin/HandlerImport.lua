@@ -244,6 +244,24 @@ local function caseVariantFolder(known, directory)
     return nil, fresh
 end
 
+-- findPhotoByPath ignores case even when asked not to, so on a case-sensitive
+-- volume a.jpg beside the catalog's A.jpg found A.jpg and was counted as
+-- already imported (#470). A hit whose path differs from the requested one is
+-- the same file only when the parent folder lists a single spelling. When it
+-- lists both they are two files, and Lightroom cannot hold both: its file
+-- table ignores case, and addPhoto fails with "failed to import photo" (live
+-- check on 15.6), so the second is refused here before addPhoto is called.
+-- Returns the photo already in the catalog, or nil and the path it clashes with.
+local function catalogPhotoAt(catalog, path)
+    local found = PhotoLookup.findByPath(catalog, path, false)
+    if not found then return nil end
+    local foundPath = found:getRawMetadata('path')
+    if foundPath ~= nil and not PathForms.same(foundPath, path) and distinctOnDisk(foundPath, path) then
+        return nil, foundPath
+    end
+    return found
+end
+
 local function describeSkipped(skipped)
     local names = {}
     for ext in pairs(skipped) do names[#names + 1] = ext end
@@ -395,7 +413,13 @@ function ImportHandler.importPhotos(args, context)
             else
                 rememberFolders = refuseCaseVariantFolder(photoPath)
             end
-            local existing = PhotoLookup.findByPath(catalog, photoPath, false)
+            local existing, clash = catalogPhotoAt(catalog, photoPath)
+            if clash then
+                error(string.format(
+                    "%s: differs only in case from %s, which is in the catalog; "
+                        .. "Lightroom keeps file names case-insensitively and cannot hold both",
+                    photoPath, clash), 0)
+            end
             if existing then
                 table.insert(collectionPhotos, existing)
                 alreadyInCatalogCount = alreadyInCatalogCount + 1
