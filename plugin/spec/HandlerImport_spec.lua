@@ -363,17 +363,28 @@ describe("HandlerImport.importPhotos", function()
             local function volume(extra)
                 local files = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true }
                 for path in pairs(extra.exists or {}) do files[path] = true end
-                local catalog, Handler = setup({
-                    photos = extra.photos,
-                    fs = { directories = { ["/dir"] = true }, dirContents = extra.dirContents, exists = files },
-                })
+                local fs = {
+                    directories = { ["/dir"] = true, ["/dest"] = true },
+                    dirContents = extra.dirContents,
+                    exists = files,
+                }
+                local catalog, Handler = setup({ photos = extra.photos, fs = fs })
                 local added = {}
                 local addPhoto = catalog.addPhoto
                 catalog.addPhoto = function(self, path)
                     added[#added + 1] = path
                     return addPhoto(self, path)
                 end
-                return Handler, added
+                catalog.getFolderByPath = function(_, folderPath)
+                    local inFolder = {}
+                    for _, photo in ipairs(catalog:getAllPhotos()) do
+                        if photo:getRawMetadata('path'):match("^(.*)/[^/]+$") == folderPath then
+                            inFolder[#inFolder + 1] = photo
+                        end
+                    end
+                    return { getPhotos = function() return inFolder end }
+                end
+                return Handler, added, fs
             end
 
             it("refuses a file beside a catalog entry that differs only in case", function()
@@ -424,6 +435,37 @@ describe("HandlerImport.importPhotos", function()
 
                 assert.is_false(ok)
                 assert.truthy(tostring(err):find("differs only in case from /dir/a.jpg", 1, true))
+                assert.are.same({}, added)
+            end)
+
+            it("counts both spellings when the catalog already holds both", function()
+                local Handler, added = volume({
+                    photos = {
+                        helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }),
+                        helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }),
+                    },
+                    dirContents = { "/dir/A.jpg", "/dir/a.jpg" },
+                })
+
+                local r = Handler.importPhotos({ source_path = "/dir" })
+
+                assert.are.equal(0, r.imported)
+                assert.are.equal(2, r.already_in_catalog)
+                assert.is_nil(r.failed)
+                assert.are.same({}, added)
+            end)
+
+            it("refuses a copy_to target before copying the file", function()
+                local Handler, added, fs = volume({
+                    photos = { helper.fakePhoto({ path = "/dest/A.jpg", id = "/dest/A.jpg" }) },
+                    exists = { ["/card/a.jpg"] = true, ["/dest/A.jpg"] = true },
+                })
+
+                local ok, err = pcall(Handler.importPhotos, { source_path = "/card/a.jpg", copy_to = "/dest" })
+
+                assert.is_false(ok)
+                assert.truthy(tostring(err):find("/dest/a.jpg: differs only in case from /dest/A.jpg", 1, true))
+                assert.is_nil(fs.copies)
                 assert.are.same({}, added)
             end)
 

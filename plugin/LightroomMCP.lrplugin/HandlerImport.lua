@@ -193,19 +193,25 @@ local function catalogFolders(catalog)
     return known
 end
 
+local function nameKey(name)
+    return PathForms.isAscii(name) and name or PathForms.toNfd(name)
+end
+
 local function distinctOnDisk(existing, folder)
     if not LrFileUtils.exists(folder) then
         return LrFileUtils.exists(existing) == 'directory'
     end
     local parent = LrPathUtils.parent(existing)
     if not parent or not PathForms.same(parent, LrPathUtils.parent(folder) or "") then return false end
+    local first, second = nameKey(LrPathUtils.leafName(existing)), nameKey(LrPathUtils.leafName(folder))
     local seenFirst, seenSecond = false, false
     for entry in LrFileUtils.directoryEntries(parent) do
-        local leaf = LrPathUtils.leafName(entry)
-        seenFirst = seenFirst or PathForms.same(leaf, LrPathUtils.leafName(existing))
-        seenSecond = seenSecond or PathForms.same(leaf, LrPathUtils.leafName(folder))
+        local leaf = nameKey(LrPathUtils.leafName(entry))
+        seenFirst = seenFirst or leaf == first
+        seenSecond = seenSecond or leaf == second
+        if seenFirst and seenSecond then return true end
     end
-    return seenFirst and seenSecond
+    return false
 end
 
 local function eachAncestor(directory)
@@ -251,15 +257,35 @@ end
 -- lists both they are two files, and Lightroom cannot hold both: its file
 -- table ignores case, and addPhoto fails with "failed to import photo" (live
 -- check on 15.6), so the second is refused here before addPhoto is called.
+-- `beforeCopy` is for a copy_to target that does not exist yet: the catalog
+-- file exists and the target does not, so the volume tells them apart.
 -- Returns the photo already in the catalog, or nil and the path it clashes with.
-local function catalogPhotoAt(catalog, path)
+local function catalogPhotoAt(catalog, path, beforeCopy)
     local found = PhotoLookup.findByPath(catalog, path, false)
     if not found then return nil end
     local foundPath = found:getRawMetadata('path')
-    if foundPath ~= nil and not PathForms.same(foundPath, path) and distinctOnDisk(foundPath, path) then
-        return nil, foundPath
+    if foundPath == nil or PathForms.same(foundPath, path) then return found end
+    local separate
+    if beforeCopy then
+        separate = LrFileUtils.exists(foundPath) == 'file' and not LrFileUtils.exists(path)
+    else
+        separate = distinctOnDisk(foundPath, path)
     end
-    return found
+    if not separate then return found end
+    -- The catalog may hold this spelling too (imported before this check).
+    local folder = catalog:getFolderByPath(LrPathUtils.parent(path))
+    for _, photo in ipairs(folder and folder:getPhotos(false) or {}) do
+        local candidate = photo:getRawMetadata('path')
+        if candidate ~= nil and PathForms.same(candidate, path) then return photo end
+    end
+    return nil, foundPath
+end
+
+local function refuseCaseVariantFile(path, clash)
+    error(string.format(
+        "%s: differs only in case from %s, which is in the catalog; "
+            .. "Lightroom keeps file names case-insensitively and cannot hold both",
+        path, clash), 0)
 end
 
 local function describeSkipped(skipped)
@@ -408,18 +434,16 @@ function ImportHandler.importPhotos(args, context)
                     or LrPathUtils.leafName(filePath)
                 local companions = companionsOf[LrPathUtils.removeExtension(filePath)]
                     or (sourceKind ~= 'directory' and companionsBeside(filePath, args.separate_jpegs)) or {}
-                rememberFolders = refuseCaseVariantFolder(LrPathUtils.child(args.copy_to, relativePath))
+                local target = LrPathUtils.child(args.copy_to, relativePath)
+                rememberFolders = refuseCaseVariantFolder(target)
+                local _, targetClash = catalogPhotoAt(catalog, target, true)
+                if targetClash then refuseCaseVariantFile(target, targetClash) end
                 photoPath = copiedTarget(filePath, relativePath, args.copy_to, companions)
             else
                 rememberFolders = refuseCaseVariantFolder(photoPath)
             end
             local existing, clash = catalogPhotoAt(catalog, photoPath)
-            if clash then
-                error(string.format(
-                    "%s: differs only in case from %s, which is in the catalog; "
-                        .. "Lightroom keeps file names case-insensitively and cannot hold both",
-                    photoPath, clash), 0)
-            end
+            if clash then refuseCaseVariantFile(photoPath, clash) end
             if existing then
                 table.insert(collectionPhotos, existing)
                 alreadyInCatalogCount = alreadyInCatalogCount + 1

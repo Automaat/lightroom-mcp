@@ -77,6 +77,21 @@ try {
   assert.equal(again.isError, false, again.text);
   assert.equal(again.data.imported, 0);
 
+  fs.mkdirSync(path.join(root, "dest"));
+  fs.mkdirSync(path.join(root, "src"));
+  fs.copyFileSync(source, path.join(root, "dest", "C.jpg"));
+  const destFirst = await importFrom(path.join(root, "dest", "C.jpg"));
+  assert.equal(destFirst.isError, false, destFirst.text);
+  fs.copyFileSync(source, path.join(root, "src", "c.jpg"));
+  const copied = await session.tool(
+    "import_photos",
+    { source_path: path.join(root, "src", "c.jpg"), copy_to: path.join(root, "dest") },
+    { timeoutMs },
+  );
+  assert.equal(copied.isError, true);
+  assert.match(copied.text, /differs only in case from .*C\.jpg/);
+  assert.deepEqual(fs.readdirSync(path.join(root, "dest")), ["C.jpg"], "refused file must not be copied");
+
   const exact = await importFrom(path.join(root, "one", "A.jpg"));
   assert.equal(exact.isError, false, exact.text);
   assert.equal(exact.data.already_in_catalog, 1);
@@ -84,6 +99,7 @@ try {
   const files = catalogFiles();
   assert.equal(files.filter((file) => file.startsWith("one/")).length, 1);
   assert.equal(files.filter((file) => file.startsWith("two/")).length, 1);
+  assert.deepEqual(files.filter((file) => file.startsWith("dest/")), ["dest/C.jpg"]);
   console.log(JSON.stringify({ single: single.text, folder: folder.data, fresh: fresh.data, files }, null, 2));
 } finally {
   await session.stop();
