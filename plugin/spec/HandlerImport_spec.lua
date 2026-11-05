@@ -359,23 +359,139 @@ describe("HandlerImport.importPhotos", function()
             assert.are.equal(1, r.already_in_catalog)
         end)
 
-        it("counts both spellings when both are in the catalog", function()
-            local _, Handler = setup({
-                photos = {
-                    helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }),
-                    helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }),
-                },
-                fs = {
-                    directories = { ["/dir"] = true },
+        describe("on a case-sensitive volume", function()
+            local function volume(extra)
+                local files = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true }
+                for path in pairs(extra.exists or {}) do files[path] = true end
+                local fs = {
+                    directories = { ["/dir"] = true, ["/dest"] = true },
+                    dirContents = extra.dirContents,
+                    exists = files,
+                }
+                local catalog, Handler = setup({ photos = extra.photos, fs = fs })
+                local added = {}
+                local addPhoto = catalog.addPhoto
+                catalog.addPhoto = function(self, path)
+                    added[#added + 1] = path
+                    return addPhoto(self, path)
+                end
+                catalog.getFolderByPath = function(_, folderPath)
+                    local inFolder = {}
+                    for _, photo in ipairs(catalog:getAllPhotos()) do
+                        if photo:getRawMetadata('path'):match("^(.*)/[^/]+$") == folderPath then
+                            inFolder[#inFolder + 1] = photo
+                        end
+                    end
+                    return { getPhotos = function() return inFolder end }
+                end
+                return Handler, added, fs
+            end
+
+            it("refuses a file beside a catalog entry that differs only in case", function()
+                local Handler, added = volume({
+                    photos = { helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }) },
+                })
+
+                local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/a.jpg" })
+
+                assert.is_false(ok)
+                assert.truthy(tostring(err):find("/dir/a.jpg: differs only in case from /dir/A.jpg", 1, true))
+                assert.are.same({}, added)
+            end)
+
+            it("lists the file in failed and counts the catalog entry in a folder import", function()
+                local Handler, added = volume({
+                    photos = { helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }) },
                     dirContents = { "/dir/A.jpg", "/dir/a.jpg" },
-                    exists = { ["/dir/A.jpg"] = true, ["/dir/a.jpg"] = true },
-                },
+                })
+
+                local r = Handler.importPhotos({ source_path = "/dir" })
+
+                assert.are.equal(0, r.imported)
+                assert.are.equal(1, r.already_in_catalog)
+                assert.is_false(r.success)
+                assert.are.equal(1, #r.failed)
+                assert.are.equal("/dir/a.jpg", r.failed[1].path)
+                assert.truthy(r.failed[1].error:find("differs only in case from /dir/A.jpg", 1, true))
+                assert.are.same({}, added)
+            end)
+
+            it("imports the first of two spellings in one call and refuses the second", function()
+                local Handler, added = volume({ dirContents = { "/dir/A.jpg", "/dir/a.jpg" } })
+
+                local r = Handler.importPhotos({ source_path = "/dir" })
+
+                assert.are.equal(1, r.imported)
+                assert.are.same({ "/dir/A.jpg" }, added)
+                assert.are.equal("/dir/a.jpg", r.failed[1].path)
+            end)
+
+            it("refuses it from the other side too", function()
+                local Handler, added = volume({
+                    photos = { helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }) },
+                })
+
+                local ok, err = pcall(Handler.importPhotos, { source_path = "/dir/A.jpg" })
+
+                assert.is_false(ok)
+                assert.truthy(tostring(err):find("differs only in case from /dir/a.jpg", 1, true))
+                assert.are.same({}, added)
+            end)
+
+            it("counts both spellings when the catalog already holds both", function()
+                local Handler, added = volume({
+                    photos = {
+                        helper.fakePhoto({ path = "/dir/A.jpg", id = "/dir/A.jpg" }),
+                        helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }),
+                    },
+                    dirContents = { "/dir/A.jpg", "/dir/a.jpg" },
+                })
+
+                local r = Handler.importPhotos({ source_path = "/dir" })
+
+                assert.are.equal(0, r.imported)
+                assert.are.equal(2, r.already_in_catalog)
+                assert.is_nil(r.failed)
+                assert.are.same({}, added)
+            end)
+
+            it("refuses a copy_to target before copying the file", function()
+                local Handler, added, fs = volume({
+                    photos = { helper.fakePhoto({ path = "/dest/A.jpg", id = "/dest/A.jpg" }) },
+                    exists = { ["/card/a.jpg"] = true, ["/dest/A.jpg"] = true },
+                })
+
+                local ok, err = pcall(Handler.importPhotos, { source_path = "/card/a.jpg", copy_to = "/dest" })
+
+                assert.is_false(ok)
+                assert.truthy(tostring(err):find("/dest/a.jpg: differs only in case from /dest/A.jpg", 1, true))
+                assert.is_nil(fs.copies)
+                assert.are.same({}, added)
+            end)
+
+            it("still counts the exact path as already in the catalog", function()
+                local Handler, added = volume({
+                    photos = { helper.fakePhoto({ path = "/dir/a.jpg", id = "/dir/a.jpg" }) },
+                })
+
+                local r = Handler.importPhotos({ source_path = "/dir/a.jpg" })
+
+                assert.are.equal(0, r.imported)
+                assert.are.equal(1, r.already_in_catalog)
+                assert.are.same({}, added)
+            end)
+        end)
+
+        it("counts an extension renamed to another case on a case-insensitive volume", function()
+            local _, Handler = setup({
+                photos = { helper.fakePhoto({ path = "/dir/A.ARW", id = "/dir/A.ARW" }) },
+                fs = { caseInsensitiveVolume = true, exists = { ["/dir/a.ARW"] = true } },
             })
 
-            local r = Handler.importPhotos({ source_path = "/dir" })
+            local r = Handler.importPhotos({ source_path = "/dir/a.ARW" })
 
             assert.are.equal(0, r.imported)
-            assert.are.equal(2, r.already_in_catalog)
+            assert.are.equal(1, r.already_in_catalog)
         end)
 
         it("counts a path spelled in another case as the catalog entry", function()
