@@ -106,6 +106,12 @@ try {
   assert.match(otherForm.text, /\.ARW/);
   assert.deepEqual(catalogFiles(unicode), []);
 
+  const unicodeCase = makeFolder("unicode-case", { "caf\u00e9.ARW": rawSource, "Caf\u00e9.jpg": jpegSource });
+  const caseOtherForm = await session.toolOrThrow("import_photos", { source_path: path.join(unicodeCase, "Cafe\u0301.jpg") });
+  results.unicodeCase = caseOtherForm.data;
+  assert.equal(caseOtherForm.data.imported, 1);
+  assert.deepEqual(catalogFiles(unicodeCase).filter((row) => row.id !== null).map((row) => row.file), ["Caf\u00e9.jpg"]);
+
   const separate = await session.toolOrThrow("import_photos", { source_path: jpegPath, separate_jpegs: true });
   assert.equal(separate.data.imported, 1);
   const singleFiles = await waitForFiles(single, 1);
