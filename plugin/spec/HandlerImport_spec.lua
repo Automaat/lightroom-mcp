@@ -52,7 +52,11 @@ local function fakeFileUtils(opts)
             opts.copies[#opts.copies + 1] = { source, target }
             return true
         end,
-        createAllDirectories = function() return true end,
+        createAllDirectories = function(dir)
+            opts.directories = opts.directories or {}
+            opts.directories[dir] = true
+            return true
+        end,
         fileAttributes = function(p) return { fileSize = (opts.sizes or {})[p] or 1 } end,
         readFile = function(p) return (opts.contents or {})[p] or "same" end,
         chooseUniqueFileName = function(p) return (p:gsub("(%.[^.]+)$", "-2%1")) end,
@@ -79,7 +83,7 @@ local function fakePathUtils()
 end
 
 local function setup(opts)
-    local catalog = helper.fakeCatalog({ collectionSets = opts.collectionSets, collections = opts.collections or {}, photos = opts.photos })
+    local catalog = helper.fakeCatalog({ collectionSets = opts.collectionSets, collections = opts.collections or {}, photos = opts.photos, folders = opts.folders })
     helper.installImport({
         LrApplication = { activeCatalog = function() return catalog end },
         LrLogger = helper.defaultLrLogger(),
@@ -432,6 +436,202 @@ describe("HandlerImport.importPhotos", function()
             assert.is_false(r.success)
             assert.are.equal(2, #r.failed)
             assert.truthy(r.failed[1].error:find("failed to import photo", 1, true))
+        end)
+    end)
+
+    describe("a folder spelled in another case", function()
+        local function caseSensitiveVolume(extra)
+            local opts = {
+                folders = extra.folders,
+                photos = extra.photos,
+                fs = {
+                    directories = extra.directories or { ["/root"] = true, ["/root/Dir2"] = true, ["/root/dir2"] = true },
+                    dirContents = extra.dirContents,
+                    exists = extra.exists or {},
+                },
+            }
+            local catalog, Handler = setup(opts)
+            local added = {}
+            local addPhoto = catalog.addPhoto
+            catalog.addPhoto = function(self, path)
+                added[#added + 1] = path
+                return addPhoto(self, path)
+            end
+            return Handler, added, catalog
+        end
+
+        local function catalogWithDir2()
+            local photo = helper.fakePhoto({ path = "/root/Dir2/a.jpg", id = "1" })
+            return {
+                folders = { helper.fakeFolder("/root", {}, { helper.fakeFolder("/root/Dir2", { photo }) }) },
+                photos = { photo },
+            }
+        end
+
+        it("refuses the file instead of letting Lightroom file it under the other folder", function()
+            local setupOpts = catalogWithDir2()
+            setupOpts.dirContents = { "/root/Dir2/a.jpg", "/root/dir2/a.jpg" }
+            local Handler, added = caseSensitiveVolume(setupOpts)
+
+            local r = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same({}, added)
+            assert.is_false(r.success)
+            assert.are.equal(0, r.imported)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal("/root/dir2/a.jpg", r.failed[1].path)
+            assert.truthy(r.failed[1].error:find("differs only in case from /root/Dir2", 1, true))
+            assert.is_true(r.complete)
+        end)
+
+        it("answers again when the folder is imported a second time", function()
+            local setupOpts = catalogWithDir2()
+            setupOpts.dirContents = { "/root/Dir2/a.jpg", "/root/dir2/a.jpg" }
+            local Handler = caseSensitiveVolume(setupOpts)
+
+            local first = Handler.importPhotos({ source_path = "/root" })
+            local second = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same(first, second)
+        end)
+
+        it("imports the first spelling of a new folder and refuses the second", function()
+            local Handler, added = caseSensitiveVolume({
+                dirContents = { "/root/Dir2/a.jpg", "/root/dir2/a.jpg", "/root/Dir2/b.jpg" },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same({ "/root/Dir2/a.jpg", "/root/Dir2/b.jpg" }, added)
+            assert.are.equal(2, r.imported)
+            assert.are.equal(1, #r.failed)
+            assert.are.equal("/root/dir2/a.jpg", r.failed[1].path)
+        end)
+
+        it("refuses a file below a case-variant ancestor folder", function()
+            local photo = helper.fakePhoto({ path = "/root/Dir2/sub/a.jpg", id = "1" })
+            local Handler, added = caseSensitiveVolume({
+                folders = { helper.fakeFolder("/root", {}, { helper.fakeFolder("/root/Dir2", {}, {
+                    helper.fakeFolder("/root/Dir2/sub", { photo }),
+                }) }) },
+                photos = { photo },
+                directories = { ["/root"] = true, ["/root/Dir2"] = true, ["/root/dir2"] = true,
+                    ["/root/Dir2/sub"] = true, ["/root/dir2/sub"] = true },
+                dirContents = { "/root/dir2/sub/b.jpg" },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same({}, added)
+            assert.are.equal("/root/dir2/sub/b.jpg", r.failed[1].path)
+        end)
+
+        it("raises for a single file", function()
+            local setupOpts = catalogWithDir2()
+            setupOpts.exists = { ["/root/dir2/a.jpg"] = true }
+            local Handler, added = caseSensitiveVolume(setupOpts)
+
+            local ok, err = pcall(Handler.importPhotos, { source_path = "/root/dir2/a.jpg" })
+
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find("differs only in case from /root/Dir2", 1, true))
+            assert.are.same({}, added)
+        end)
+
+        it("refuses a case-variant folder that the copy would create", function()
+            local Handler, added = caseSensitiveVolume({
+                directories = { ["/src"] = true, ["/dest"] = true },
+                dirContents = { "/src/Dir2/a.jpg", "/src/dir2/b.jpg" },
+                exists = { ["/src/Dir2/a.jpg"] = true, ["/src/dir2/b.jpg"] = true },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/src", copy_to = "/dest" })
+
+            assert.are.same({ "/dest/Dir2/a.jpg" }, added)
+            assert.are.equal(1, r.imported)
+            assert.are.equal("/src/dir2/b.jpg", r.failed[1].path)
+        end)
+
+        it("remembers a folder only once its file is in the catalog", function()
+            local Handler, added, catalog = caseSensitiveVolume({
+                dirContents = { "/root/Dir2/a.jpg", "/root/dir2/b.jpg" },
+            })
+            local addPhoto = catalog.addPhoto
+            catalog.addPhoto = function(self, path)
+                if path == "/root/Dir2/a.jpg" then error("failed to import photo") end
+                return addPhoto(self, path)
+            end
+
+            local r = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same({ "/root/dir2/b.jpg" }, added)
+            assert.are.equal("/root/Dir2/a.jpg", r.failed[1].path)
+            assert.are.equal(1, r.imported)
+        end)
+
+        it("copies nothing into a case-variant folder", function()
+            local setupOpts = catalogWithDir2()
+            setupOpts.directories = { ["/dir"] = true, ["/root"] = true, ["/root/Dir2"] = true, ["/root/dir2"] = true }
+            setupOpts.dirContents = { "/dir/a.jpg" }
+            setupOpts.exists = { ["/dir/a.jpg"] = true }
+            local Handler, added = caseSensitiveVolume(setupOpts)
+
+            local r = Handler.importPhotos({ source_path = "/dir", copy_to = "/root/dir2" })
+
+            assert.are.same({}, added)
+            assert.are.equal(1, #r.failed)
+        end)
+
+        it("treats the folder as the same one on a case-insensitive volume", function()
+            local photo = helper.fakePhoto({ path = "/root/Dir2/a.jpg", id = "1" })
+            local catalog, Handler = setup({
+                folders = { helper.fakeFolder("/root", {}, { helper.fakeFolder("/root/Dir2", { photo }) }) },
+                photos = { photo },
+                fs = {
+                    caseInsensitiveVolume = true,
+                    directories = { ["/root"] = true, ["/root/Dir2"] = true },
+                    dirContents = { "/root/dir2/a.jpg" },
+                    exists = { ["/root/Dir2/a.jpg"] = true },
+                },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/root/dir2" })
+
+            assert.is_true(r.success)
+            assert.are.equal(1, r.already_in_catalog)
+            assert.are.equal(1, #catalog:getAllPhotos())
+        end)
+
+        it("reads a catalog folder path with a trailing separator as the same folder", function()
+            local photo = helper.fakePhoto({ path = "/root/Dir2/a.jpg", id = "1" })
+            local Handler, added = caseSensitiveVolume({
+                folders = { helper.fakeFolder("/root/", {}, { helper.fakeFolder("/root/Dir2", { photo }) }) },
+                photos = { photo },
+                dirContents = { "/root/Dir2/a.jpg", "/root/Dir2/b.jpg" },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same({ "/root/Dir2/b.jpg" }, added)
+            assert.is_true(r.success)
+        end)
+
+        it("keeps a folder that is itself in the catalog in both spellings", function()
+            local upper = helper.fakePhoto({ path = "/root/Dir2/a.jpg", id = "1" })
+            local lower = helper.fakePhoto({ path = "/root/dir2/b.jpg", id = "2" })
+            local Handler, added = caseSensitiveVolume({
+                folders = { helper.fakeFolder("/root", {}, {
+                    helper.fakeFolder("/root/Dir2", { upper }),
+                    helper.fakeFolder("/root/dir2", { lower }),
+                }) },
+                photos = { upper, lower },
+                dirContents = { "/root/dir2/b.jpg", "/root/dir2/c.jpg" },
+            })
+
+            local r = Handler.importPhotos({ source_path = "/root" })
+
+            assert.are.same({ "/root/dir2/c.jpg" }, added)
+            assert.is_true(r.success)
         end)
     end)
 
