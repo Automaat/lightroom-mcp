@@ -5,7 +5,7 @@ local Log = require 'Log'
 
 local GuardedMaskWrite = {}
 
-local TESTED_LIGHTROOM_VERSIONS = { ["15.6"] = true }
+local TESTED_LIGHTROOM_VERSIONS = { ["15.6"] = true, ["16.0"] = true }
 local TESTED_PROCESS_VERSIONS = { ["15.4"] = true }
 
 local READ_BACK_TIMEOUT_SECONDS = 3
