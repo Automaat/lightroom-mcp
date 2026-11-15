@@ -40,6 +40,15 @@ local function select(catalog, active, photos)
     end, 10)
 end
 
+-- "N (copy ids a, b)" so a caller that sees an error can tell which copies
+-- already exist and does not create them again.
+local function describeCopies(copies)
+    if #copies == 0 then return '0' end
+    local ids = {}
+    for i, copy in ipairs(copies) do ids[i] = copy.copy_id end
+    return #copies .. ' (copy ids ' .. table.concat(ids, ', ') .. ')'
+end
+
 local function resolve(catalog, ids)
     local photos, missing, seen = {}, {}, {}
     for _, entry in ipairs(PhotoLookup.resolveMany(catalog, ids)) do
@@ -93,11 +102,20 @@ function Handler.create(args)
                 end
                 local master = copy:getRawMetadata('masterPhoto')
                 if not master then error('Virtual copy has no master photo') end
+                -- A virtual copy of a virtual copy belongs to the original master.
+                local expectedMaster = photo:getRawMetadata('masterPhoto') or photo
+                -- Record the copy before judging it: it exists in the catalog
+                -- either way, and the error must name it.
                 copies[#copies + 1] = {
                     photo_id = tostring(photo.localIdentifier),
                     master_id = tostring(master.localIdentifier),
                     copy_id = tostring(copy.localIdentifier),
                 }
+                if master.localIdentifier ~= expectedMaster.localIdentifier then
+                    error(string.format('Virtual copy %s belongs to photo %s, not the requested photo %s',
+                        tostring(copy.localIdentifier), tostring(master.localIdentifier),
+                        tostring(expectedMaster.localIdentifier)))
+                end
             end
         end)
         local restored, restoreFailure = LrTasks.pcall(function()
@@ -111,9 +129,13 @@ function Handler.create(args)
                 error('Could not restore the previous photo selection')
             end
         end)
-        if not restored then error(tostring(restoreFailure), 0) end
+        if not restored then
+            local message = tostring(restoreFailure)
+            if not ok then message = message .. '; ' .. tostring(failure) end
+            error(message .. '; virtual copies already created: ' .. describeCopies(copies), 0)
+        end
         if not ok then
-            error(tostring(failure) .. '; virtual copies already created: ' .. #copies, 0)
+            error(tostring(failure) .. '; virtual copies already created: ' .. describeCopies(copies), 0)
         end
         return { created = #copies, copies = copies, missing = missing }
     end)
