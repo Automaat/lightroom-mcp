@@ -548,7 +548,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it; duplicates are accepted. \"masks\" section reads mask state. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -560,8 +560,8 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         },
         sections: {
           type: "array",
-          items: { type: "string", enum: ["developSettings"] },
-          description: "Optional metadata sections to include for each photo. Omitted or empty returns all standard metadata without developSettings. Duplicates are accepted.",
+          items: { type: "string", enum: ["developSettings", "masks"] },
+          description: "Optional metadata sections to include for each photo. Omitted or empty returns all standard metadata without developSettings or masks. \"masks\" adds masks (count, state, masks) read from saved settings without opening Develop; AI state is computed, pending, failed or unknown, and none without AI masks. Duplicates are accepted.",
         },
       },
     },
