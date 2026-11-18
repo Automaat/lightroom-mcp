@@ -389,6 +389,28 @@ describe("HandlerRangeMasks.createRangeMask", function()
         assert.are.equal("C1", stores["1"].entries[1].CorrectionID)
     end)
 
+    it("refuses a depth range on Lightroom Classic 16.0 before opening Develop", function()
+        local Handler, stores, calls = setup({
+            version = { major = 16, minor = 0 },
+            photos = { { id = "1", transformWrite = lightroomFillsDepthInfo } },
+        })
+
+        local message = errorOf(function() Handler.createRangeMask(depthRequest()) end)
+
+        assert.is_truthy(message:find("depth range masks", 1, true))
+        assert.are.equal(0, #stores["1"].writes)
+        assert.are.equal(0, #calls.modules)
+    end)
+
+    it("writes a luminance range on Lightroom Classic 16.0", function()
+        local Handler, stores = setup({ version = { major = 16, minor = 0 } })
+
+        local result = Handler.createRangeMask(luminanceRequest())
+
+        assert.is_true(result.success)
+        assert.are.equal(1, #stores["1"].writes)
+    end)
+
     it("does not require a depth sample for a luminance range", function()
         local Handler = setup()
 

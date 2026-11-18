@@ -79,6 +79,19 @@ describe("GuardedMaskWrite.preflight", function()
         assert.is_truthy(message:find("Nothing was changed", 1, true))
     end)
 
+    it("allows depth range writes only where a missing depth sample marks a photo without depth", function()
+        local Guard = setup()
+        Guard.requireDepthRangeVersion()
+
+        local Guard16 = setup({ version = { major = 16, minor = 0 } })
+        local message = errorOf(function() Guard16.requireDepthRangeVersion() end)
+
+        assert.is_truthy(message:find("Lightroom Classic 16.0", 1, true))
+        assert.is_truthy(message:find("depth range masks", 1, true))
+        assert.is_truthy(message:find("tested: 15.6", 1, true))
+        assert.is_truthy(message:find("Nothing was changed", 1, true))
+    end)
+
     it("refuses an untested process version", function()
         local Guard, catalog, photo = setup({ processVersion = "11.0" })
 
@@ -303,11 +316,19 @@ describe("GuardedMaskWrite.apply", function()
     end)
 
     it("refuses an untested version before reading or writing masks", function()
-        local Guard, catalog, photo, state = setup({ version = { major = 16, minor = 0 } })
+        local Guard, catalog, photo, state = setup({ version = { major = 16, minor = 1 } })
 
         errorOf(function() applyAppend(Guard, catalog, photo, linearComponent()) end)
 
         assert.are.equal(0, #state.writes)
+    end)
+
+    it("writes on Lightroom Classic 16.0", function()
+        local Guard, catalog, photo, state = setup({ version = { major = 16, minor = 0 } })
+
+        applyAppend(Guard, catalog, photo, linearComponent())
+
+        assert.are.equal(1, #state.writes)
     end)
 
     it("refuses a new component with a string where a number belongs, writing nothing", function()
