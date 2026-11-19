@@ -433,8 +433,12 @@ local function dispatchAction(request)
     else
         addLog("Handler " .. action .. " error: " .. tostring(resultOrErr))
         local message = tostring(resultOrErr)
+        -- Lightroom names plug-in chunks [string "Handler.lua"].
+        local chunkDetail = message:match('^%[string "[^"\r\n]-%.lua"%]:%d+: (.*)$')
         local source, detail = message:match("^([^\r\n]-%.lua):%d+: (.*)$")
-        if source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
+        if chunkDetail then
+            message = chunkDetail
+        elseif source and (source:match("^%S+%.lua$") or source:match("^[/\\]")
             or source:match("^%a:[/\\]") or source:match("^%.%.%.")) then
             message = detail
         end
