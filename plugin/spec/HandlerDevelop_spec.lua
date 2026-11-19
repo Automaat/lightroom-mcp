@@ -1186,6 +1186,81 @@ describe("HandlerDevelop.setDevelopSettings", function()
     end)
 end)
 
+describe("HandlerDevelop.setDevelopSettings items", function()
+    local function two()
+        local a = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local b = helper.fakePhoto({ id = "2", path = "/b.jpg" })
+        local catalog, Handler = setup({ photos = { a, b } })
+        return catalog, Handler, a, b
+    end
+
+    it("applies each photo's own settings in one write and reports missing ids", function()
+        local catalog, Handler, a, b = two()
+
+        local r = Handler.setDevelopSettings({ items = {
+            { photo_id = "1", settings = { Exposure2012 = 0.5 } },
+            { photo_id = 2, settings = { Contrast2012 = 15, Temperature = 5200 } },
+            { photo_id = "ghost", settings = { Exposure2012 = 1 } },
+            { photo_id = 999, settings = { Exposure2012 = 1 } },
+        } })
+
+        assert.are.same({ success = true, applied = 2, missing = { "ghost", "999" } }, r)
+        assert.are.same({ Exposure2012 = 0.5 }, a:getRawMetadata("__appliedSettings"))
+        assert.are.same({ Contrast2012 = 15, Temperature = 5200 }, b:getRawMetadata("__appliedSettings"))
+        assert.are.equal("Set Develop Settings", b:getRawMetadata("__appliedHistoryName"))
+        assert.are.equal(1, catalog.getWriteAccessCount())
+        assert.is_false(catalog.getQueriedInsideWriteAccess())
+    end)
+
+    it("writes nothing when any item is invalid", function()
+        local catalog, Handler, a = two()
+
+        local ok, err = pcall(Handler.setDevelopSettings, { items = {
+            { photo_id = "1", settings = { Exposure2012 = 0.5 } },
+            { photo_id = "2", settings = { Exposure2012 = 9 } },
+        } })
+
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("items[2]: Develop setting Exposure2012 must be a number from -5 to 5", 1, true),
+            tostring(err))
+        assert.are.equal(0, catalog.getWriteAccessCount())
+        assert.is_nil(a:getRawMetadata("__appliedSettings"))
+    end)
+
+    it("refuses mixed forms, repeats, aliases of one photo and bad sizes", function()
+        local catalog, Handler = two()
+        local item = { photo_id = "1", settings = { Exposure2012 = 0 } }
+        local many = {}
+        for i = 1, 101 do many[i] = { photo_id = tostring(i), settings = { Exposure2012 = 0 } } end
+        local cases = {
+            { { items = { item }, photo_id = "1" }, "not both" },
+            { { items = { a = item } }, "items must contain 1 to 100 entries" },
+            { { items = { item }, settings = { Exposure2012 = 0 } }, "not both" },
+            { { items = {} }, "items must contain 1 to 100 entries" },
+            { { items = many }, "items must contain 1 to 100 entries" },
+            { { items = { item, { photo_id = 1, settings = { Exposure2012 = 1 } } } }, "items[2].photo_id repeats" },
+            { { items = { item, { photo_id = "/a.jpg", settings = { Exposure2012 = 1 } } } }, "same photo as items[1]" },
+            { { items = { "x" } }, "items[1] must be an object" },
+            { { items = { { photo_id = "1" } } }, "items[1]: settings is required" },
+        }
+        for _, case in ipairs(cases) do
+            local ok, err = pcall(Handler.setDevelopSettings, case[1])
+            assert.is_false(ok)
+            assert.truthy(tostring(err):find(case[2], 1, true), tostring(err))
+        end
+        assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+
+    it("opens no write when no photo is found", function()
+        local catalog, Handler = two()
+
+        local r = Handler.setDevelopSettings({ items = { { photo_id = "ghost", settings = { Exposure2012 = 1 } } } })
+
+        assert.are.same({ success = true, applied = 0, missing = { "ghost" } }, r)
+        assert.are.equal(0, catalog.getWriteAccessCount())
+    end)
+end)
+
 -- Develop module fake for applyDenoise: one active photo, an Enhance panel per photo.
 -- Photo spec: id, denoise (current amount, or nil for none), enabled (false = Denoise
 -- unavailable), panel (override the panel state, e.g. a stale one).

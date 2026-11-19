@@ -26,10 +26,18 @@ const validators = new Map<string, ValidateFunction>(
       : ["copy_develop_settings", "create_develop_preset"].includes(contract.name)
         ? { ...(contract.inputSchema.properties?.settings as object), ...developSettingKeysValidationSchema }
         : null;
+    const properties: Record<string, object> = { ...contract.inputSchema.properties, ...(settings ? { settings } : {}) };
+    if (contract.name === "set_develop_settings") {
+      const items = properties.items as { items: { properties: object } };
+      properties.items = {
+        ...items,
+        items: { ...items.items, properties: { ...items.items.properties, settings } },
+      };
+    }
     const schema = contract.name === "delete_masks"
       ? { ...contract.inputSchema, ...deleteMasksValidationSchema }
       : settings
-        ? { ...contract.inputSchema, properties: { ...contract.inputSchema.properties, settings } }
+        ? { ...contract.inputSchema, properties }
         : contract.inputSchema;
     return [contract.name, ajv.compile(schema)];
   }),
@@ -74,6 +82,14 @@ export function validateToolArgs(name: string, args: unknown): string | null {
     // Keep root schemas compatible with Claude Code; enforce relations here.
     if (name === "set_rating_and_flag" && params.rating === undefined && params.flag === undefined) {
       return `Invalid arguments for ${name}: rating or flag is required`;
+    }
+    if (name === "set_develop_settings"
+      && (params.items !== undefined) === (params.photo_id !== undefined || params.settings !== undefined)) {
+      return `Invalid arguments for ${name}: provide photo_id and settings, or items, not both`;
+    }
+    if (name === "set_develop_settings" && params.items === undefined
+      && (params.photo_id === undefined || params.settings === undefined)) {
+      return `Invalid arguments for ${name}: photo_id and settings are both required without items`;
     }
     if (name === "get_photo_metadata"
       && (params.photo_id !== undefined) === (params.photo_ids !== undefined)) {

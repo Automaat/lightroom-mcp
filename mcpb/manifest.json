@@ -203,7 +203,7 @@
     },
     {
       "name": "set_develop_settings",
-      "description": "Set Develop settings directly on a photo."
+      "description": "Set Develop settings on one photo, or per-photo settings on up to 100 photos."
     },
     {
       "name": "get_lens_blur",

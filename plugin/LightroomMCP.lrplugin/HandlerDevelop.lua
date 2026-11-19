@@ -16,6 +16,7 @@ local JSON = require 'JSON'
 local DevelopHandler = {}
 
 local MAX_BULK_PHOTO_IDS = 1000
+local MAX_SETTINGS_BATCH_ITEMS = 100
 local MAX_POINT_CURVE_VALUES = 64
 
 local POINT_CURVE_SETTING_KEYS = {
@@ -1114,7 +1115,62 @@ function DevelopHandler.matchPhotoStyle(args)
         results = results, failures = failures, missing = missing }
 end
 
+-- Per-photo settings for many photos: every item is checked before the one
+-- write gate opens, so a bad item writes nothing.
+local function setDevelopSettingsBatch(args)
+    if args.photo_id ~= nil or args.settings ~= nil then
+        error("Provide photo_id and settings, or items, not both")
+    end
+    local items = args.items
+    if type(items) ~= "table" or #items == 0 or #items > MAX_SETTINGS_BATCH_ITEMS then
+        error("items must contain 1 to " .. MAX_SETTINGS_BATCH_ITEMS .. " entries")
+    end
+    local count = 0
+    for _ in pairs(items) do count = count + 1 end
+    if count ~= #items then error("items must be an array") end
+
+    local ids, seen = {}, {}
+    for i, item in ipairs(items) do
+        if type(item) ~= "table" then error("items[" .. i .. "] must be an object") end
+        ids[i] = requirePhotoId(item.photo_id, "items[" .. i .. "].photo_id")
+        if seen[ids[i]] then error("items[" .. i .. "].photo_id repeats an earlier item") end
+        seen[ids[i]] = true
+        local valid, problem = pcall(requireDevelopSettingsObject, item.settings)
+        if not valid then
+            error("items[" .. i .. "]: " .. (tostring(problem):gsub('^[^\r\n]-%.lua"?%]?:%d+: ', "")), 0)
+        end
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    local resolved = PhotoLookup.resolveMany(catalog, ids)
+    local photos, missing, byPhoto = {}, {}, {}
+    for i, entry in ipairs(resolved) do
+        if entry.photo then
+            -- A path and an id can name the same photo.
+            local key = tostring(entry.photo.localIdentifier)
+            if byPhoto[key] then error("items[" .. i .. "] names the same photo as items[" .. byPhoto[key] .. "]") end
+            byPhoto[key] = i
+            photos[#photos + 1] = { photo = entry.photo, settings = items[i].settings }
+        else
+            missing[#missing + 1] = tostring(entry.id)
+        end
+    end
+
+    if #photos > 0 then
+        catalog:withWriteAccessDo("Set Develop Settings", function()
+            for _, target in ipairs(photos) do
+                target.photo:applyDevelopSettings(target.settings, "Set Develop Settings")
+            end
+        end)
+    end
+
+    Log.info(string.format("Set develop settings on %d photos (%d missing)", #photos, #missing))
+
+    return { success = true, applied = #photos, missing = missing }
+end
+
 function DevelopHandler.setDevelopSettings(args)
+    if args.items ~= nil then return setDevelopSettingsBatch(args) end
     args.photo_id = requirePhotoId(args.photo_id, "photo_id")
     requireDevelopSettingsObject(args.settings)
 

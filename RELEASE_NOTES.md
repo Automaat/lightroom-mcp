@@ -11,6 +11,7 @@
 - `set_rating_and_flag`, `get_photo_metadata` and the three mask creation tools publish plain object schemas for Claude Code. Rating-or-flag, exclusive single/batch photo selectors and the mask-id/creation-adjustments exclusion are enforced before dispatch; handlers, sections, geometry, sliders and results are unchanged.
 - Readiness failures now return one short line with the cause and next action. Full port diagnoses remain in stderr logs.
 - `create_virtual_copies` refuses a new copy whose master is not the requested photo's master. Its errors name the ids of every copy already created, including a copy that failed a check, and report a failed creation together with a failed selection restore, so a retry need not create duplicates.
+- `set_develop_settings` accepts `items: [{photo_id, settings}]` to write different settings to up to 100 photos in one write. Every entry is validated before anything is written, and the result contains `success`, `applied` and `missing`. The single-photo form is unchanged.
 - Invalid photo IDs now produce one type-validation clause. Handler errors omit the leading Lua source position; error conditions and accepted ID values are unchanged.
 
 - `search_photos`, `get_selected_photos`, and `get_collection_photos` now omit `path` from default rows. Pass `include_path: true` to include it. Rows retain `id`, `filename`, `rating`, and `dateTimeOriginal`; use `id` with metadata and write tools. Photo IDs and file paths remain accepted as selectors. Pagination is unchanged.

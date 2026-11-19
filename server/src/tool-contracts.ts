@@ -25,6 +25,7 @@ const MAX_DENOISE_PHOTO_IDS = 100;
 const MAX_KEYWORDS = 1000;
 const MAX_MASK_DELETE_IDS = 100;
 const MAX_MASK_BATCH_PHOTO_IDS = 200;
+const MAX_SETTINGS_BATCH_ITEMS = 100;
 
 // Keep the client schema flat while enforcing exclusive selectors before dispatch.
 export const deleteMasksValidationSchema = {
@@ -1497,7 +1498,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.setDevelopSettings",
     description:
-      "Set Develop settings directly on a photo. Keys use allowlisted Lightroom SDK names (Exposure2012, WhiteBalance, Contrast2012, Highlights2012, Shadows2012, Whites2012, Blacks2012, Clarity2012, Vibrance, Saturation, HueAdjustmentRed, SaturationAdjustmentOrange, LuminanceAdjustmentYellow, etc.), plus RGB composite and per-channel point curves via ToneCurvePV2012, ToneCurvePV2012Red, ToneCurvePV2012Green, and ToneCurvePV2012Blue.",
+      "Set allowlisted Lightroom SDK Develop keys on one photo (photo_id, settings) or, with items, on up to 100 photos in one write after validating all. Point curves: ToneCurvePV2012 and its Red/Green/Blue channels. items returns success, applied, missing.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1513,8 +1514,19 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description:
             "Allowlisted SDK setting key/value pairs (e.g., {\"Exposure2012\": 0.5, \"SaturationAdjustmentOrange\": -10})",
         },
+        items: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_SETTINGS_BATCH_ITEMS,
+          description: "Instead of photo_id/settings: one entry per distinct photo",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: { photo_id: photoIdSchema("Photo ID or file path"), settings: { type: "object", minProperties: 1 } },
+            required: ["photo_id", "settings"],
+          },
+        },
       },
-      required: ["photo_id", "settings"],
     },
   },
   {
