@@ -43,10 +43,15 @@ describe('HandlerVirtualCopies', function()
             assert.are.equal(1, #state.selected)
             calls.create[#calls.create + 1] = { photo = state.active, name = name }
             if opts.failCreate then error('SDK failure') end
-            local master = state.active:getRawMetadata('masterPhoto') or state.active
+            local master = opts.wrongMaster and photos[2]
+                or state.active:getRawMetadata('masterPhoto') or state.active
+            if opts.noMaster then master = nil end
             local copy = helper.fakePhoto({ id = tostring(100 + #calls.create),
-                isVirtualCopy = true, masterPhoto = master })
+                isVirtualCopy = not opts.notVirtual, masterPhoto = master })
             state.active, state.selected = copy, { copy }
+            if opts.extraCopy then
+                return { copy, helper.fakePhoto({ id = '200', isVirtualCopy = true, masterPhoto = photos[2] }) }
+            end
             return { copy }
         end
         helper.installImport({
@@ -140,11 +145,70 @@ describe('HandlerVirtualCopies', function()
         assert.matches('SDK failure', failure, 1, true)
     end)
 
-    it('reports a failed selection restore', function()
+    it('reports a failed selection restore and the copies already created', function()
         setup({ failRestore = true })
         local ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
         assert.is_false(ok)
         assert.matches('Could not restore the previous photo selection', failure, 1, true)
+        assert.matches('virtual copies already created: 1 (copy ids 101)', failure, 1, true)
+    end)
+
+    it('reports both failures when creation and the selection restore fail', function()
+        setup({ failRestore = true, failCreate = true })
+        local ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
+        assert.is_false(ok)
+        assert.matches('SDK failure; Could not restore the previous photo selection; '
+            .. 'virtual copies already created: 0', failure, 1, true)
+        assert.is_nil(failure:match('; [^;]-:%d+: '))
+    end)
+
+    it('names every copy Lightroom returned when it returned more than one', function()
+        setup({ extraCopy = true })
+        local ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
+        assert.is_false(ok)
+        assert.are.equal('Lightroom did not return exactly one virtual copy; '
+            .. 'virtual copies already created: 2 (copy ids 101, 200)', failure)
+        assertRestored()
+    end)
+
+    it('names a copy that has no master photo', function()
+        setup({ noMaster = true })
+        local ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
+        assert.is_false(ok)
+        assert.are.equal('Virtual copy 101 has no master photo; '
+            .. 'virtual copies already created: 1 (copy ids 101)', failure)
+        assertRestored()
+    end)
+
+    it('does not report a returned photo that is not a virtual copy', function()
+        setup({ notVirtual = true })
+        local ok, failure = pcall(Handler.create, { photo_ids = { '3' } })
+        assert.is_false(ok)
+        assert.are.equal('Lightroom did not return a virtual copy; virtual copies already created: 0', failure)
+        assertRestored()
+    end)
+
+    it('names every copy created before a later photo fails', function()
+        setup()
+        local create = catalog.createVirtualCopies
+        catalog.createVirtualCopies = function(self, name)
+            if #calls.create == 1 then error('SDK failure') end
+            return create(self, name)
+        end
+        local ok, failure = pcall(Handler.create, { photo_ids = { '3', '2' } })
+        assert.is_false(ok)
+        assert.matches('virtual copies already created: 1 (copy ids 101)', failure, 1, true)
+        assertRestored()
+    end)
+
+    it('refuses a copy that belongs to another photo and names it', function()
+        setup({ wrongMaster = true })
+        local ok, failure = pcall(Handler.create, { photo_ids = { '3', '1' } })
+        assert.is_false(ok)
+        assert.are.equal('Virtual copy 101 belongs to photo 2, not the requested photo 3; '
+            .. 'virtual copies already created: 1 (copy ids 101)', failure)
+        assert.are.equal(1, #calls.create)
+        assertRestored()
     end)
 
     it('leaves selection untouched when no photo resolves', function()
