@@ -1,27 +1,22 @@
 local AIMaskData = require 'AIMaskData'
+local AiMaskParts = require 'AiMaskParts'
 
--- Read-only summary of the masks saved in a photo's develop settings.
---
--- list_masks drives the Develop module, so it reads one photo at a time and
--- briefly moves the selection. The saved settings answer a narrower question
--- without touching the UI: how many mask groups does a photo hold, what are
--- they made of, and has Lightroom finished computing the AI ones? Reading
--- them is the safe way to poll a photo that is still computing, because
--- nothing here writes or selects.
---
--- State of an AI component (What == "Mask/Image"):
---   failed    ErrorReason is a nonzero number
---   computed  a nonempty MaskDigest and no error
---   pending   no digest yet
---   unknown   a field has an unexpected type
--- A digest proves that a computation was saved. It does not prove that the
--- mask covers the right area.
 local MaskState = {}
 
 local KIND_PREFIX = "Mask/"
--- Worst state first: one failed component fails its group, and a group
--- or photo is computed only when every AI part of it is.
+local AGGREGATE_KIND = "Mask/Aggregate"
+local PAINT_KIND = "Mask/Paint"
+local ERASE_MASK_VALUE = 0
+local SUBTRACT_BLEND_MODE = 1
+local MAX_DEPTH = 4
+local BACKGROUND_CATEGORY = 22
 local STATE_ORDER = { "failed", "unknown", "pending", "computed" }
+
+local KIND_BY_SUBTYPE = {
+    [1] = "subject",
+    [2] = "sky",
+    [AiMaskParts.PEOPLE_SUBTYPE] = "people",
+}
 
 local function finite(value)
     return type(value) == "number" and value == value and value > -math.huge and value < math.huge
@@ -37,6 +32,10 @@ local function isArray(value)
     return count == #value
 end
 
+local function nonEmptyString(value)
+    return type(value) == "string" and value ~= "" and value or nil
+end
+
 local function worst(states)
     local seen = {}
     for _, state in ipairs(states) do seen[state] = true end
@@ -44,6 +43,12 @@ local function worst(states)
         if seen[state] then return state end
     end
     return nil
+end
+
+local function blendMode(value)
+    if value == nil or value == 0 then return "add" end
+    if value == SUBTRACT_BLEND_MODE then return "subtract" end
+    return "unknown"
 end
 
 local function aiComponentState(component)
@@ -55,21 +60,53 @@ local function aiComponentState(component)
     return "pending"
 end
 
-local function describeComponent(component)
-    if type(component) ~= "table" or type(component.What) ~= "string" then
+local function describeAi(component, described)
+    local subtype, category = component.MaskSubType, component.MaskSubCategoryID
+    if finite(subtype) or type(subtype) == "string" then described.subtype = subtype end
+    local part = finite(category) and AiMaskParts.nameForCategory(category) or nil
+    if subtype == AiMaskParts.LANDSCAPE_SUBTYPE and part ~= nil then
+        described.kind = "landscape"
+    elseif subtype == AiMaskParts.LANDSCAPE_SUBTYPE and category == BACKGROUND_CATEGORY then
+        described.kind = "background"
+    else
+        described.kind = KIND_BY_SUBTYPE[subtype]
+    end
+    if described.kind == "people" or described.kind == "landscape" then described.part = part end
+    described.state = aiComponentState(component)
+    if finite(component.ErrorReason) and component.ErrorReason ~= 0 then
+        described.error_reason = component.ErrorReason
+    end
+end
+
+local function describeComponent(component, states, depth)
+    if type(component) ~= "table" or type(component.What) ~= "string" or depth > MAX_DEPTH then
+        states[#states + 1] = "unknown"
         return { type = "unknown", state = "unknown" }
     end
     local kind = component.What
-    local described = { type = kind:sub(1, #KIND_PREFIX) == KIND_PREFIX and kind:sub(#KIND_PREFIX + 1) or kind }
+    local described = {
+        id = nonEmptyString(component.MaskID),
+        type = kind:sub(1, #KIND_PREFIX) == KIND_PREFIX and kind:sub(#KIND_PREFIX + 1) or kind,
+        mode = blendMode(component.MaskBlendMode),
+    }
+    if kind == PAINT_KIND and component.MaskValue == ERASE_MASK_VALUE then described.mode = "erase" end
     if component.MaskInverted == true then described.inverted = true end
     if kind == AIMaskData.KIND then
-        if finite(component.MaskSubType) or type(component.MaskSubType) == "string" then
-            described.subtype = component.MaskSubType
+        describeAi(component, described)
+        states[#states + 1] = described.state
+    elseif kind == AGGREGATE_KIND then
+        if not isArray(component.Masks) then
+            described.state = "unknown"
+            states[#states + 1] = "unknown"
+            return described
         end
-        described.state = aiComponentState(component)
-        if finite(component.ErrorReason) and component.ErrorReason ~= 0 then
-            described.error_reason = component.ErrorReason
+        local childStates = {}
+        described.components = {}
+        for _, child in ipairs(component.Masks) do
+            described.components[#described.components + 1] = describeComponent(child, childStates, depth + 1)
         end
+        described.state = worst(childStates)
+        for _, state in ipairs(childStates) do states[#states + 1] = state end
     end
     return described
 end
@@ -80,31 +117,20 @@ local function describeGroup(group)
         described.state = "unknown"
         return described
     end
-    if type(group.CorrectionID) == "string" and group.CorrectionID ~= "" then described.id = group.CorrectionID end
+    described.id = nonEmptyString(group.CorrectionID)
+    described.name = nonEmptyString(group.CorrectionName)
     if not isArray(group.CorrectionMasks) or #group.CorrectionMasks == 0 then
         described.state = "unknown"
         return described
     end
-    local aiStates = {}
+    local states = {}
     for _, component in ipairs(group.CorrectionMasks) do
-        local item = describeComponent(component)
-        described.components[#described.components + 1] = item
-        aiStates[#aiStates + 1] = item.state
+        described.components[#described.components + 1] = describeComponent(component, states, 1)
     end
-    -- Only AI groups carry a state; gradients, brushes and ranges are saved
-    -- as they are and have nothing to compute.
-    described.state = worst(aiStates)
+    described.state = worst(states)
     return described
 end
 
--- Returns { count, state, masks } for a photo's develop settings.
---   count  mask groups saved on the photo; nil when the saved shape is not a list
---   state  "none" without AI components, otherwise the worst component state
---   masks  one { id, state, components } per group; absent when count is 0 or nil
--- Component entries hold the saved type without its "Mask/" prefix, "inverted"
--- when set and, for AI components, Lightroom's raw MaskSubType as subtype and
--- the state above. MaskDigest is never copied out: it is a large computed
--- blob, and the state already says whether one is saved.
 function MaskState.summarize(settings)
     if type(settings) ~= "table" then return { state = "unknown" } end
     local groups = settings.MaskGroupBasedCorrections
@@ -115,7 +141,6 @@ function MaskState.summarize(settings)
     local states, seen = {}, {}
     for _, group in ipairs(groups) do
         local described = describeGroup(group)
-        -- A repeated group id means the saved list cannot be trusted.
         if described.id then
             if seen[described.id] then described.state = "unknown" end
             seen[described.id] = true
