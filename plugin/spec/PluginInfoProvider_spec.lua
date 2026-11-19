@@ -312,6 +312,19 @@ describe("PluginInfoProvider server task", function()
             assert.are.equal("photo_ids is required", dispatchError(message, 0))
         end)
 
+        it("removes the source position of a chunk Lightroom names [string]", function()
+            local compile = loadstring or load
+            local handler = assert(compile('error("No photos matched photo_ids")', "HandlerVirtualCopies.lua"))
+            local _, message = pcall(handler)
+            assert.are.equal('[string "HandlerVirtualCopies.lua"]:1: No photos matched photo_ids', message)
+            assert.are.equal("No photos matched photo_ids", dispatchError(message, 0))
+        end)
+
+        it("keeps a later [string] position in a message", function()
+            local message = 'Cannot read [string "Other.lua"]:3: bad'
+            assert.are.equal(message, dispatchError(message, 0))
+        end)
+
         it("keeps plain messages and embedded Lua file names unchanged", function()
             for _, message in ipairs({ "photo_ids is required", "Cannot read settings.lua:42: invalid file", "file.jpg:42: missing" }) do
                 assert.are.equal(message, dispatchError(message, 0))

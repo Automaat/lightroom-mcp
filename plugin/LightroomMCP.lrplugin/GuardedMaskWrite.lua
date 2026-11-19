@@ -5,8 +5,11 @@ local Log = require 'Log'
 
 local GuardedMaskWrite = {}
 
-local TESTED_LIGHTROOM_VERSIONS = { ["15.6"] = true }
+local TESTED_LIGHTROOM_VERSIONS = { ["15.6"] = true, ["16.0"] = true }
 local TESTED_PROCESS_VERSIONS = { ["15.4"] = true }
+-- A missing LuminanceDepthSampleInfo marks a photo without device depth only here:
+-- LrC 16.0 fills it on photos with no depth map too.
+local DEPTH_RANGE_LIGHTROOM_VERSIONS = { ["15.6"] = true }
 
 local READ_BACK_TIMEOUT_SECONDS = 3
 local READ_BACK_POLL_SECONDS = 0.1
@@ -398,6 +401,15 @@ local function requireTestedVersions(processVersion)
     end
 end
 
+function GuardedMaskWrite.requireDepthRangeVersion()
+    local lightroom = versionLabel()
+    if DEPTH_RANGE_LIGHTROOM_VERSIONS[lightroom] then return end
+    error(string.format(
+        "Lightroom Classic %s is not a version this tool has been tested on for writing depth range masks:"
+            .. " it cannot tell whether the photo has a depth map (tested: %s). Nothing was changed.",
+        lightroom, table.concat(sortedKeys(DEPTH_RANGE_LIGHTROOM_VERSIONS), ", ")), 0)
+end
+
 local function readEntries(catalog, photo)
     local settings
     catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
@@ -530,5 +542,6 @@ end
 
 GuardedMaskWrite.TESTED_LIGHTROOM_VERSIONS = TESTED_LIGHTROOM_VERSIONS
 GuardedMaskWrite.TESTED_PROCESS_VERSIONS = TESTED_PROCESS_VERSIONS
+GuardedMaskWrite.DEPTH_RANGE_LIGHTROOM_VERSIONS = DEPTH_RANGE_LIGHTROOM_VERSIONS
 
 return GuardedMaskWrite

@@ -147,6 +147,7 @@ function RangeMaskHandler.createRangeMask(args)
     local request = RangeMaskGeometry.toStoredFrame(displayedRequest, ImageFrame.forPhoto(catalog, photo))
     request.adjustments = adjustments
     local existing = GuardedMaskWrite.preflight(catalog, photo)
+    if request.kind == "depth" then GuardedMaskWrite.requireDepthRangeVersion() end
     addRangeComponent(existing, request)
 
     local location
