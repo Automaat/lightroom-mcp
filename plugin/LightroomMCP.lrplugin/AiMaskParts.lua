@@ -53,6 +53,17 @@ local LANDSCAPE_BY_NAME, LANDSCAPE_NAMES = indexByName(LANDSCAPE_CATEGORIES)
 
 AiMaskParts.PEOPLE_NAMES = PEOPLE_NAMES
 AiMaskParts.LANDSCAPE_NAMES = LANDSCAPE_NAMES
+AiMaskParts.PEOPLE_SUBTYPE = ALL_PEOPLE_SUBTYPE
+AiMaskParts.LANDSCAPE_SUBTYPE = LANDSCAPE_SUBTYPE
+
+local NAME_BY_CATEGORY = {}
+for _, list in ipairs({ PEOPLE_PARTS, LANDSCAPE_CATEGORIES }) do
+    for _, spec in ipairs(list) do NAME_BY_CATEGORY[spec.category] = spec.name end
+end
+
+function AiMaskParts.nameForCategory(category)
+    return NAME_BY_CATEGORY[category]
+end
 
 local function requireNames(value, field, byName, names)
     if type(value) ~= "table" or #value == 0 then

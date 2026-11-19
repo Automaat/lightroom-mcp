@@ -47,7 +47,7 @@
     },
     {
       "name": "get_photo_metadata",
-      "description": "Detailed metadata for one photo_id or up to 100 photo_ids; sections: [\"developSettings\"] includes develop settings for each."
+      "description": "Detailed metadata for one photo_id or up to 100 photo_ids; sections: [\"developSettings\", \"masks\"] adds develop settings and saved mask state for each."
     },
     {
       "name": "get_photo_preview",

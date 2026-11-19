@@ -90,6 +90,55 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.equal(2, reads)
     end)
 
+    it("adds saved mask state from the same single develop read when masks are requested", function()
+        local photo = helper.fakePhoto({ id = "1", developSettings = { Exposure2012 = 0.5,
+            MaskGroupBasedCorrections = { { CorrectionID = "g1", CorrectionMasks = {
+                { What = "Mask/Image", MaskSubType = 1, MaskDigest = "d" } } } } } })
+        local reads = 0
+        local getDevelopSettings = photo.getDevelopSettings
+        photo.getDevelopSettings = function(self)
+            reads = reads + 1
+            return getDevelopSettings(self)
+        end
+        local catalog, Handler = setup({ photo })
+        local default = Handler.getPhotoMetadata({ photo_id = "1" })
+        assert.is_nil(default.masks)
+        assert.are.equal(0, reads)
+
+        local masksOnly = Handler.getPhotoMetadata({ photo_id = "1", sections = { "masks", "masks" } })
+        assert.are.equal(1, reads)
+        assert.is_nil(masksOnly.developSettings)
+        assert.are.equal("computed", masksOnly.masks.state)
+        assert.are.equal(1, masksOnly.masks.count)
+        assert.are.equal("g1", masksOnly.masks.masks[1].id)
+
+        local both = Handler.getPhotoMetadata({ photo_id = "1", sections = { "developSettings", "masks" } })
+        assert.are.equal(2, reads)
+        assert.are.equal(0.5, both.developSettings.exposure)
+        assert.are.same(masksOnly.masks, both.masks)
+        both.developSettings, both.masks = nil, nil
+        assert.are.same(default, both)
+        assert.is_false(catalog:getQueriedInsideReadAccess())
+    end)
+
+    it("reports mask state per photo in a batch and says none for photos without masks", function()
+        local masked = helper.fakePhoto({ id = 1, developSettings = { MaskGroupBasedCorrections = {
+            { CorrectionID = "g1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 2 } } } } } })
+        local plain = helper.fakePhoto({ id = 2, developSettings = { Exposure2012 = 1 } })
+        local _, Handler = setup({ masked, plain })
+        local result = Handler.getPhotoMetadata({ photo_ids = { 1, 2, 3 }, sections = { "masks" } })
+        assert.are.equal("pending", result.photos[1].masks.state)
+        assert.are.same({ count = 0, state = "none" }, result.photos[2].masks)
+        assert.are.same({ "3" }, result.missing)
+    end)
+
+    it("rejects unknown sections even beside masks", function()
+        local _, Handler = setup({ helper.fakePhoto({ id = "1" }) })
+        assert.has_error(function()
+            Handler.getPhotoMetadata({ photo_id = "1", sections = { "masks", "unknown" } })
+        end)
+    end)
+
     it("returns nonempty accessibility text and omits empty fields", function()
         local photo = helper.fakePhoto({ id = "1", altTextAccessibility = "A red barn", extDescrAccessibility = "" })
         local _, Handler = setup({ photo })

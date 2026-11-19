@@ -199,6 +199,10 @@ describe('validateToolArgs', () => {
     const invalidSection = validateToolArgs('get_photo_metadata', { photo_id: 914, sections: ['unknown'] });
     expect(invalidSection).toContain('Invalid arguments for get_photo_metadata');
     expect(invalidSection).toContain('sections');
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 914, sections: ['masks'] })).toBeNull();
+    expect(validateToolArgs('get_photo_metadata', {
+      photo_id: 914, sections: ['developSettings', 'masks'],
+    })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: 914 })).toBeNull();
     expect(validateToolArgs('get_photo_metadata', { photo_id: '/a.jpg' })).toBeNull();
     expect(validateToolArgs('set_rating_and_flag', { photo_ids: [914], rating: 3 })).toBeNull();

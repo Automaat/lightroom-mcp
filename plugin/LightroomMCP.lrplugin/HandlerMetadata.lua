@@ -2,6 +2,7 @@ local LrApplication = import 'LrApplication'
 local LrTasks = import 'LrTasks'
 
 local KeywordTree = require 'KeywordTree'
+local MaskState = require 'MaskState'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 
@@ -139,7 +140,7 @@ local function stackMetadata(photo)
     })
 end
 
-local function readPhotoMetadata(photo, includeDevelopSettings)
+local function readPhotoMetadata(photo, sections)
     -- Get keywords
     -- `keywords` stays leaf names; `keywordPaths` is the same list as
     -- full parent-first paths, which is what tells two keywords of the
@@ -154,8 +155,9 @@ local function readPhotoMetadata(photo, includeDevelopSettings)
         end
     end
 
-    -- Get develop settings
-    local developSettings = includeDevelopSettings and photo:getDevelopSettings() or nil
+    -- Get develop settings once, for whichever sections need them.
+    local settings = (sections.developSettings or sections.masks) and photo:getDevelopSettings() or nil
+    local developSettings = sections.developSettings and settings or nil
 
     -- GPS is a raw {latitude, longitude} table; omit the group when absent
     -- or when present but carrying no coordinates.
@@ -254,7 +256,8 @@ local function readPhotoMetadata(photo, includeDevelopSettings)
             parametricDarks = developSettings.ParametricDarks,
             parametricLights = developSettings.ParametricLights,
             parametricHighlights = developSettings.ParametricHighlights,
-        }, developSettings)
+        }, developSettings),
+        masks = sections.masks and MaskState.summarize(settings) or nil,
     }
 end
 
@@ -269,10 +272,12 @@ function MetadataHandler.getPhotoMetadata(args)
         error("photo_ids must contain 1 to 100 photo IDs or file paths")
     end
 
-    local includeDevelopSettings = false
+    local sections = {}
     for _, section in ipairs(args.sections or {}) do
-        if section ~= "developSettings" then error("Unknown sections entry: " .. tostring(section)) end
-        includeDevelopSettings = true
+        if section ~= "developSettings" and section ~= "masks" then
+            error("Unknown sections entry: " .. tostring(section))
+        end
+        sections[section] = true
     end
 
     local catalog = LrApplication.activeCatalog()
@@ -286,7 +291,7 @@ function MetadataHandler.getPhotoMetadata(args)
     catalog:withReadAccessDo(function()
         for _, entry in ipairs(resolved) do
             if entry.photo then
-                photos[#photos + 1] = readPhotoMetadata(entry.photo, includeDevelopSettings)
+                photos[#photos + 1] = readPhotoMetadata(entry.photo, sections)
             else
                 missing[#missing + 1] = tostring(entry.id)
             end

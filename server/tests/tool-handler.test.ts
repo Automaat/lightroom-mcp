@@ -121,6 +121,8 @@ describe('client-compatible metadata selectors', () => {
     [{ photo_id: 914, sections: ['developSettings', 'developSettings'] }, photo],
     [{ photo_ids: [914, '/a.jpg', 'absent'] }, batch],
     [{ photo_ids: [914, 914], sections: ['developSettings'] }, batch],
+    [{ photo_id: 914, sections: ['masks'] }, photo],
+    [{ photo_ids: [914, 914], sections: ['developSettings', 'masks'] }, batch],
   ];
 
   it.each(valid)('preserves single/batch arguments and returned metadata (%#)', async (args, metadata) => {
