@@ -91,30 +91,32 @@ function Handler.create(args)
                     switchedSource = true
                     catalog:setActiveSources({ catalog.kAllPhotos })
                     if not select(catalog, photo, { photo }) then
-                        error('Could not select photo ' .. tostring(photo.localIdentifier))
+                        error('Could not select photo ' .. tostring(photo.localIdentifier), 0)
                     end
                 end
                 local created = catalog:createVirtualCopies(args.copy_name) or {}
-                if #created ~= 1 then error('Lightroom did not return exactly one virtual copy') end
-                local copy = created[1]
-                if not copy:getRawMetadata('isVirtualCopy') then
-                    error('Lightroom did not return a virtual copy')
+                -- Record every copy before judging any: each exists in the
+                -- catalog either way, and the error must name it.
+                local first = #copies + 1
+                for _, copy in ipairs(created) do
+                    if copy:getRawMetadata('isVirtualCopy') then
+                        local master = copy:getRawMetadata('masterPhoto')
+                        copies[#copies + 1] = {
+                            photo_id = tostring(photo.localIdentifier),
+                            master_id = master and tostring(master.localIdentifier) or nil,
+                            copy_id = tostring(copy.localIdentifier),
+                        }
+                    end
                 end
-                local master = copy:getRawMetadata('masterPhoto')
-                if not master then error('Virtual copy has no master photo') end
+                if #created ~= 1 then error('Lightroom did not return exactly one virtual copy', 0) end
+                local copy = copies[first]
+                if not copy then error('Lightroom did not return a virtual copy', 0) end
+                if not copy.master_id then error('Virtual copy ' .. copy.copy_id .. ' has no master photo', 0) end
                 -- A virtual copy of a virtual copy belongs to the original master.
-                local expectedMaster = photo:getRawMetadata('masterPhoto') or photo
-                -- Record the copy before judging it: it exists in the catalog
-                -- either way, and the error must name it.
-                copies[#copies + 1] = {
-                    photo_id = tostring(photo.localIdentifier),
-                    master_id = tostring(master.localIdentifier),
-                    copy_id = tostring(copy.localIdentifier),
-                }
-                if master.localIdentifier ~= expectedMaster.localIdentifier then
+                local expected = tostring((photo:getRawMetadata('masterPhoto') or photo).localIdentifier)
+                if copy.master_id ~= expected then
                     error(string.format('Virtual copy %s belongs to photo %s, not the requested photo %s',
-                        tostring(copy.localIdentifier), tostring(master.localIdentifier),
-                        tostring(expectedMaster.localIdentifier)))
+                        copy.copy_id, copy.master_id, expected), 0)
                 end
             end
         end)
@@ -123,19 +125,20 @@ function Handler.create(args)
                 catalog:setActiveSources(sources)
                 if not DevelopSession.waitFor(function()
                     return samePhotos(catalog:getActiveSources() or {}, sources)
-                end, 10) then error('Could not restore the previous view source') end
+                end, 10) then error('Could not restore the previous view source', 0) end
             end
             if not select(catalog, active, selection) then
-                error('Could not restore the previous photo selection')
+                error('Could not restore the previous photo selection', 0)
             end
         end)
-        if not restored then
-            local message = tostring(restoreFailure)
-            if not ok then message = message .. '; ' .. tostring(failure) end
-            error(message .. '; virtual copies already created: ' .. describeCopies(copies), 0)
-        end
-        if not ok then
-            error(tostring(failure) .. '; virtual copies already created: ' .. describeCopies(copies), 0)
+        if not (ok and restored) then
+            -- The creation failure goes first: only a leading source position
+            -- is stripped from the message the client sees.
+            local reasons = {}
+            if not ok then reasons[#reasons + 1] = tostring(failure) end
+            if not restored then reasons[#reasons + 1] = tostring(restoreFailure) end
+            error(table.concat(reasons, '; ') .. '; virtual copies already created: '
+                .. describeCopies(copies), 0)
         end
         return { created = #copies, copies = copies, missing = missing }
     end)
