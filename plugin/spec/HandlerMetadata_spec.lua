@@ -321,6 +321,12 @@ describe("HandlerMetadata.getPhotoMetadata", function()
             developSettings = {
                 LensProfileEnable = 1,
                 LensManualDistortionAmount = 12,
+                LensProfileSetup = "Custom",
+                LensProfileName = "Adobe (Example 35mm F1.8)",
+                LensProfileFilename = "Example 35mm F1.8 - RAW.lcp",
+                LensProfileDigest = "0123456789ABCDEF0123456789ABCDEF",
+                LensProfileIsEmbedded = false,
+                LensProfileVignettingScale = 8,
                 PerspectiveUpright = 1,
                 PerspectiveVertical = -5,
                 PerspectiveAspect = 0,
@@ -346,6 +352,11 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         local d = Handler.getPhotoMetadata({ photo_id = "45", sections = { "developSettings" } }).developSettings
 
         assert.are.same({ LensProfileEnable = 1, LensManualDistortionAmount = 12 }, d.lens)
+        assert.are.same({
+            LensProfileSetup = "Custom", LensProfileName = "Adobe (Example 35mm F1.8)",
+            LensProfileFilename = "Example 35mm F1.8 - RAW.lcp", LensProfileDigest = "0123456789ABCDEF0123456789ABCDEF",
+            LensProfileIsEmbedded = false, LensProfileVignettingScale = 8,
+        }, d.lensProfile)
         assert.are.same({ PerspectiveUpright = 1, PerspectiveVertical = -5, PerspectiveAspect = 0 }, d.transform)
         assert.are.same(
             { CropTop = 0.1, CropLeft = 0.05, CropBottom = 0.9, CropRight = 0.95, CropAngle = -1.5 },
@@ -364,6 +375,10 @@ describe("HandlerMetadata.getPhotoMetadata", function()
 
     local EXPECTED_SDK_GROUPS = {
         lens = { "LensProfileEnable", "LensManualDistortionAmount" },
+        lensProfile = {
+            "LensProfileSetup", "LensProfileName", "LensProfileFilename", "LensProfileDigest",
+            "LensProfileIsEmbedded", "LensProfileDistortionScale", "LensProfileVignettingScale", "AutoLateralCA",
+        },
         transform = {
             "PerspectiveUpright", "PerspectiveVertical", "PerspectiveHorizontal",
             "PerspectiveRotate", "PerspectiveScale", "PerspectiveAspect",
@@ -421,6 +436,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         local d = Handler.getPhotoMetadata({ photo_id = "46", sections = { "developSettings" } }).developSettings
 
         assert.is_nil(d.lens)
+        assert.is_nil(d.lensProfile)
         assert.is_nil(d.transform)
         assert.is_nil(d.crop)
         assert.is_nil(d.detail)

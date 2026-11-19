@@ -561,7 +561,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         sections: {
           type: "array",
           items: { type: "string", enum: ["developSettings", "masks"] },
-          description: "Optional sections per photo; omitted or empty adds none. \"masks\" reads saved masks without opening Develop: count, state, masks [{id, name, state, components}]. Component: id (list_masks tool id), type, mode add/subtract (inverted subtract = intersect), inverted, nested brush strokes (mode erase); AI adds kind, part, subtype, state computed/pending/failed/unknown. Photo state: worst, or none. pending persists when nothing was found, so bound polling. Duplicates are accepted.",
+          description: "Optional sections per photo; omitted or empty adds none. developSettings.lensProfile is read only. \"masks\" reads saved masks without opening Develop: count, state, masks [{id, name, state, components}]. Component: id (list_masks tool id), type, mode add/subtract (inverted subtract = intersect), inverted, nested brush strokes (mode erase); AI adds kind, part, subtype, state computed/pending/failed/unknown. Photo state: worst, or none. pending persists when nothing was found, so bound polling. Duplicates are accepted.",
         },
       },
     },

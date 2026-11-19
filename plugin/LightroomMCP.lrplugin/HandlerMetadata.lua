@@ -101,13 +101,27 @@ local SDK_DEVELOP_GROUPS = {
     },
 }
 
+-- Lens Corrections values Lightroom saves that set_develop_settings does not
+-- write: the profile in use, its scales and automatic chromatic aberration.
+local READ_ONLY_DEVELOP_GROUPS = {
+    {
+        field = "lensProfile",
+        keys = {
+            "LensProfileSetup", "LensProfileName", "LensProfileFilename", "LensProfileDigest",
+            "LensProfileIsEmbedded", "LensProfileDistortionScale", "LensProfileVignettingScale", "AutoLateralCA",
+        },
+    },
+}
+
 local function addSdkDevelopGroups(target, developSettings)
-    for _, group in ipairs(SDK_DEVELOP_GROUPS) do
-        local values = {}
-        for _, key in ipairs(group.keys) do
-            values[key] = developSettings[key]
+    for _, groups in ipairs({ SDK_DEVELOP_GROUPS, READ_ONLY_DEVELOP_GROUPS }) do
+        for _, group in ipairs(groups) do
+            local values = {}
+            for _, key in ipairs(group.keys) do
+                values[key] = developSettings[key]
+            end
+            target[group.field] = nonEmptyGroup(values)
         end
-        target[group.field] = nonEmptyGroup(values)
     end
     return target
 end
