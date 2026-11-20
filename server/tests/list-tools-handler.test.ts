@@ -117,7 +117,7 @@ describe('TOOL_DEFINITIONS', () => {
     expect(names).not.toContain('set_flag');
   });
 
-  it.each(['set_rating_and_flag', 'get_photo_metadata', 'create_gradient_mask', 'create_brush_mask', 'create_range_mask'])(
+  it.each(['set_rating_and_flag', 'get_photo_metadata', 'set_develop_settings', 'create_gradient_mask', 'create_brush_mask', 'create_range_mask'])(
     'publishes %s without root unions rejected by Claude Code', name => {
       const schema = TOOL_DEFINITIONS.find(tool => tool.name === name)!.inputSchema;
       expect(schema.type).toBe('object');
@@ -290,7 +290,6 @@ describe('tool required fields', () => {
     ['apply_develop_preset', ['photo_ids']],
     ['copy_develop_settings', ['source_id', 'target_ids']],
     ['match_photo_style', ['reference_id', 'target_ids']],
-    ['set_develop_settings', ['photo_id', 'settings']],
     ['get_lens_blur', ['photo_id']],
     ['set_lens_blur', ['photo_id']],
     ['set_process_version', ['photo_ids', 'version', 'confirm']],
