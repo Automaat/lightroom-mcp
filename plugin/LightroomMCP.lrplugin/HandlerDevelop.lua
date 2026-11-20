@@ -1115,6 +1115,11 @@ function DevelopHandler.matchPhotoStyle(args)
         results = results, failures = failures, missing = missing }
 end
 
+-- 0-based, as the server's schema errors name items (items.1).
+local function itemName(i)
+    return "items." .. (i - 1)
+end
+
 -- Per-photo settings for many photos: every item is checked before the one
 -- write gate opens, so a bad item writes nothing.
 local function setDevelopSettingsBatch(args)
@@ -1131,13 +1136,13 @@ local function setDevelopSettingsBatch(args)
 
     local ids, seen = {}, {}
     for i, item in ipairs(items) do
-        if type(item) ~= "table" then error("items[" .. i .. "] must be an object") end
-        ids[i] = requirePhotoId(item.photo_id, "items[" .. i .. "].photo_id")
-        if seen[ids[i]] then error("items[" .. i .. "].photo_id repeats an earlier item") end
+        if type(item) ~= "table" then error(itemName(i) .. " must be an object") end
+        ids[i] = requirePhotoId(item.photo_id, itemName(i) .. ".photo_id")
+        if seen[ids[i]] then error(itemName(i) .. ".photo_id repeats an earlier item") end
         seen[ids[i]] = true
         local valid, problem = pcall(requireDevelopSettingsObject, item.settings)
         if not valid then
-            error("items[" .. i .. "]: " .. (tostring(problem):gsub('^[^\r\n]-%.lua"?%]?:%d+: ', "")), 0)
+            error(itemName(i) .. ": " .. (tostring(problem):gsub('^[^\r\n]-%.lua"?%]?:%d+: ', "")), 0)
         end
     end
 
@@ -1148,7 +1153,7 @@ local function setDevelopSettingsBatch(args)
         if entry.photo then
             -- A path and an id can name the same photo.
             local key = tostring(entry.photo.localIdentifier)
-            if byPhoto[key] then error("items[" .. i .. "] names the same photo as items[" .. byPhoto[key] .. "]") end
+            if byPhoto[key] then error(itemName(i) .. " names the same photo as " .. itemName(byPhoto[key])) end
             byPhoto[key] = i
             photos[#photos + 1] = { photo = entry.photo, settings = items[i].settings }
         else

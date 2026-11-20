@@ -95,6 +95,14 @@ describe('validateToolArgs', () => {
       expect(result.isError).toBe(true);
       expect(call).not.toHaveBeenCalled();
     });
+
+    it('names the entry 0-based, as the plugin does', () => {
+      const ok = { photo_id: 1, settings: { Exposure2012: 0 } };
+      expect(validateToolArgs('set_develop_settings', { items: [ok, { photo_id: 2, settings: { NotAKey: 1 } }] }))
+        .toContain('items.1.settings has unknown property "NotAKey"');
+      expect(validateToolArgs('set_develop_settings', { items: [ok, { photo_id: 2 }] }))
+        .toContain("items.1 must have required property 'settings'");
+    });
   });
 
   it.each(['cull', 'detail', 64, 512.5, 1024, 2048])('get_photo_preview accepts size %s', size => {

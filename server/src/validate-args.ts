@@ -47,7 +47,7 @@ function describe(error: { instancePath?: string; message?: string; params?: unk
   const field = error.instancePath ? error.instancePath.replace(/^\//, "").replace(/\//g, ".") : "";
   const params = error.params as { additionalProperty?: string; type?: string[] } | undefined;
   const extra = params?.additionalProperty;
-  if (extra) return `unknown property "${extra}"`;
+  if (extra) return field ? `${field} has unknown property "${extra}"` : `unknown property "${extra}"`;
   const what = Array.isArray(params?.type)
     ? `must be ${params.type.join(" or ")}`
     : error.message ?? "is invalid";

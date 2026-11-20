@@ -1221,7 +1221,7 @@ describe("HandlerDevelop.setDevelopSettings items", function()
         } })
 
         assert.is_false(ok)
-        assert.truthy(tostring(err):find("items[2]: Develop setting Exposure2012 must be a number from -5 to 5", 1, true),
+        assert.truthy(tostring(err):find("items.1: Develop setting Exposure2012 must be a number from -5 to 5", 1, true),
             tostring(err))
         assert.are.equal(0, catalog.getWriteAccessCount())
         assert.is_nil(a:getRawMetadata("__appliedSettings"))
@@ -1238,10 +1238,10 @@ describe("HandlerDevelop.setDevelopSettings items", function()
             { { items = { item }, settings = { Exposure2012 = 0 } }, "not both" },
             { { items = {} }, "items must contain 1 to 100 entries" },
             { { items = many }, "items must contain 1 to 100 entries" },
-            { { items = { item, { photo_id = 1, settings = { Exposure2012 = 1 } } } }, "items[2].photo_id repeats" },
-            { { items = { item, { photo_id = "/a.jpg", settings = { Exposure2012 = 1 } } } }, "same photo as items[1]" },
-            { { items = { "x" } }, "items[1] must be an object" },
-            { { items = { { photo_id = "1" } } }, "items[1]: settings is required" },
+            { { items = { item, { photo_id = 1, settings = { Exposure2012 = 1 } } } }, "items.1.photo_id repeats" },
+            { { items = { item, { photo_id = "/a.jpg", settings = { Exposure2012 = 1 } } } }, "items.1 names the same photo as items.0" },
+            { { items = { "x" } }, "items.0 must be an object" },
+            { { items = { { photo_id = "1" } } }, "items.0: settings is required" },
         }
         for _, case in ipairs(cases) do
             local ok, err = pcall(Handler.setDevelopSettings, case[1])
