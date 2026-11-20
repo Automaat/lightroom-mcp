@@ -1,12 +1,12 @@
 local LrApplication = import 'LrApplication'
 local LrApplicationView = import 'LrApplicationView'
-local LrPathUtils = import 'LrPathUtils'
 local LrSelection = import 'LrSelection'
 local LrTasks = import 'LrTasks'
 
 local DevelopSession = require 'DevelopSession'
 local Log = require 'Log'
 local PhotoLookup = require 'PhotoLookup'
+local PhotoSources = require 'PhotoSources'
 
 local Handler = {}
 
@@ -33,26 +33,6 @@ local function selectExactly(catalog, photos)
         function() return sameSelection(catalog, photos) end,
         function() catalog:setSelectedPhotos(photos[1], photos) end,
         SELECT_TIMEOUT_SECONDS, RESELECT_SECONDS)
-end
-
--- The photos' own folders load far faster than All Photographs on a large catalog;
--- any folder Lightroom cannot resolve sends the whole set back to All Photographs.
-local function sourcesFor(catalog, photos)
-    local raw = catalog:batchGetRawMetadata(photos, { 'path' }) or {}
-    local sources, seen = {}, {}
-    for _, photo in ipairs(photos) do
-        local path = (raw[photo] or {}).path
-        if type(path) ~= "string" then return { catalog.kAllPhotos } end
-        local parent = LrPathUtils.parent(path)
-        if not parent then return { catalog.kAllPhotos } end
-        if not seen[parent] then
-            local ok, folder = LrTasks.pcall(function() return catalog:getFolderByPath(parent) end)
-            if not ok or not folder then return { catalog.kAllPhotos } end
-            seen[parent] = true
-            sources[#sources + 1] = folder
-        end
-    end
-    return sources
 end
 
 local function surviving(catalog, photos)
@@ -154,7 +134,7 @@ function Handler.removePhotos(args)
         local ok, result = LrTasks.pcall(function()
             LrApplicationView.switchToModule("library")
             LrApplicationView.gridView()
-            local sources = sourcesFor(catalog, photos)
+            local sources = PhotoSources.foldersOrAll(catalog, photos)
             Log.info(string.format("remove_photos_from_catalog: selecting %d photo(s) in %s", #photos,
                 sources[1] == catalog.kAllPhotos and "All Photographs" or (#sources .. " folder(s)")))
             catalog:setActiveSources(sources)
