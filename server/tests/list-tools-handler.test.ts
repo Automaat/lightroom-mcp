@@ -517,6 +517,14 @@ describe('develop setting schema', () => {
 
     expect(new Set(groupKeys).size).toBe(groupKeys.length);
     expect([...groupKeys, ...fieldKeys].sort()).toEqual([...DEVELOP_SETTING_KEYS].sort());
+
+    const readOnlyTable = source.match(/local READ_ONLY_DEVELOP_GROUPS = \{([\s\S]*?)\n\}\n/);
+    if (!readOnlyTable) {
+      throw new Error('READ_ONLY_DEVELOP_GROUPS table not found');
+    }
+    const readOnlyKeys = [...readOnlyTable[1].matchAll(/"([A-Z]\w+)"/g)].map((entry) => entry[1]);
+    expect(readOnlyKeys.length).toBeGreaterThan(0);
+    expect(readOnlyKeys.filter((key) => (DEVELOP_SETTING_KEYS as readonly string[]).includes(key))).toEqual([]);
   });
 });
 
