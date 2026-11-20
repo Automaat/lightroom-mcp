@@ -70,6 +70,41 @@ describe('validateToolArgs', () => {
     });
   });
 
+  describe('set_develop_settings items', () => {
+    it('accepts per-photo settings up to the cap', () => {
+      const items = Array.from({ length: 100 }, (_, i) => ({ photo_id: i + 1, settings: { Exposure2012: 0.5 } }));
+      expect(validateToolArgs('set_develop_settings', { items })).toBeNull();
+      expect(validateToolArgs('set_develop_settings', {
+        items: [{ photo_id: '/a.jpg', settings: { WhiteBalance: 'As Shot', ToneCurvePV2012: [0, 0, 255, 255] } }],
+      })).toBeNull();
+    });
+
+    it.each([
+      {}, { photo_id: 1 }, { settings: { Exposure2012: 0 } }, { items: [] },
+      { items: [{ photo_id: 1, settings: { Exposure2012: 0 } }], photo_id: 1 },
+      { items: [{ photo_id: 1, settings: { Exposure2012: 0 } }], settings: { Exposure2012: 0 } },
+      { items: Array.from({ length: 101 }, () => ({ photo_id: 1, settings: { Exposure2012: 0 } })) },
+      { items: [{ photo_id: 1 }] }, { items: [{ photo_id: 1, settings: {} }] },
+      { items: [{ photo_id: 1, settings: { NotAKey: 1 } }] },
+      { items: [{ photo_id: 1, settings: { ToneCurvePV2012: 1 } }] },
+      { items: [{ photo_id: 1, settings: { Exposure2012: 0 }, extra: true }] },
+    ])('rejects invalid arguments before dispatch: %p', async (args) => {
+      const call = jest.fn((_action: string, _params: unknown) => Promise.resolve({ id: 'test', result: {} }));
+      const handler = createCallToolHandler({ dispatcher: { call }, isReady: () => true });
+      const result = await handler('set_develop_settings', args);
+      expect(result.isError).toBe(true);
+      expect(call).not.toHaveBeenCalled();
+    });
+
+    it('names the entry 0-based, as the plugin does', () => {
+      const ok = { photo_id: 1, settings: { Exposure2012: 0 } };
+      expect(validateToolArgs('set_develop_settings', { items: [ok, { photo_id: 2, settings: { NotAKey: 1 } }] }))
+        .toContain('items.1.settings has unknown property "NotAKey"');
+      expect(validateToolArgs('set_develop_settings', { items: [ok, { photo_id: 2 }] }))
+        .toContain("items.1 must have required property 'settings'");
+    });
+  });
+
   it.each(['cull', 'detail', 64, 512.5, 1024, 2048])('get_photo_preview accepts size %s', size => {
     expect(validateToolArgs('get_photo_preview', { photo_id: 914, size })).toBeNull();
   });
