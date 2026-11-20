@@ -65,6 +65,7 @@ local function setup(opts)
             gridView = function() calls.grids = calls.grids + 1 end,
         },
         LrPathUtils = { parent = function(path) return (path:gsub("/[^/]*$", "")) end },
+        LrFileUtils = { exists = function() return not opts.offline and "directory" end },
         LrSelection = selection,
         LrDevelopController = {},
         LrTasks = { pcall = pcall, sleep = function() end },
@@ -141,6 +142,14 @@ describe("HandlerRemoveFromCatalog.removePhotos", function()
         local handler, calls, photos = setup({ unknownFolder = true })
         handler.removePhotos({ photo_ids = { "1" }, confirm = true })
         assert.are.same({ "all" }, calls.sources[1])
+        assert.are.same({ photos[1] }, calls.removed)
+    end)
+
+    it("falls back to All Photographs when a folder is on an unmounted drive", function()
+        local handler, calls, photos = setup({ offline = true })
+        handler.removePhotos({ photo_ids = { "1" }, confirm = true })
+        assert.are.same({ "all" }, calls.sources[1])
+        assert.are.same({}, calls.folderLookups)
         assert.are.same({ photos[1] }, calls.removed)
     end)
 
