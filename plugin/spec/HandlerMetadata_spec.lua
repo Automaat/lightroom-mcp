@@ -396,6 +396,7 @@ describe("HandlerMetadata.getPhotoMetadata", function()
             "GrainAmount", "GrainSize", "GrainFrequency",
         },
         parametricSplits = { "ParametricShadowSplit", "ParametricMidtoneSplit", "ParametricHighlightSplit" },
+        extended = { "CameraProfile", "PerspectiveX", "PerspectiveY", "DefringePurpleAmount", "DefringePurpleHueLo", "DefringePurpleHueHi", "DefringeGreenAmount", "DefringeGreenHueLo", "DefringeGreenHueHi", "ColorGradeBlending", "ColorGradeGlobalHue", "ColorGradeGlobalSat", "ColorGradeGlobalLum", "ColorGradeShadowHue", "ColorGradeShadowSat", "ColorGradeShadowLum", "ColorGradeMidtoneHue", "ColorGradeMidtoneSat", "ColorGradeMidtoneLum", "ColorGradeHighlightHue", "ColorGradeHighlightSat", "ColorGradeHighlightLum", "SplitToningShadowHue", "SplitToningShadowSaturation", "SplitToningHighlightHue", "SplitToningHighlightSaturation", "SplitToningBalance", "CurveRefineSaturation", "OverrideLookVignette", "AllowFilters" },
     }
 
     for field, keys in pairs(EXPECTED_SDK_GROUPS) do

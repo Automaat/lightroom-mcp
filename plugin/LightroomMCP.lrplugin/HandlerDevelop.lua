@@ -109,6 +109,38 @@ local ALLOWED_DEVELOP_SETTING_KEYS = {
     "CropBottom",
     "CropRight",
     "CropAngle",
+    "CameraProfile",
+    "LensProfileSetup",
+    "AutoLateralCA",
+    "PerspectiveX",
+    "PerspectiveY",
+    "DefringePurpleAmount",
+    "DefringePurpleHueLo",
+    "DefringePurpleHueHi",
+    "DefringeGreenAmount",
+    "DefringeGreenHueLo",
+    "DefringeGreenHueHi",
+    "ColorGradeBlending",
+    "ColorGradeGlobalHue",
+    "ColorGradeGlobalSat",
+    "ColorGradeGlobalLum",
+    "ColorGradeShadowHue",
+    "ColorGradeShadowSat",
+    "ColorGradeShadowLum",
+    "ColorGradeMidtoneHue",
+    "ColorGradeMidtoneSat",
+    "ColorGradeMidtoneLum",
+    "ColorGradeHighlightHue",
+    "ColorGradeHighlightSat",
+    "ColorGradeHighlightLum",
+    "SplitToningShadowHue",
+    "SplitToningShadowSaturation",
+    "SplitToningHighlightHue",
+    "SplitToningHighlightSaturation",
+    "SplitToningBalance",
+    "CurveRefineSaturation",
+    "OverrideLookVignette",
+    "AllowFilters",
 }
 
 local ALLOWED_DEVELOP_SETTING_LOOKUP = {}
@@ -127,10 +159,12 @@ local DEVELOP_SETTING_STRINGS = {
         Tungsten = true, Fluorescent = true, Flash = true, Custom = true,
     },
     ToneCurveName2012 = true,
+    CameraProfile = true,
+    LensProfileSetup = true,
 }
 
-local DEVELOP_SETTING_BOOLEANS = { ConvertToGrayscale = true }
-local DEVELOP_SETTING_FLAGS = { LensProfileEnable = true }
+local DEVELOP_SETTING_BOOLEANS = { ConvertToGrayscale = true, OverrideLookVignette = true }
+local DEVELOP_SETTING_FLAGS = { LensProfileEnable = true, AutoLateralCA = true, AllowFilters = true }
 
 local DEVELOP_SETTING_RANGES = {}
 local function addRange(low, high, keys)
@@ -165,6 +199,16 @@ addRange(0, 5, "PerspectiveUpright")
 addRange(1, 3, "PostCropVignetteStyle")
 addRange(0, 1, "CropTop CropLeft CropBottom CropRight")
 addRange(-45, 45, "CropAngle")
+-- Ranges are the Lightroom slider ranges; CurveRefineSaturation is wide because its range was not confirmed.
+addRange(-100, 100, "PerspectiveX PerspectiveY ColorGradeGlobalLum ColorGradeShadowLum ColorGradeMidtoneLum ColorGradeHighlightLum SplitToningBalance")
+addRange(0, 20, "DefringePurpleAmount DefringeGreenAmount")
+addRange(0, 100, [[
+    DefringePurpleHueLo DefringePurpleHueHi DefringeGreenHueLo DefringeGreenHueHi ColorGradeBlending
+    ColorGradeGlobalSat ColorGradeShadowSat ColorGradeMidtoneSat ColorGradeHighlightSat
+    SplitToningShadowSaturation SplitToningHighlightSaturation
+]])
+addRange(0, 360, "ColorGradeGlobalHue ColorGradeShadowHue ColorGradeMidtoneHue ColorGradeHighlightHue SplitToningShadowHue SplitToningHighlightHue")
+addRange(-200, 200, "CurveRefineSaturation")
 
 local function requireString(value, name)
     if type(value) ~= "string" or value == "" then

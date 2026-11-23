@@ -739,6 +739,27 @@ describe("HandlerDevelop.setDevelopSettings values", function()
         reject({ CropTop = 0.8, CropBottom = 0.2 }, "CropTop must be less than CropBottom")
     end)
 
+    it("validates the extended keys with their own types and ranges", function()
+        local p = helper.fakePhoto({ id = "1", path = "/1.jpg" })
+        local Handler = select(2, setup({ photos = { p } }))
+        assert.is_true(Handler.setDevelopSettings({
+            photo_id = "1",
+            settings = {
+                CameraProfile = "Adobe Standard", LensProfileSetup = "LensDefaults", AutoLateralCA = 1,
+                AllowFilters = 1, OverrideLookVignette = false, PerspectiveX = -100, PerspectiveY = 12.5,
+                DefringePurpleAmount = 20, DefringeGreenHueLo = 40, ColorGradeBlending = 50,
+                ColorGradeGlobalHue = 360, ColorGradeShadowLum = -100, SplitToningBalance = 0,
+                SplitToningShadowSaturation = 30, CurveRefineSaturation = 100,
+            },
+        }).success)
+        reject({ PerspectiveX = 101 }, "PerspectiveX must be a number from -100 to 100")
+        reject({ ColorGradeGlobalHue = 361 }, "ColorGradeGlobalHue must be a number from 0 to 360")
+        reject({ DefringePurpleAmount = 21 }, "DefringePurpleAmount must be a number from 0 to 20")
+        reject({ AutoLateralCA = 2 }, "AutoLateralCA must be 0 or 1")
+        reject({ OverrideLookVignette = 1 }, "OverrideLookVignette must be true or false")
+        reject({ CameraProfile = 5 }, "Invalid value for develop setting CameraProfile")
+    end)
+
     it("accepts values at the limits", function()
         local p = helper.fakePhoto({ id = "1", path = "/1.jpg" })
         local Handler = select(2, setup({ photos = { p } }))
