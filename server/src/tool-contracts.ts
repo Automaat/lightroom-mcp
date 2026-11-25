@@ -99,6 +99,20 @@ const compactPoint = {
   required: ["x", "y"],
 };
 
+const MAX_UPRIGHT_BATCH_ITEMS = 50;
+
+const uprightGuidesSchema = {
+  type: "array",
+  minItems: 2,
+  maxItems: 4,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: { start: compactPoint, end: compactPoint },
+    required: ["start", "end"],
+  },
+};
+
 const normalizedPoint = (description: string) => ({
   type: "object",
   additionalProperties: false,
@@ -1634,26 +1648,26 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerUpright.setGuides",
     description:
-      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points: 0-1, origin top-left, on the photo as displayed with no Transform (Upright off, sliders 0) or crop. Replaces guides; briefly opens Develop; on failure restores the prior Upright.",
+      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points 0-1, origin top-left, as displayed with no Transform (Upright off, sliders 0), crop or lens corrections: guides measured with a lens profile on show further from the centre (0.8% on a tested 35 mm lens). Replaces guides; opens Develop; restores the prior Upright on failure. items: many photos in one Develop session, continuing past failures; per-photo results, remaining_ids. Keep Lightroom in front.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
-        guides: {
+        guides: { ...uprightGuidesSchema, description: "Guides as line segments; at least 0.02 of the frame long" },
+        items: {
           type: "array",
-          minItems: 2,
-          maxItems: 4,
+          minItems: 1,
+          maxItems: MAX_UPRIGHT_BATCH_ITEMS,
+          description: "Instead of photo_id/guides: one entry per photo",
           items: {
             type: "object",
             additionalProperties: false,
-            properties: { start: compactPoint, end: compactPoint },
-            required: ["start", "end"],
+            properties: { photo_id: photoIdSchema("Photo ID or file path"), guides: uprightGuidesSchema },
+            required: ["photo_id", "guides"],
           },
-          description: "Guides as line segments; at least 0.02 of the frame long",
         },
       },
-      required: ["photo_id", "guides"],
     },
   },
   {

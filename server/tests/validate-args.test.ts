@@ -980,3 +980,21 @@ describe('tool handler argument validation', () => {
     expect(call).toHaveBeenCalledWith('get_photo_metadata', { photo_id: 914 });
   });
 });
+
+describe('batch arguments', () => {
+  const guides = [{ start: { x: 0.1, y: 0.1 }, end: { x: 0.1, y: 0.9 } }, { start: { x: 0.9, y: 0.1 }, end: { x: 0.9, y: 0.9 } }];
+
+  it('takes set_upright_guides as photo_id and guides, or as items, never both', () => {
+    expect(validateToolArgs('set_upright_guides', { photo_id: 1, guides })).toBeNull();
+    expect(validateToolArgs('set_upright_guides', { items: [{ photo_id: 1, guides }, { photo_id: '/a.arw', guides }] })).toBeNull();
+    expect(validateToolArgs('set_upright_guides', { items: [{ photo_id: 1, guides }], photo_id: 1 }))
+      .toContain('provide photo_id and guides, or items, not both');
+    expect(validateToolArgs('set_upright_guides', { photo_id: 1 })).toContain('photo_id and guides are both required');
+    expect(validateToolArgs('set_upright_guides', {})).toContain('not both');
+    expect(validateToolArgs('set_upright_guides', { items: [] })).toContain('items');
+    expect(validateToolArgs('set_upright_guides', { items: [{ photo_id: 1, guides: [guides[0]] }] })).toContain('items.0.guides');
+    expect(validateToolArgs('set_upright_guides', { items: Array.from({ length: 51 }, () => ({ photo_id: 1, guides })) }))
+      .toContain('items');
+  });
+
+});

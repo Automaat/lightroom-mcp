@@ -237,7 +237,7 @@ describe('createMcpServer', () => {
       expect(tool).toBeDefined();
       expect(tool?.description.length).toBeLessThanOrEqual(Math.floor(oldLength / 2));
     }
-    expect(TOOL_CONTRACTS.reduce((sum, tool) => sum + tool.description.length, 0)).toBeLessThanOrEqual(25500);
+    expect(TOOL_CONTRACTS.reduce((sum, tool) => sum + tool.description.length, 0)).toBeLessThanOrEqual(26000);
   });
 
   it('keeps load-bearing tool guidance reachable alongside instructions', async () => {

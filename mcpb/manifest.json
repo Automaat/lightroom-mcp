@@ -223,7 +223,7 @@
     },
     {
       "name": "set_upright_guides",
-      "description": "Turn on Guided Upright with 2-4 guides along edges that should be vertical or horizontal."
+      "description": "Turn on Guided Upright with 2-4 guides along edges that should be vertical or horizontal, on one photo or a batch."
     },
     {
       "name": "apply_auto_adjustments",
