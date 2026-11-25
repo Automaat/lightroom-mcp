@@ -176,13 +176,40 @@ describe("HandlerPreview.getPhotoPreview", function()
 
     it("returns an image over 2000px when even the smallest preview is that big", function()
         local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, _, _, cb)
-            cb(fakeJpeg(2400, 1600))
+            cb(fakeJpeg(6000, 4000))
         end)
         local _, Handler = setup({ photo })
 
         local r = Handler.getPhotoPreview({ photo_id = "1", size = 64 })
 
-        assert.are.equal(2400, r.width)
+        assert.are.equal(6000, r.width)
+    end)
+
+    it("refuses an image over the 8000px Claude accepts when even the smallest preview is that big", function()
+        local edges = {}
+        local photo = previewPhoto({ id = "1", path = "/a.nef" }, function(_, w, _, cb)
+            edges[#edges + 1] = w
+            cb(fakeJpeg(9504, 6336))
+        end)
+        local _, Handler = setup({ photo })
+
+        assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1", size = 2048 }) end,
+            "Lightroom has only a 9504x6336 preview of this photo right now, over 8000 px even at size 64; call again"
+                .. ' with render "export" for a fresh render through an export (about 2 s; Lightroom lists it in the'
+                .. " photo's History)")
+        assert.are.same({ 2048, 1024, 512, 256, 128, 64 }, edges)
+    end)
+
+    it("does not point a photo with AI masks to the export render it would refuse", function()
+        local photo = previewPhoto({ id = "1", developSettings = { MaskGroupBasedCorrections = {
+            { CorrectionID = "m1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 2, MaskDigest = "d" } } },
+        } } }, function(_, _, _, cb) cb(fakeJpeg(9504, 6336)) end)
+        local _, Handler = setup({ photo })
+
+        assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1", size = 2048 }) end,
+            "Lightroom has only a 9504x6336 preview of this photo right now, over 8000 px even at size 64;"
+                .. ' render "export" is refused for photos with AI masks, so call again once Lightroom has rebuilt'
+                .. " its standard preview")
     end)
 
     it("gives up when even the smallest preview is over the size limit", function()

@@ -4,12 +4,12 @@ import type { Toolset } from '../src/toolsets.js';
 
 // Fixed limits approved for every toolset/read-only combination. Raise only after
 // reviewing intentional size changes; lower these when tool definitions shrink.
-// Current full list: 106099 characters; nonempty headroom is 1000–1999 characters.
+// Current full list: 106142 characters; nonempty headroom is 1000–1999 characters.
 const TOOLS_LIST_SIZE_BUDGETS = [
   { toolsets: [], write: 12, readOnly: 12 },
   { toolsets: ['core'], write: 38_000, readOnly: 18_000 },
   { toolsets: ['develop'], write: 30_000, readOnly: 7_000 },
-  { toolsets: ['core', 'develop'], write: 67_000, readOnly: 23_000 },
+  { toolsets: ['core', 'develop'], write: 67_000, readOnly: 24_000 },
   { toolsets: ['masks'], write: 42_000, readOnly: 4_000 },
   { toolsets: ['core', 'masks'], write: 79_000, readOnly: 20_000 },
   { toolsets: ['develop', 'masks'], write: 71_000, readOnly: 10_000 },

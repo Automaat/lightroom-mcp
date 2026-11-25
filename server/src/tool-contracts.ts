@@ -625,7 +625,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         size: {
-          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller. cull is for culling (about 650 tokens), detail for inspecting details (about 2.5k tokens): earlier Claude estimates, varying by image/model and repeated each turn in history.",
+          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller; fails if even 64 is over 3.5 MB or 8000px. cull is for culling (about 650 tokens), detail for inspecting details (about 2.5k tokens): earlier Claude estimates, varying by image/model and repeated each turn in history.",
           oneOf: [
             { type: "number", minimum: 64, maximum: 2048 },
             { type: "string", enum: Object.keys(PREVIEW_SIZES) },
