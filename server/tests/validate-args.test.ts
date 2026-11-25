@@ -980,3 +980,27 @@ describe('tool handler argument validation', () => {
     expect(call).toHaveBeenCalledWith('get_photo_metadata', { photo_id: 914 });
   });
 });
+
+describe('validation error summary', () => {
+  const strokeOf = (points: Array<{ x: number; y: number }>) => ({ photo_id: 1, strokes: [{ points }] });
+
+  it('names one problem repeated across many items once, with its count and first fields', () => {
+    const points = Array.from({ length: 1000 }, (_, i) => ({ x: 100 + i, y: 0.5 }));
+    const message = validateToolArgs('create_brush_mask', strokeOf(points));
+    expect(message).toBe('Invalid arguments for create_brush_mask: strokes.*.points.*.x must be <= 1 in 1000 items'
+      + ' (first: strokes.0.points.0.x, strokes.0.points.1.x, strokes.0.points.2.x)');
+  });
+
+  it('still lists every distinct problem and up to three repeats by field', () => {
+    const points = [{ x: 2, y: 0.5 }, { x: 0.5, y: -1 }, { x: 3, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 4, y: 0.5 }];
+    const message = validateToolArgs('create_brush_mask', strokeOf(points));
+    expect(message).toBe('Invalid arguments for create_brush_mask: strokes.0.points.0.x must be <= 1;'
+      + ' strokes.0.points.2.x must be <= 1; strokes.0.points.4.x must be <= 1; strokes.0.points.1.y must be >= 0');
+  });
+
+  it('refuses NaN and Infinity in any number field without a published maximum', () => {
+    expect(validateToolArgs('search_photos', { iso: Infinity })).toContain('iso');
+    expect(validateToolArgs('create_brush_mask', strokeOf([{ x: Infinity, y: 0.5 }]))).toContain('strokes.0.points.0.x');
+    expect(validateToolArgs('create_brush_mask', strokeOf([{ x: NaN, y: 0.5 }]))).toContain('strokes.0.points.0.x');
+  });
+});
