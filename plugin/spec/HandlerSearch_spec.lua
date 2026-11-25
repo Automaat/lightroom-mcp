@@ -41,6 +41,20 @@ describe("HandlerSearch.searchPhotos", function()
         assert.are.same(slim, full)
     end)
 
+    it("adds pick flag and color label to a row only when they are set", function()
+        catalog = helper.fakeCatalog({ photos = {
+            helper.fakePhoto({ id = "1", fileName = "a.jpg", rating = 0, pickStatus = 1, colorNameForLabel = "blue" }),
+            helper.fakePhoto({ id = "2", fileName = "b.jpg", rating = 0, pickStatus = -1, colorNameForLabel = "none" }),
+            helper.fakePhoto({ id = "3", fileName = "c.jpg", rating = 0, pickStatus = 0, colorNameForLabel = "" }),
+            helper.fakePhoto({ id = "4", fileName = "d.jpg", rating = 0, pickStatus = 0, colorNameForLabel = "gray" }),
+        } })
+        local rows = Handler.searchPhotos({}).photos
+        assert.are.same({ id = "1", filename = "a.jpg", rating = 0, pickStatus = 1, colorLabel = "blue" }, rows[1])
+        assert.are.same({ id = "2", filename = "b.jpg", rating = 0, pickStatus = -1 }, rows[2])
+        assert.are.same({ id = "3", filename = "c.jpg", rating = 0 }, rows[3])
+        assert.are.same({ id = "4", filename = "d.jpg", rating = 0 }, rows[4])
+    end)
+
     it("encodes a default 100-row page within 65 percent of rows with paths", function()
         local photos = {}
         for i = 1, 100 do

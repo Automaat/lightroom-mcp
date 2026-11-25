@@ -16,7 +16,9 @@ import { PREVIEW_SIZE_ERROR } from "./preview-sizes.js";
  * scan. Validate here so a bad call fails immediately, with a message naming
  * the offending field.
  */
-const ajv = new Ajv({ strict: false, allErrors: true });
+// strictNumbers refuses NaN and Infinity (JSON 1e400 parses to Infinity) in
+// every number field, so no schema needs a Number.MAX_VALUE maximum for it.
+const ajv = new Ajv({ strict: false, strictNumbers: true, allErrors: true });
 
 const validators = new Map<string, ValidateFunction>(
   TOOL_CONTRACTS.map((contract) => {
@@ -43,15 +45,42 @@ const validators = new Map<string, ValidateFunction>(
   }),
 );
 
-function describe(error: { instancePath?: string; message?: string; params?: unknown }): string {
+type Problem = { field: string; what: string };
+
+function problemOf(error: { instancePath?: string; message?: string; params?: unknown }): Problem {
   const field = error.instancePath ? error.instancePath.replace(/^\//, "").replace(/\//g, ".") : "";
   const params = error.params as { additionalProperty?: string; type?: string[] } | undefined;
   const extra = params?.additionalProperty;
-  if (extra) return field ? `${field} has unknown property "${extra}"` : `unknown property "${extra}"`;
+  if (extra) return { field, what: field ? `has unknown property "${extra}"` : `unknown property "${extra}"` };
   const what = Array.isArray(params?.type)
     ? `must be ${params.type.join(" or ")}`
     : error.message ?? "is invalid";
-  return field ? `${field} ${what}` : what;
+  return { field, what };
+}
+
+const textOf = (field: string, what: string) => (field ? `${field} ${what}` : what);
+
+// One problem repeated across array items (1,000 brush points given in pixels
+// instead of 0 to 1) used to yield one message per item, tens of thousands of
+// characters. Every distinct problem is still listed; one repeated in more
+// than LISTED_REPEATS items is named once with its count and first fields.
+const LISTED_REPEATS = 3;
+
+function summarize(problems: Problem[]): string[] {
+  const groups = new Map<string, { pattern: string; what: string; fields: Set<string> }>();
+  for (const { field, what } of problems) {
+    const pattern = field.replace(/(^|\.)\d+(?=\.|$)/g, "$1*");
+    const key = `${pattern}\u0000${what}`;
+    const group = groups.get(key) ?? { pattern, what, fields: new Set<string>() };
+    group.fields.add(field);
+    groups.set(key, group);
+  }
+  return [...groups.values()].flatMap(({ pattern, what, fields }) => {
+    const listed = [...fields];
+    if (listed.length <= LISTED_REPEATS) return listed.map(field => textOf(field, what));
+    const first = listed.slice(0, LISTED_REPEATS).join(", ");
+    return [`${textOf(pattern, what)} in ${listed.length} items (first: ${first})`];
+  });
 }
 
 function maskSelectorProblem(args: unknown): string | null {
@@ -119,8 +148,7 @@ export function validateToolArgs(name: string, args: unknown): string | null {
 
   const problems = (validate.errors ?? []).map(error =>
     name === "get_photo_preview" && error.instancePath === "/size"
-      ? PREVIEW_SIZE_ERROR
-      : describe(error));
-  const unique = [...new Set(problems)];
-  return `Invalid arguments for ${name}: ${unique.join("; ")}`;
+      ? { field: "", what: PREVIEW_SIZE_ERROR }
+      : problemOf(error));
+  return `Invalid arguments for ${name}: ${summarize(problems).join("; ")}`;
 }
