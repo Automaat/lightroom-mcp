@@ -197,5 +197,21 @@ describe("UprightGuides", function()
             assert.are.equal(AUTHORED.UprightFourSegments_3, saved.UprightFourSegments_3)
             assert.are.same({ PerspectiveUpright = 0, UprightFourSegmentsCount = 0 }, UprightGuides.snapshot(nil))
         end)
+
+        it("snapshots the Transform sliders and checks them on a restore", function()
+            local before = { PerspectiveUpright = 5, UprightFourSegmentsCount = 0, PerspectiveVertical = 3,
+                PerspectiveHorizontal = 4, PerspectiveRotate = 1.5, PerspectiveScale = 95, PerspectiveAspect = 10 }
+            local saved = UprightGuides.snapshot(before)
+            assert.are.same({ PerspectiveVertical = 3, PerspectiveHorizontal = 4, PerspectiveRotate = 1.5,
+                PerspectiveScale = 95, PerspectiveAspect = 10 }, UprightGuides.sliders(saved))
+            assert.are.same({}, UprightGuides.restoreProblems(saved, before))
+            local reset = {}
+            for k, v in pairs(before) do reset[k] = v end
+            reset.PerspectiveVertical, reset.PerspectiveRotate = 0, 0
+            assert.are.same({ "PerspectiveVertical reads back as 0, not 3", "PerspectiveRotate reads back as 0, not 1.5" },
+                UprightGuides.sliderProblems(saved, reset))
+            assert.are.same({ "PerspectiveVertical reads back as 0, not 3", "PerspectiveRotate reads back as 0, not 1.5" },
+                UprightGuides.restoreProblems(saved, reset))
+        end)
     end)
 end)

@@ -1648,7 +1648,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerUpright.setGuides",
     description:
-      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points 0-1, origin top-left, as displayed with no Transform (Upright off, sliders 0), crop or lens corrections: guides measured with a lens profile on show further from the centre (0.8% on a tested 35 mm lens). Replaces guides; opens Develop; restores the prior Upright on failure. items: many photos in one Develop session, continuing past failures; per-photo results, remaining_ids. Keep Lightroom in front.",
+      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points 0-1, origin top-left, as displayed with no Transform (Upright off, sliders 0), crop or lens corrections: guides measured with a lens profile on show further from the centre (0.8% on a tested 35 mm lens). Replaces guides and, like Lightroom's Upright buttons, sets Vertical, Horizontal and Rotate to 0; opens Develop; restores the prior Upright and sliders on failure. items: many photos in one Develop session, continuing past failures; per-photo results, remaining_ids. Keep Lightroom in front.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

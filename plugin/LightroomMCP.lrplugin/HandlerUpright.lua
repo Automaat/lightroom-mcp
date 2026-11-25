@@ -55,31 +55,43 @@ local function chooseGuided()
     return ok
 end
 
--- Puts back the Upright settings saved before the write and, for a photo that
--- was in Guided mode, has Lightroom recompute its matrix from the restored
--- guides. Runs with the photo active in Develop. Returns ok and why not.
+-- Puts back the Upright settings and Transform sliders saved before the write
+-- and, for a photo that was in Guided mode, has Lightroom recompute its matrix
+-- from the restored guides. Runs with the photo active in Develop. Returns ok
+-- and why not.
 local function restore(catalog, photo, saved, previousTransform)
-    local wrote, writeError = LrTasks.pcall(function()
-        catalog:withWriteAccessDo(RESTORE_HISTORY_NAME, function()
-            photo:applyDevelopSettings(saved, RESTORE_HISTORY_NAME)
-        end)
-    end)
-    if not wrote then return false, tostring(writeError) end
-
     local why
-    local restored = DevelopSession.waitFor(function()
-        local ok, settings = LrTasks.pcall(readSettings, catalog, photo)
-        if not ok then
-            why = "reading it back failed: " .. tostring(settings)
+    local function writeAndCheck(settings, extraCheck)
+        local wrote, writeError = LrTasks.pcall(function()
+            catalog:withWriteAccessDo(RESTORE_HISTORY_NAME, function()
+                photo:applyDevelopSettings(settings, RESTORE_HISTORY_NAME)
+            end)
+        end)
+        if not wrote then
+            why = tostring(writeError)
             return false
         end
-        local problems = UprightGuides.restoreProblems(saved, settings)
-        why = problems[1]
-        return #problems == 0
-    end, SAVE_TIMEOUT_SECONDS)
-    if not restored then return false, why end
+        return DevelopSession.waitFor(function()
+            local ok, current = LrTasks.pcall(readSettings, catalog, photo)
+            if not ok then
+                why = "reading it back failed: " .. tostring(current)
+                return false
+            end
+            local problems = UprightGuides.restoreProblems(saved, current)
+            if extraCheck then problems[#problems + 1] = extraCheck(current) end
+            why = problems[1]
+            return #problems == 0
+        end, SAVE_TIMEOUT_SECONDS)
+    end
+    if not writeAndCheck(saved) then return false, why end
 
-    if saved.PerspectiveUpright == UprightGuides.GUIDED_MODE and previousTransform ~= nil then
+    -- A matrix still equal to the previous one means Lightroom computed none for
+    -- the new guides, so the photo is as before; choosing Guided again would
+    -- only reset the sliders, after this check had already read them.
+    local read, current = LrTasks.pcall(readSettings, catalog, photo)
+    if not read then return false, "reading it back failed: " .. tostring(current) end
+    if saved.PerspectiveUpright == UprightGuides.GUIDED_MODE and previousTransform ~= nil
+        and current[TRANSFORM_KEY] ~= previousTransform then
         local function recomputedWithin(seconds)
             if not chooseGuided() then return false end
             return DevelopSession.waitFor(function()
@@ -89,6 +101,19 @@ local function restore(catalog, photo, saved, previousTransform)
         end
         if not (recomputedWithin(COMPUTE_TIMEOUT_SECONDS) or recomputedWithin(COMPUTE_RETRY_SECONDS)) then
             return false, "Lightroom did not recompute the previous Guided correction"
+        end
+        -- Recomputing reset Vertical, Horizontal and Rotate in the same step as
+        -- the matrix; a settings write puts them back and keeps the matrix (live
+        -- on LrC 16.0.1).
+        local ok, settings = LrTasks.pcall(readSettings, catalog, photo)
+        if not ok then return false, "reading it back failed: " .. tostring(settings) end
+        if #UprightGuides.sliderProblems(saved, settings) > 0 then
+            local kept = writeAndCheck(UprightGuides.sliders(saved), function(latest)
+                if latest[TRANSFORM_KEY] ~= previousTransform then
+                    return "the Guided correction changed when the Transform sliders were written back"
+                end
+            end)
+            if not kept then return false, why end
         end
     end
     return true

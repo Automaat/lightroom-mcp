@@ -33,6 +33,7 @@ describe("HandlerUpright.setGuides", function()
             calls.writes[#calls.writes + 1] = written
             calls.histories[#calls.histories + 1] = historyName
             if opts.ignoreRestore and #calls.writes > 1 then return end
+            if opts.ignoreSliderWrites and written.PerspectiveUpright == nil then return end
             for k, v in pairs(written) do settings[k] = v end
             if opts.mangle and #calls.writes == 1 then settings.UprightFourSegments_1 = "0,0,0,0" end
         end
@@ -46,6 +47,11 @@ describe("HandlerUpright.setGuides", function()
                     calls.setValue = calls.setValue + 1
                     if opts.failComputes and calls.setValue <= opts.failComputes then return end
                     settings.UprightTransform_5 = matrixFor(settings)
+                    -- Lightroom resets these sliders when it computes a Guided correction.
+                    for _, key in ipairs({ "PerspectiveVertical", "PerspectiveHorizontal", "PerspectiveRotate" }) do
+                        if settings[key] ~= nil then settings[key] = 0 end
+                    end
+                    if opts.mangleOnCompute and calls.setValue == 1 then settings.UprightFourSegments_1 = "0,0,0,0" end
                 end,
             },
             LrTasks = { pcall = pcall, sleep = function() end },
@@ -128,10 +134,17 @@ describe("HandlerUpright.setGuides", function()
         assert.are.equal(0, settings.UprightFourSegmentsCount)
     end)
 
-    it("recomputes the previous Guided matrix when it restores a Guided photo", function()
+    local function guidedWithSliders()
         local previous = { PerspectiveUpright = 5, UprightFourSegmentsCount = 2,
-            UprightFourSegments_0 = "0.7,0.1,0.25,0.1", UprightFourSegments_1 = "0.7,0.9,0.25,0.9" }
+            UprightFourSegments_0 = "0.7,0.1,0.25,0.1", UprightFourSegments_1 = "0.7,0.9,0.25,0.9",
+            PerspectiveVertical = 3, PerspectiveHorizontal = 4, PerspectiveRotate = 1.5,
+            PerspectiveScale = 95, PerspectiveAspect = 10 }
         previous.UprightTransform_5 = matrixFor(previous)
+        return previous
+    end
+
+    it("leaves a Guided photo whose matrix was never replaced as it was, without choosing Guided again", function()
+        local previous = guidedWithSliders()
         local previousMatrix = previous.UprightTransform_5
         setup({ settings = previous, failComputes = 3 })
 
@@ -144,7 +157,44 @@ describe("HandlerUpright.setGuides", function()
             .. " the previous Upright settings were restored")
         assert.are.equal("0.7,0.1,0.25,0.1", settings.UprightFourSegments_0)
         assert.are.equal(previousMatrix, settings.UprightTransform_5)
-        assert.are.equal(4, calls.setValue)
+        assert.are.equal(3, calls.setValue)
+        assert.are.same({ 3, 4, 1.5, 95, 10 }, { settings.PerspectiveVertical, settings.PerspectiveHorizontal,
+            settings.PerspectiveRotate, settings.PerspectiveScale, settings.PerspectiveAspect })
+    end)
+
+    it("recomputes the previous Guided matrix and writes back the sliders the recompute resets", function()
+        local previous = guidedWithSliders()
+        local previousMatrix = previous.UprightTransform_5
+        setup({ settings = previous, mangleOnCompute = true })
+
+        local ok, err = pcall(Handler.setGuides, { photo_id = '7115', guides = GUIDES })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("Lightroom changed the guides while computing the correction", 1, true), tostring(err))
+        assert.truthy(tostring(err):find("the previous Upright settings were restored", 1, true), tostring(err))
+        assert.are.equal(2, calls.setValue)
+        assert.are.equal("0.7,0.9,0.25,0.9", settings.UprightFourSegments_1)
+        assert.are.equal(previousMatrix, settings.UprightTransform_5)
+        assert.are.same({ 3, 4, 1.5, 95, 10 }, { settings.PerspectiveVertical, settings.PerspectiveHorizontal,
+            settings.PerspectiveRotate, settings.PerspectiveScale, settings.PerspectiveAspect })
+        assert.are.same({ PerspectiveVertical = 3, PerspectiveHorizontal = 4, PerspectiveRotate = 1.5,
+            PerspectiveScale = 95, PerspectiveAspect = 10 }, calls.writes[#calls.writes])
+        assert.are.equal("Upright Guides (restore)", calls.histories[#calls.histories])
+    end)
+
+    it("says so when the Transform sliders do not come back after the recompute", function()
+        setup({ settings = guidedWithSliders(), mangleOnCompute = true, ignoreSliderWrites = true })
+        local ok, err = pcall(Handler.setGuides, { photo_id = '7115', guides = GUIDES })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find(
+            "restoring the previous Upright settings failed: PerspectiveVertical reads back as 0, not 3", 1, true), tostring(err))
+    end)
+
+    it("leaves the sliders Lightroom reset when the new correction is computed", function()
+        setup({ settings = guidedWithSliders() })
+        local result = Handler.setGuides({ photo_id = '7115', guides = GUIDES })
+        assert.is_true(result.success)
+        assert.are.equal(1, #calls.writes)
+        assert.are.equal(0, settings.PerspectiveVertical)
     end)
 
     it("never reports a stale matrix as the new correction", function()

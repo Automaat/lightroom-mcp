@@ -15,6 +15,14 @@ UprightGuides.MIN_LENGTH = 0.02
 UprightGuides.TOLERANCE = 1e-6
 UprightGuides.LINE_TOLERANCE = 1e-6
 UprightGuides.TRANSFORM_KEY = "UprightTransform_5"
+-- Manual Transform sliders. Choosing Guided through LrDevelopController sets
+-- Vertical, Horizontal and Rotate to 0 when Lightroom computes the correction
+-- (Aspect and Scale stay), as Lightroom's Upright buttons do (live on LrC
+-- 16.0.1), so a restore has to write them back.
+UprightGuides.SLIDER_KEYS = {
+    "PerspectiveVertical", "PerspectiveHorizontal", "PerspectiveRotate",
+    "PerspectiveScale", "PerspectiveAspect", "PerspectiveX", "PerspectiveY",
+}
 
 local function segmentKey(index)
     return "UprightFourSegments_" .. tostring(index - 1)
@@ -130,8 +138,8 @@ function UprightGuides.settingsFor(stored)
     return settings
 end
 
--- The Upright keys a write can change, copied from saved settings so a failed
--- write can put them back.
+-- The Upright keys and Transform sliders a write can change, copied from saved
+-- settings so a failed write can put them back.
 function UprightGuides.snapshot(settings)
     settings = settings or {}
     local saved = {
@@ -141,7 +149,32 @@ function UprightGuides.snapshot(settings)
     for i = 1, UprightGuides.MAX_GUIDES do
         saved[segmentKey(i)] = settings[segmentKey(i)]
     end
+    for _, key in ipairs(UprightGuides.SLIDER_KEYS) do
+        saved[key] = settings[key]
+    end
     return saved
+end
+
+-- The Transform sliders of a snapshot, as settings to write.
+function UprightGuides.sliders(saved)
+    local sliders = {}
+    for _, key in ipairs(UprightGuides.SLIDER_KEYS) do
+        sliders[key] = saved[key]
+    end
+    return sliders
+end
+
+-- Transform sliders that read back other than in the snapshot.
+function UprightGuides.sliderProblems(saved, settings)
+    settings = settings or {}
+    local problems = {}
+    for _, key in ipairs(UprightGuides.SLIDER_KEYS) do
+        local want, got = saved[key], settings[key]
+        if type(want) == "number" and not (type(got) == "number" and close(got, want, UprightGuides.TOLERANCE)) then
+            problems[#problems + 1] = string.format("%s reads back as %s, not %s", key, tostring(got), tostring(want))
+        end
+    end
+    return problems
 end
 
 -- Differences between the guides written and the settings read back.
@@ -236,6 +269,9 @@ function UprightGuides.restoreProblems(saved, settings)
         if not same then
             problems[#problems + 1] = string.format("guide %d reads back as %s", i, tostring(got))
         end
+    end
+    for _, problem in ipairs(UprightGuides.sliderProblems(saved, settings)) do
+        problems[#problems + 1] = problem
     end
     return problems
 end
