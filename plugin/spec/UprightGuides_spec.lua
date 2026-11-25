@@ -52,19 +52,35 @@ describe("UprightGuides", function()
         it("refuses points outside the frame or without numbers", function()
             assert.has_error(function()
                 UprightGuides.parseGuides({ guide(0.1, 0.2, 0.1, 1.2), guide(0.2, 0.1, 0.8, 0.1) })
-            end, "guides[1].end must lie within 0 to 1")
+            end, "guides.0.end must lie within 0 to 1")
             assert.has_error(function()
                 UprightGuides.parseGuides({ guide(0.1, 0.2, 0.1, 0.8), { start = { x = 0.2 }, ["end"] = { x = 0.8, y = 0.1 } } })
-            end, "guides[2].start needs numeric x and y")
+            end, "guides.1.start needs numeric x and y")
             assert.has_error(function()
                 UprightGuides.parseGuides({ guide(0.1, 0.2, 0.1, 0.8), { start = { x = 0.2, y = 0.1 } } })
-            end, "guides[2].end must be an object with x and y")
+            end, "guides.1.end must be an object with x and y")
+        end)
+
+        it("refuses an array with a hole", function()
+            local holey = { [1] = guide(0.1, 0.2, 0.1, 0.8), [3] = guide(0.9, 0.2, 0.9, 0.8), [4] = guide(0.2, 0.1, 0.8, 0.1) }
+            assert.has_error(function() UprightGuides.parseGuides(holey) end, "guides must be an array of 2 to 4 guides")
+        end)
+
+        it("refuses unknown properties on a guide or point", function()
+            local extra = guide(0.1, 0.2, 0.1, 0.8); extra.mode = "vertical"
+            assert.has_error(function()
+                UprightGuides.parseGuides({ extra, guide(0.2, 0.1, 0.8, 0.1) })
+            end, "guides.0 has unknown property mode")
+            local point = guide(0.1, 0.2, 0.1, 0.8); point.start.z = 1
+            assert.has_error(function()
+                UprightGuides.parseGuides({ point, guide(0.2, 0.1, 0.8, 0.1) })
+            end, "guides.0.start has unknown property z")
         end)
 
         it("refuses a guide too short to give a direction", function()
             assert.has_error(function()
                 UprightGuides.parseGuides({ guide(0.5, 0.5, 0.51, 0.505), guide(0.2, 0.1, 0.8, 0.1) })
-            end, "guides[1] is shorter than 0.02 of the frame; draw it along a longer stretch of the edge")
+            end, "guides.0 is shorter than 0.02 of the frame; draw it along a longer stretch of the edge")
         end)
     end)
 
@@ -106,6 +122,8 @@ describe("UprightGuides", function()
 
         it("returns nil for text that is not four numbers", function()
             assert.is_nil(UprightGuides.parse("0.1,0.2,0.3"))
+            assert.is_nil(UprightGuides.parse("0.1,0.2,0.3,nan"))
+            assert.is_nil(UprightGuides.parse("0.1,0.2,inf,0.4"))
             assert.is_nil(UprightGuides.parse("0.1,0.2,x,0.4"))
             assert.is_nil(UprightGuides.parse(nil))
         end)
@@ -139,6 +157,37 @@ describe("UprightGuides", function()
             }, UprightGuides.problems(stored, settings))
             settings.UprightFourSegments_1 = nil
             assert.are.equal("guide 2 is missing", UprightGuides.problems(stored, settings)[3])
+        end)
+
+        it("treats guides on the same lines, in any order or direction, as the same", function()
+            local current = UprightGuides.settingsFor(stored)
+            current.UprightFourSegments_0, current.UprightFourSegments_1 =
+                "0.860000000,0.780000000,0.850000000,0.290000000", "0.250000000,0.120000000,0.700000000,0.130000000"
+            assert.is_true(UprightGuides.sameLines(stored, current))
+            -- a point further along the same line is still on it
+            local along = { { 0.475, 0.125, 0.25, 0.12 }, stored[2] }
+            assert.is_true(UprightGuides.sameLines(along, UprightGuides.settingsFor(stored)))
+        end)
+
+        it("treats moved, missing or extra guides as different", function()
+            local current = UprightGuides.settingsFor(stored)
+            assert.is_false(UprightGuides.sameLines({ { 0.7, 0.14, 0.25, 0.12 }, stored[2] }, current))
+            assert.is_false(UprightGuides.sameLines({ stored[1] }, current))
+            assert.is_false(UprightGuides.sameLines(stored, { UprightFourSegmentsCount = 0 }))
+            assert.is_false(UprightGuides.sameLines(stored, { UprightFourSegmentsCount = 2, UprightFourSegments_0 = "x" }))
+        end)
+
+        it("checks a restore by number and ignores slots above the count", function()
+            local saved = UprightGuides.snapshot(AUTHORED)
+            local back = {}
+            for k, v in pairs(AUTHORED) do back[k] = v end
+            back.UprightFourSegments_0 = "0.9122744920,0.163484967,0.905106361,0.877666512"
+            back.UprightFourSegments_5 = "stale"
+            assert.are.same({}, UprightGuides.restoreProblems(saved, back))
+            back.PerspectiveUpright = 5
+            back.UprightFourSegments_3 = "0.1,0.1,0.1,0.1"
+            assert.are.same({ "Upright mode reads back as 5, not 0", "guide 4 reads back as 0.1,0.1,0.1,0.1" },
+                UprightGuides.restoreProblems(saved, back))
         end)
 
         it("snapshots the Upright keys a write can change", function()

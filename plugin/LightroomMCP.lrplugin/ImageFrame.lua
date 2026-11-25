@@ -40,7 +40,7 @@ function ImageFrame.fromOrientation(orientation)
     local toStored = type(orientation) == "string" and STORED_FROM_DISPLAYED[orientation] or nil
     if not toStored then
         error(string.format("The photo reports the orientation %s, which this tool cannot map to the stored"
-            .. " mask frame, so nothing was written", tostring(orientation)), 0)
+            .. " image frame, so nothing was written", tostring(orientation)), 0)
     end
     local moves = axisMovesOf(toStored)
     local swapsAxes = moves.acrossX == 0

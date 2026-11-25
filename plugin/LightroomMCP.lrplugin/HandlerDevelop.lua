@@ -1208,6 +1208,9 @@ end
 local CROP_READ_BACK_SECONDS = 2
 local CROP_TOLERANCE = 1e-6
 local MIN_CROP_SIZE = 0.01
+local SIZE_SLACK = 1e-9 -- 0.11 - 0.1 is a hair under 0.01 in binary
+local CROP_KEYS = { "CropLeft", "CropTop", "CropRight", "CropBottom", "CropAngle" }
+local cropsInFlight = {}
 
 local function requireUnitInterval(value, name)
     if type(value) ~= "number" or value ~= value or value < 0 or value > 1 then
@@ -1216,9 +1219,11 @@ local function requireUnitInterval(value, name)
     return value
 end
 
-local function readCrop(catalog, photo)
-    local settings
-    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+local function tooSmall(left, top, right, bottom)
+    return right - left < MIN_CROP_SIZE - SIZE_SLACK or bottom - top < MIN_CROP_SIZE - SIZE_SLACK
+end
+
+local function cropOf(settings)
     settings = settings or {}
     return {
         CropLeft = settings.CropLeft or 0,
@@ -1229,24 +1234,108 @@ local function readCrop(catalog, photo)
     }
 end
 
+local function readCrop(catalog, photo)
+    local settings
+    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    return cropOf(settings)
+end
+
 local function cropMatches(expected, actual)
-    for key, value in pairs(expected) do
-        if math.abs(actual[key] - value) > CROP_TOLERANCE then return false end
+    for _, key in ipairs(CROP_KEYS) do
+        -- written as "not <=" so a NaN read-back never counts as a match
+        if not (math.abs(actual[key] - expected[key]) <= CROP_TOLERANCE) then return false end
     end
     return true
 end
 
-local function displayedPixels(catalog, photo, width, height)
-    local dimensions
-    catalog:withReadAccessDo(function() dimensions = photo:getRawMetadata("dimensions") end)
+local function pixelsOf(dimensions, width, height)
     if type(dimensions) ~= "table" then return nil end
     local w, h = tonumber(dimensions.width), tonumber(dimensions.height)
-    if w == nil or h == nil then return nil end
+    if w == nil or h == nil or w ~= w or h ~= h or w <= 0 or h <= 0 then return nil end
     return { width = math.floor(width * w + 0.5), height = math.floor(height * h + 0.5) }
 end
 
+-- Writes a snapshot back and polls until it reads back, never throwing.
+local function restoreCrop(catalog, photo, before)
+    local wrote = LrTasks.pcall(function()
+        catalog:withWriteAccessDo("Set Crop (restore)", function()
+            photo:applyDevelopSettings(before, "Set Crop (restore)")
+        end)
+    end)
+    return wrote and DevelopSession.waitFor(function()
+        local ok, crop = LrTasks.pcall(readCrop, catalog, photo)
+        return ok and cropMatches(before, crop)
+    end, CROP_READ_BACK_SECONDS)
+end
+
+local function setCropOn(catalog, photo, photoId, left, top, right, bottom, relativeTo)
+    local orientation, settings, dimensions
+    catalog:withReadAccessDo(function()
+        orientation = photo:getRawMetadata("orientation")
+        settings = photo:getDevelopSettings()
+        dimensions = photo:getRawMetadata("dimensions")
+    end)
+    local frame = ImageFrame.fromOrientation(orientation)
+    local before = cropOf(settings)
+
+    if relativeTo == "current" then
+        if not (math.abs(before.CropAngle) <= CROP_TOLERANCE) then
+            error(string.format("relative_to current needs a straight crop, but this crop is turned %s degrees;"
+                .. " give full-frame edges instead", tostring(before.CropAngle)), 0)
+        end
+        local cl, ct, cr, cb = frame.rectToDisplayed(before.CropLeft, before.CropTop, before.CropRight, before.CropBottom)
+        left, right = cl + left * (cr - cl), cl + right * (cr - cl)
+        top, bottom = ct + top * (cb - ct), ct + bottom * (cb - ct)
+        if tooSmall(left, top, right, bottom) then
+            error(string.format("Inside the current crop these edges make a crop smaller than %.2f of the full frame",
+                MIN_CROP_SIZE), 0)
+        end
+    end
+
+    local storedLeft, storedTop, storedRight, storedBottom = frame.rectToStored(left, top, right, bottom)
+    local crop = {
+        CropLeft = storedLeft, CropTop = storedTop, CropRight = storedRight, CropBottom = storedBottom, CropAngle = 0,
+    }
+    catalog:withWriteAccessDo("Set Crop", function()
+        photo:applyDevelopSettings(crop, "Set Crop")
+    end)
+
+    local after, kept
+    local readOk, readError = LrTasks.pcall(function()
+        kept = DevelopSession.waitFor(function()
+            after = readCrop(catalog, photo)
+            return cropMatches(crop, after)
+        end, CROP_READ_BACK_SECONDS)
+    end)
+    if not (readOk and kept) then
+        local detail
+        if not readOk then
+            detail = "reading the crop back failed: " .. tostring(readError)
+        else
+            local l, t, r, b = frame.rectToDisplayed(after.CropLeft, after.CropTop, after.CropRight, after.CropBottom)
+            detail = string.format("read back as displayed left %.5f, top %.5f, right %.5f, bottom %.5f, angle %s",
+                l, t, r, b, tostring(after.CropAngle))
+        end
+        local restored = restoreCrop(catalog, photo, before)
+        Log.warn(string.format("set_crop on photo %s: %s; restore %s", photoId, detail,
+            restored and "succeeded" or "failed"))
+        error(string.format("Lightroom did not keep the crop (%s); %s", detail,
+            restored and "the previous crop was restored" or "restoring the previous crop failed"), 0)
+    end
+
+    Log.info(string.format("Set crop on photo %s (stored %.5f %.5f %.5f %.5f)", photoId,
+        storedLeft, storedTop, storedRight, storedBottom))
+    return {
+        success = true,
+        photo_id = photoId,
+        pixels = pixelsOf(dimensions, right - left, bottom - top),
+    }
+end
+
 -- Set a straight crop from edges given as the photo is displayed, as fractions
--- of the full frame or, with relative_to "current", of the current crop.
+-- of the full frame or, with relative_to "current", of the current crop. One
+-- set_crop per photo at a time: an overlapping call would read the other's
+-- crop back as a mismatch and restore over it.
 function DevelopHandler.setCrop(args)
     args = args or {}
     local photoId = requirePhotoId(args.photo_id, "photo_id")
@@ -1254,7 +1343,7 @@ function DevelopHandler.setCrop(args)
     local top = requireUnitInterval(args.top, "top")
     local right = requireUnitInterval(args.right, "right")
     local bottom = requireUnitInterval(args.bottom, "bottom")
-    if right - left < MIN_CROP_SIZE or bottom - top < MIN_CROP_SIZE then
+    if tooSmall(left, top, right, bottom) then
         error(string.format("left must be at least %.2f below right, and top at least %.2f below bottom",
             MIN_CROP_SIZE, MIN_CROP_SIZE), 0)
     end
@@ -1266,50 +1355,16 @@ function DevelopHandler.setCrop(args)
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.resolveOne(catalog, photoId)
     if not photo then error("Photo not found: " .. photoId, 0) end
-    local frame = ImageFrame.forPhoto(catalog, photo)
-    local before = readCrop(catalog, photo)
 
-    if relativeTo == "current" then
-        if math.abs(before.CropAngle) > CROP_TOLERANCE then
-            error(string.format("relative_to current needs a straight crop, but this crop is turned %s degrees;"
-                .. " give full-frame edges instead", tostring(before.CropAngle)), 0)
-        end
-        local cl, ct, cr, cb = frame.rectToDisplayed(before.CropLeft, before.CropTop, before.CropRight, before.CropBottom)
-        left, right = cl + left * (cr - cl), cl + right * (cr - cl)
-        top, bottom = ct + top * (cb - ct), ct + bottom * (cb - ct)
+    local key = tostring(photo.localIdentifier)
+    if cropsInFlight[key] then
+        error("Another set_crop is still changing this photo; call again when it finishes", 0)
     end
-
-    local storedLeft, storedTop, storedRight, storedBottom = frame.rectToStored(left, top, right, bottom)
-    local crop = {
-        CropLeft = storedLeft, CropTop = storedTop, CropRight = storedRight, CropBottom = storedBottom, CropAngle = 0,
-    }
-    catalog:withWriteAccessDo("Set Crop", function()
-        photo:applyDevelopSettings(crop, "Set Crop")
-    end)
-
-    local after
-    local kept = DevelopSession.waitFor(function()
-        after = readCrop(catalog, photo)
-        return cropMatches(crop, after)
-    end, CROP_READ_BACK_SECONDS)
-    if not kept then
-        local restored = LrTasks.pcall(function()
-            catalog:withWriteAccessDo("Set Crop (restore)", function()
-                photo:applyDevelopSettings(before, "Set Crop (restore)")
-            end)
-        end) and cropMatches(before, readCrop(catalog, photo))
-        error(string.format("Lightroom did not keep the crop (read back left %s, top %s, right %s, bottom %s); %s",
-            tostring(after.CropLeft), tostring(after.CropTop), tostring(after.CropRight), tostring(after.CropBottom),
-            restored and "the previous crop was restored" or "restoring the previous crop failed"), 0)
-    end
-
-    Log.info(string.format("Set crop on photo %s (stored %.5f %.5f %.5f %.5f)", photoId,
-        storedLeft, storedTop, storedRight, storedBottom))
-    return {
-        success = true,
-        photo_id = photoId,
-        pixels = displayedPixels(catalog, photo, right - left, bottom - top),
-    }
+    cropsInFlight[key] = true
+    local ok, result = LrTasks.pcall(setCropOn, catalog, photo, photoId, left, top, right, bottom, relativeTo)
+    cropsInFlight[key] = nil
+    if not ok then error(result, 0) end
+    return result
 end
 
 -- AI Denoise is not a plain develop key: Lightroom stores it as an "Enhance"

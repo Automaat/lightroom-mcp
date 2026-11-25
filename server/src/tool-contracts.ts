@@ -92,6 +92,13 @@ const MASK_ADJUSTMENT_PROPERTIES = {
   noise: maskAdjustmentSlider("Noise reduction"),
 };
 
+const compactPoint = {
+  type: "object",
+  additionalProperties: false,
+  properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 } },
+  required: ["x", "y"],
+};
+
 const normalizedPoint = (description: string) => ({
   type: "object",
   additionalProperties: false,
@@ -549,7 +556,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; read-only upright has Upright* keys; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; read-only upright (guides, guidedCorrection) and crop use the unrotated frame; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1601,16 +1608,16 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerDevelop.setCrop",
     description:
-      "Straight crop from edges as displayed: 0-1 fractions of the full frame after Transform, or of the current crop (what get_photo_preview shows) with relative_to current. Converts for rotated photos; sets CropAngle 0. Restores the previous crop on mismatch. Returns the crop in pixels.",
+      "Straight crop from edges as displayed, at least 0.01 apart: 0-1 of the full frame after Transform, or of the current crop (as get_photo_preview shows it) with relative_to current. Handles rotated photos; sets CropAngle 0; restores the old crop on mismatch. Returns pixels.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
-        left: { type: "number", minimum: 0, maximum: 1, description: "Left edge, 0 = left of the frame" },
-        top: { type: "number", minimum: 0, maximum: 1, description: "Top edge, 0 = top of the frame" },
-        right: { type: "number", minimum: 0, maximum: 1, description: "Right edge, 1 = right of the frame" },
-        bottom: { type: "number", minimum: 0, maximum: 1, description: "Bottom edge, 1 = bottom of the frame" },
+        left: { type: "number", minimum: 0, maximum: 1 },
+        top: { type: "number", minimum: 0, maximum: 1 },
+        right: { type: "number", minimum: 0, maximum: 1 },
+        bottom: { type: "number", minimum: 0, maximum: 1 },
         relative_to: {
           type: "string",
           enum: ["full", "current"],
@@ -1627,7 +1634,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerUpright.setGuides",
     description:
-      "Guided Upright from 2-4 guides along lines that should be vertical or horizontal; guide both edges of a direction to fix its convergence. Points are 0-1 on the photo as displayed with Upright off and no crop. Replaces guides; sliders stay. Briefly opens Develop. Restores prior Upright on mismatch. Returns guide_count, transform_computed.",
+      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points: 0-1, origin top-left, on the photo as displayed with no Transform (Upright off, sliders 0) or crop. Replaces guides; briefly opens Develop; on failure restores the prior Upright.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1640,10 +1647,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           items: {
             type: "object",
             additionalProperties: false,
-            properties: {
-              start: normalizedPoint("One end of the guide"),
-              end: normalizedPoint("Other end of the guide"),
-            },
+            properties: { start: compactPoint, end: compactPoint },
             required: ["start", "end"],
           },
           description: "Guides as line segments; at least 0.02 of the frame long",

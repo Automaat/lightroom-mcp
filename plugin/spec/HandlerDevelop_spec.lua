@@ -2101,12 +2101,14 @@ describe("HandlerDevelop.setCrop", function()
         photo = helper.fakePhoto({ id = "7008", path = "/175.arw", orientation = opts.orientation or "DA",
             dimensions = { width = 6336, height = 9504 } })
         photo.getDevelopSettings = function()
+            if opts.failReadsAfterWrite and #writes == 1 then error("catalog busy") end
             local copy = {}
             for k, v in pairs(settings) do copy[k] = v end
             return copy
         end
         photo.applyDevelopSettings = function(_, written, historyName)
             writes[#writes + 1] = { settings = written, history = historyName }
+            if opts.onWrite then opts.onWrite() end
             if opts.ignoreFirst and #writes == 1 then return end
             for k, v in pairs(written) do settings[k] = v end
         end
@@ -2180,12 +2182,52 @@ describe("HandlerDevelop.setCrop", function()
         assert.are.equal(0, #writes)
     end)
 
+    it("accepts a crop exactly the minimum size", function()
+        local Handler = cropSetup({ orientation = "AB" })
+        assert.is_true(Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.2, right = 0.11, bottom = 0.21 }).success)
+    end)
+
+    it("refuses relative edges that leave less than the minimum of the full frame", function()
+        local Handler = cropSetup({ orientation = "AB", settings = { CropLeft = 0.5, CropTop = 0.5, CropRight = 0.55,
+            CropBottom = 0.55, CropAngle = 0 } })
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.1, right = 0.2, bottom = 0.2, relative_to = "current" })
+        end, "Inside the current crop these edges make a crop smaller than 0.01 of the full frame")
+        assert.are.equal(0, #writes)
+    end)
+
+    it("restores the previous crop when reading it back throws", function()
+        local Handler = cropSetup({ failReadsAfterWrite = true })
+        local ok, err = pcall(Handler.setCrop, { photo_id = "7008", left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("reading the crop back failed", 1, true), tostring(err))
+        assert.truthy(tostring(err):find("the previous crop was restored", 1, true), tostring(err))
+        assert.are.equal("Set Crop (restore)", writes[2].history)
+        assert.are.equal(0, settings.CropLeft)
+    end)
+
+    it("refuses a second set_crop on the same photo while one is in flight", function()
+        local Handler
+        local nested
+        Handler = cropSetup({ onWrite = function()
+            if nested == nil then
+                nested = { pcall(Handler.setCrop, { photo_id = "7008", left = 0, top = 0, right = 0.5, bottom = 0.5 }) }
+            end
+        end })
+        assert.is_true(Handler.setCrop({ photo_id = "7008", left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 }).success)
+        assert.is_false(nested[1])
+        assert.are.equal("Another set_crop is still changing this photo; call again when it finishes", nested[2])
+        -- the guard is released afterwards
+        assert.is_true(Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.1, right = 0.9, bottom = 0.9 }).success)
+    end)
+
     it("restores the previous crop when Lightroom does not keep the new one", function()
         local before = { CropLeft = 0.0793, CropTop = 0.1111, CropRight = 0.8709, CropBottom = 0.9696, CropAngle = 0 }
         local Handler = cropSetup({ settings = before, ignoreFirst = true })
         assert.has_error(function()
             Handler.setCrop({ photo_id = "7008", left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 })
-        end, "Lightroom did not keep the crop (read back left 0.0793, top 0.1111, right 0.8709, bottom 0.9696); the previous crop was restored")
+        end, "Lightroom did not keep the crop (read back as displayed left 0.11110, top 0.12910, right 0.96960,"
+            .. " bottom 0.92070, angle 0); the previous crop was restored")
         assert.are.equal(2, #writes)
         assert.are.equal("Set Crop (restore)", writes[2].history)
     end)

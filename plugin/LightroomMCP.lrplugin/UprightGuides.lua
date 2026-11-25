@@ -13,6 +13,7 @@ UprightGuides.MIN_GUIDES = 2
 UprightGuides.MAX_GUIDES = 4
 UprightGuides.MIN_LENGTH = 0.02
 UprightGuides.TOLERANCE = 1e-6
+UprightGuides.LINE_TOLERANCE = 1e-6
 UprightGuides.TRANSFORM_KEY = "UprightTransform_5"
 
 local function segmentKey(index)
@@ -20,10 +21,27 @@ local function segmentKey(index)
 end
 UprightGuides.segmentKey = segmentKey
 
+local function close(a, b, tolerance)
+    -- false for NaN, unlike a > tolerance test
+    return math.abs(a - b) <= tolerance
+end
+
+local function requireOnlyKeys(value, allowed, name)
+    for key in pairs(value) do
+        if not allowed[key] then
+            error(string.format("%s has unknown property %s", name, tostring(key)), 0)
+        end
+    end
+end
+
+local POINT_KEYS = { x = true, y = true }
+local GUIDE_KEYS = { start = true, ["end"] = true }
+
 local function requirePoint(point, name)
     if type(point) ~= "table" then
         error(name .. " must be an object with x and y", 0)
     end
+    requireOnlyKeys(point, POINT_KEYS, name)
     local x, y = point.x, point.y
     if type(x) ~= "number" or type(y) ~= "number" or x ~= x or y ~= y then
         error(name .. " needs numeric x and y", 0)
@@ -40,11 +58,16 @@ function UprightGuides.parseGuides(guides)
     if type(guides) ~= "table" then
         error("guides must be an array of 2 to 4 guides", 0)
     end
-    local count = #guides
+    local count, seen = #guides, 0
     for key in pairs(guides) do
         if type(key) ~= "number" or key < 1 or key > count or key % 1 ~= 0 then
             error("guides must be an array of 2 to 4 guides", 0)
         end
+        seen = seen + 1
+    end
+    -- # of an array with holes can count past them; ipairs below would not
+    if seen ~= count then
+        error("guides must be an array of 2 to 4 guides", 0)
     end
     if count < UprightGuides.MIN_GUIDES or count > UprightGuides.MAX_GUIDES then
         error(string.format("guides must hold %d to %d guides, got %d",
@@ -52,10 +75,11 @@ function UprightGuides.parseGuides(guides)
     end
     local parsed = {}
     for i, guide in ipairs(guides) do
-        local name = "guides[" .. tostring(i) .. "]"
+        local name = "guides." .. tostring(i - 1)
         if type(guide) ~= "table" then
             error(name .. " must be an object with start and end", 0)
         end
+        requireOnlyKeys(guide, GUIDE_KEYS, name)
         local x1, y1 = requirePoint(guide.start, name .. ".start")
         local x2, y2 = requirePoint(guide["end"], name .. ".end")
         local dx, dy = x2 - x1, y2 - y1
@@ -87,7 +111,7 @@ function UprightGuides.parse(text)
     local values = {}
     for part in text:gmatch("[^,]+") do
         local value = tonumber(part)
-        if value == nil then return nil end
+        if value == nil or value ~= value or value == math.huge or value == -math.huge then return nil end
         values[#values + 1] = value
     end
     if #values ~= 4 then return nil end
@@ -138,12 +162,79 @@ function UprightGuides.problems(stored, settings)
             problems[#problems + 1] = string.format("guide %d is missing", i)
         else
             for k = 1, 4 do
-                if math.abs(actual[k] - segment[k]) > UprightGuides.TOLERANCE then
+                if not close(actual[k], segment[k], UprightGuides.TOLERANCE) then
                     problems[#problems + 1] = string.format("guide %d reads back as %s", i,
                         tostring(settings[segmentKey(i)]))
                     break
                 end
             end
+        end
+    end
+    return problems
+end
+
+-- The guides in use in saved settings, parsed; nil when one does not parse.
+function UprightGuides.guidesIn(settings)
+    local count = settings and settings.UprightFourSegmentsCount
+    if type(count) ~= "number" or count < 1 then return {} end
+    local guides = {}
+    for i = 1, math.min(count, UprightGuides.MAX_GUIDES) do
+        local segment = UprightGuides.parse(settings[segmentKey(i)])
+        if segment == nil then return nil end
+        guides[i] = segment
+    end
+    return guides
+end
+
+local function onLineOf(segment, x, y)
+    local dx, dy = segment[3] - segment[1], segment[4] - segment[2]
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length == 0 then return false end
+    return math.abs((x - segment[1]) * dy - (y - segment[2]) * dx) / length <= UprightGuides.LINE_TOLERANCE
+end
+
+-- True when every new guide lies on the line of a different current guide, in
+-- any order or direction: Lightroom then computes the same Guided matrix.
+function UprightGuides.sameLines(stored, settings)
+    local current = UprightGuides.guidesIn(settings)
+    if current == nil or #current ~= #stored then return false end
+    local used = {}
+    for _, segment in ipairs(stored) do
+        local matched = false
+        for j, line in ipairs(current) do
+            if not used[j] and onLineOf(line, segment[1], segment[2]) and onLineOf(line, segment[3], segment[4]) then
+                used[j], matched = true, true
+                break
+            end
+        end
+        if not matched then return false end
+    end
+    return true
+end
+
+-- Differences between a snapshot and the settings read back after restoring
+-- it; guides compare as numbers, slots above the count are ignored.
+function UprightGuides.restoreProblems(saved, settings)
+    settings = settings or {}
+    local problems = {}
+    if (settings.PerspectiveUpright or 0) ~= saved.PerspectiveUpright then
+        problems[#problems + 1] = string.format("Upright mode reads back as %s, not %s",
+            tostring(settings.PerspectiveUpright), tostring(saved.PerspectiveUpright))
+    end
+    if (settings.UprightFourSegmentsCount or 0) ~= saved.UprightFourSegmentsCount then
+        problems[#problems + 1] = string.format("guide count reads back as %s, not %s",
+            tostring(settings.UprightFourSegmentsCount), tostring(saved.UprightFourSegmentsCount))
+    end
+    for i = 1, math.min(saved.UprightFourSegmentsCount, UprightGuides.MAX_GUIDES) do
+        local want, got = saved[segmentKey(i)], settings[segmentKey(i)]
+        local a, b = UprightGuides.parse(want), UprightGuides.parse(got)
+        local same = want == got
+        if a and b then
+            same = true
+            for k = 1, 4 do same = same and close(a[k], b[k], UprightGuides.TOLERANCE) end
+        end
+        if not same then
+            problems[#problems + 1] = string.format("guide %d reads back as %s", i, tostring(got))
         end
     end
     return problems
