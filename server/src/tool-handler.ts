@@ -1,3 +1,6 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import path from "node:path";
 import type { CallOptions, Dispatcher } from "./dispatcher.js";
 import { validateToolArgs } from "./validate-args.js";
 import { findDuplicateGroups, type DuplicateGroupArgs } from "./duplicate-groups.js";
@@ -68,6 +71,46 @@ function successContent(result: unknown): ToolResponse["content"] {
   return [{ type: "text", text: JSON.stringify(result) }];
 }
 
+export const SAVE_TO_TOOLS: ReadonlySet<string> = new Set(["get_photo_preview", "get_photo_previews"]);
+
+function saveFolder(raw: string): string {
+  const expanded = raw === "~" || raw.startsWith("~/") ? path.join(homedir(), raw.slice(1)) : raw;
+  if (!path.isAbsolute(expanded)) throw new Error("save_to must be an absolute folder path (~/ is expanded)");
+  return expanded;
+}
+
+// Never overwrites: a second preview of the same photo and size gets -2, -3...
+async function writeNewFile(folder: string, base: string, data: Buffer): Promise<string> {
+  for (let n = 1; n < 1000; n++) {
+    const file = path.join(folder, n === 1 ? `${base}.jpg` : `${base}-${n}.jpg`);
+    try {
+      await writeFile(file, data, { flag: "wx" });
+      return file;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    }
+  }
+  throw new Error(`save_to already holds 999 files named ${base}`);
+}
+
+// Writes each preview image into the folder and puts its path in place of the
+// image, so previews measured offline cost no image tokens.
+async function savePreviews(result: unknown, folder: string): Promise<unknown> {
+  await mkdir(folder, { recursive: true });
+  const save = async (preview: unknown): Promise<unknown> => {
+    if (!isImagePayload(preview)) return preview;
+    const { image, ...rest } = preview;
+    const base = `${String(rest.photo_id)}-${String(rest.width)}x${String(rest.height)}`;
+    return { ...rest, path: await writeNewFile(folder, base, Buffer.from(image.data, "base64")) };
+  };
+  if (typeof result === "object" && result !== null && "previews" in result && Array.isArray(result.previews)) {
+    const previews: unknown[] = [];
+    for (const preview of result.previews) previews.push(await save(preview));
+    return { ...result, previews };
+  }
+  return save(result);
+}
+
 export const NOT_CONNECTED_MESSAGE =
   "Lightroom plugin not connected. Bring Lightroom to the front or click 'Start Server' in Plug-in Manager.";
 
@@ -97,6 +140,12 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
     }
 
     try {
+      let saveTo: string | undefined;
+      if (SAVE_TO_TOOLS.has(name) && typeof args === "object" && args !== null && "save_to" in args) {
+        const { save_to: folder, ...rest } = args as Record<string, unknown>;
+        saveTo = saveFolder(String(folder));
+        args = rest;
+      }
       if (name === "get_photo_preview") {
         const previewArgs = args as { photo_id: number | string; size?: number | keyof typeof PREVIEW_SIZES };
         if (typeof previewArgs.size === "string") {
@@ -122,7 +171,8 @@ export function createCallToolHandler(deps: ToolHandlerDeps) {
         };
       }
       if (region && options?.signal?.aborted) throw new Error("Request cancelled");
-      return { content: successContent(region ? cropPreview(resp.result, region) : resp.result) };
+      const rendered = region ? cropPreview(resp.result, region) : resp.result;
+      return { content: successContent(saveTo ? await savePreviews(rendered, saveTo) : rendered) };
     } catch (e) {
       return {
         content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }],

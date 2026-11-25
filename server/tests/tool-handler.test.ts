@@ -1,5 +1,7 @@
-import { describe, it, expect } from '@jest/globals';
-import { readFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, it, expect } from '@jest/globals';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { createCallToolHandler } from '../src/tool-handler.js';
 
 import type { PluginResponse } from '../src/dispatcher.js';
@@ -397,5 +399,56 @@ describe('createCallToolHandler', () => {
     const result = await handler('x', {});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toBe('raw string');
+  });
+});
+
+describe('preview save_to', () => {
+  const preview = (id: number, text = 'JPEG') => ({
+    photo_id: id, width: 855, height: 570, bytes: text.length,
+    image: { mime_type: 'image/jpeg', data: Buffer.from(text).toString('base64') },
+  });
+  let folder = '';
+  beforeEach(() => { folder = mkdtempSync(path.join(tmpdir(), 'lrmcp-save-')); });
+  afterEach(() => rmSync(folder, { recursive: true, force: true }));
+
+  it('writes the preview into a new folder, never overwriting, and returns its path instead of the image', async () => {
+    const target = path.join(folder, 'nested');
+    const sent: unknown[] = [];
+    const handler = makeHandler({ call: async (_action, params) => {
+      sent.push(params);
+      return { id: '1', result: preview(7) };
+    } });
+    const first = await handler('get_photo_preview', { photo_id: 7, save_to: target });
+    const second = await handler('get_photo_preview', { photo_id: 7, save_to: target });
+    expect(sent).toEqual([{ photo_id: 7 }, { photo_id: 7 }]);
+    expect(first.content).toHaveLength(1);
+    expect(JSON.parse(first.content[0].text)).toEqual({
+      photo_id: 7, width: 855, height: 570, bytes: 4, path: path.join(target, '7-855x570.jpg'),
+    });
+    expect(JSON.parse(second.content[0].text).path).toBe(path.join(target, '7-855x570-2.jpg'));
+    expect(readFileSync(path.join(target, '7-855x570.jpg'), 'utf8')).toBe('JPEG');
+  });
+
+  it('saves every image of a batch and keeps per-photo errors', async () => {
+    const handler = makeHandler({ call: async () => ({ id: '1', result: {
+      previews: [preview(1, 'A'), { requested_id: 2, error: 'Photo not found: 2' }, preview(3, 'C')],
+      complete: true, remaining_ids: [], bytes: 2,
+    } }) });
+    const result = await handler('get_photo_previews', { photo_ids: [1, 2, 3], save_to: folder });
+    expect(result.content).toHaveLength(1);
+    const body = JSON.parse(result.content[0].text) as { previews: Array<Record<string, unknown>> };
+    expect(body.previews.map(p => p.path ?? p.error)).toEqual([
+      path.join(folder, '1-855x570.jpg'), 'Photo not found: 2', path.join(folder, '3-855x570.jpg'),
+    ]);
+    expect(readFileSync(path.join(folder, '3-855x570.jpg'), 'utf8')).toBe('C');
+  });
+
+  it('refuses a relative folder without calling Lightroom', async () => {
+    let calls = 0;
+    const handler = makeHandler({ call: async () => { calls++; return { id: '1', result: preview(7) }; } });
+    const result = await handler('get_photo_preview', { photo_id: 7, save_to: 'previews' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('absolute folder');
+    expect(calls).toBe(0);
   });
 });

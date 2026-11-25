@@ -29,6 +29,63 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_false(catalog:getQueriedInsideReadAccess())
     end)
 
+    it("reads photo fields through batched calls, not one getter per field", function()
+        local photos = {}
+        for i = 1, 3 do
+            photos[i] = helper.fakePhoto({ id = i, title = "T" .. i, rating = i, cameraModel = "ILCE-7RM5",
+                altTextAccessibility = "Alt " .. i })
+        end
+        local catalog, Handler = setup(photos)
+        local inBatch, formattedBatches = false, 0
+        for _, name in ipairs({ "batchGetRawMetadata", "batchGetFormattedMetadata" }) do
+            local batch = catalog[name]
+            catalog[name] = function(...)
+                if name == "batchGetFormattedMetadata" then formattedBatches = formattedBatches + 1 end
+                inBatch = true
+                local out = batch(...)
+                inBatch = false
+                return out
+            end
+        end
+        for _, photo in ipairs(photos) do
+            local raw, formatted = photo.getRawMetadata, photo.getFormattedMetadata
+            -- Only the per-photo virtual copy read may happen outside a batch.
+            photo.getRawMetadata = function(self, key)
+                assert(inBatch or key == "virtualCopies", "per-photo read of " .. key)
+                return raw(self, key)
+            end
+            photo.getFormattedMetadata = function(self, key)
+                assert(inBatch, "per-photo read of " .. key)
+                return formatted(self, key)
+            end
+        end
+
+        local result = Handler.getPhotoMetadata({ photo_ids = { 1, 2, 3 } })
+
+        assert.are.equal(1, formattedBatches)
+        assert.are.equal("T2", result.photos[2].title)
+        assert.are.equal(3, result.photos[3].rating)
+        assert.are.equal("ILCE-7RM5", result.photos[1].cameraModel)
+        assert.are.same({ alt_text = "Alt 2" }, result.photos[2].accessibility)
+    end)
+
+    it("returns only the named develop groups and implies the developSettings section", function()
+        local photo = helper.fakePhoto({ id = "1", developSettings = {
+            Exposure2012 = 0.5, WhiteBalance = "As Shot", ToneCurvePV2012 = { 0, 0, 255, 255 },
+            PerspectiveUpright = 5, CropLeft = 0.1, CropRight = 0.9, CropTop = 0, CropBottom = 1, CropAngle = 0,
+            UprightFourSegmentsCount = 2, UprightFourSegments_0 = "0.1,0.1,0.1,0.9", UprightFourSegments_1 = "0.9,0.1,0.9,0.9",
+        } })
+        local _, Handler = setup({ photo })
+        local full = Handler.getPhotoMetadata({ photo_id = "1", sections = { "developSettings" } }).developSettings
+        local some = Handler.getPhotoMetadata({ photo_id = "1", develop_groups = { "crop", "upright", "basic" } })
+            .developSettings
+        assert.are.same({ crop = full.crop, upright = full.upright, exposure = 0.5, whiteBalance = "As Shot" }, some)
+        assert.are.same({ toneCurve = { 0, 0, 255, 255 } },
+            Handler.getPhotoMetadata({ photo_id = "1", develop_groups = { "toneCurve" } }).developSettings)
+        assert.has_error(function() Handler.getPhotoMetadata({ photo_id = "1", develop_groups = { "nope" } }) end,
+            "Unknown develop_groups entry: nope")
+    end)
+
     it("returns empty photos for an all-missing batch and empty missing for found photos", function()
         local _, Handler = setup({ helper.fakePhoto({ id = 1 }) })
         assert.are.same({ photos = {}, missing = { "missing" } },
@@ -163,6 +220,20 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.equal("Keep", r.title)
         assert.are.equal(5, r.rating)
         assert.is_nil(r.accessibility)
+    end)
+
+    it("keeps the readable accessibility fields when one photo's read throws", function()
+        local a = helper.fakePhoto({ id = "1", altTextAccessibility = "Alt A", extDescrAccessibility = "Ext A" })
+        local b = helper.fakePhoto({ id = "2", altTextAccessibility = "Alt B", extDescrAccessibility = "Ext B" })
+        local getRawMetadata = a.getRawMetadata
+        a.getRawMetadata = function(self, key)
+            if key == "extDescrAccessibility" then error("unreadable") end
+            return getRawMetadata(self, key)
+        end
+        local _, Handler = setup({ a, b })
+        local r = Handler.getPhotoMetadata({ photo_ids = { "1", "2" } })
+        assert.are.same({ alt_text = "Alt A" }, r.photos[1].accessibility)
+        assert.are.same({ alt_text = "Alt B", extended_description = "Ext B" }, r.photos[2].accessibility)
     end)
 
     it("identifies a virtual copy and its master's catalog id", function()
@@ -442,6 +513,45 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(d.detail)
         assert.is_nil(d.effects)
         assert.is_nil(d.parametricSplits)
+        assert.is_nil(d.upright)
+    end)
+
+    it("summarizes the saved Upright guides in the read-only upright group", function()
+        local photo = helper.fakePhoto({
+            id = "48",
+            path = "/p/upright.arw",
+            fileName = "upright.arw",
+            developSettings = {
+                PerspectiveUpright = 5,
+                UprightFourSegmentsCount = 2,
+                UprightFourSegments_0 = "0.7065,0.1323,0.2547,0.1266",
+                UprightFourSegments_1 = "0.7065,0.934,0.2547,0.9474",
+                UprightFourSegments_2 = "0.1,0.1,0.1,0.9",
+                UprightTransform_5 = "1,0,0,0,1,0,0,0,1",
+                UprightVersion = 151388160,
+                UprightPreview = false,
+            },
+        })
+        local _, Handler = setup({ photo })
+
+        local d = Handler.getPhotoMetadata({ photo_id = "48", sections = { "developSettings" } }).developSettings
+
+        assert.are.same({
+            guideCount = 2,
+            guides = { "0.7065,0.1323,0.2547,0.1266", "0.7065,0.934,0.2547,0.9474" },
+            guidedCorrection = true,
+        }, d.upright)
+        assert.are.same({ PerspectiveUpright = 5 }, d.transform)
+    end)
+
+    it("omits the upright group for a photo without guides", function()
+        local photo = helper.fakePhoto({
+            id = "49", path = "/p/plain.arw", fileName = "plain.arw",
+            developSettings = { UprightFourSegmentsCount = 0, UprightVersion = 151388160, UprightTransformCount = 6 },
+        })
+        local _, Handler = setup({ photo })
+        local d = Handler.getPhotoMetadata({ photo_id = "49", sections = { "developSettings" } }).developSettings
+        assert.is_nil(d.upright)
     end)
 
     it("exposes IPTC location, GPS, and copyright metadata", function()

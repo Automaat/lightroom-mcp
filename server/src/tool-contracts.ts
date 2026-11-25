@@ -68,28 +68,61 @@ const LANDSCAPE_MASK_CATEGORIES = [
   "snow",
 ] as const;
 
-const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100) => ({
+// The name and the published minimum and maximum already describe a slider;
+// a description is kept only where it adds meaning.
+const maskAdjustmentSlider = (minimum = -100, maximum = 100, description?: string) => ({
   type: "number",
   minimum,
   maximum,
-  description: `${description} (${minimum} to ${maximum})`,
+  ...(description ? { description } : {}),
 });
 
 const MASK_ADJUSTMENT_PROPERTIES = {
-  exposure: maskAdjustmentSlider("Exposure in stops", -4, 4),
-  contrast: maskAdjustmentSlider("Contrast"),
-  highlights: maskAdjustmentSlider("Highlights"),
-  shadows: maskAdjustmentSlider("Shadows"),
-  whites: maskAdjustmentSlider("Whites"),
-  blacks: maskAdjustmentSlider("Blacks"),
-  texture: maskAdjustmentSlider("Texture"),
-  clarity: maskAdjustmentSlider("Clarity"),
-  dehaze: maskAdjustmentSlider("Dehaze"),
-  temperature: maskAdjustmentSlider("Temperature"),
-  tint: maskAdjustmentSlider("Tint"),
-  saturation: maskAdjustmentSlider("Saturation"),
-  sharpness: maskAdjustmentSlider("Sharpness"),
-  noise: maskAdjustmentSlider("Noise reduction"),
+  exposure: maskAdjustmentSlider(-4, 4, "Exposure in stops"),
+  contrast: maskAdjustmentSlider(),
+  highlights: maskAdjustmentSlider(),
+  shadows: maskAdjustmentSlider(),
+  whites: maskAdjustmentSlider(),
+  blacks: maskAdjustmentSlider(),
+  texture: maskAdjustmentSlider(),
+  clarity: maskAdjustmentSlider(),
+  dehaze: maskAdjustmentSlider(),
+  temperature: maskAdjustmentSlider(),
+  tint: maskAdjustmentSlider(),
+  saturation: maskAdjustmentSlider(),
+  sharpness: maskAdjustmentSlider(),
+  noise: maskAdjustmentSlider(-100, 100, "Noise reduction"),
+};
+
+const previewSaveTo = (what: string) => ({
+  type: "string",
+  minLength: 1,
+  description: `Absolute or ~/ folder, created if missing: ${what}; never overwrites`,
+});
+
+const DEVELOP_GROUPS = [
+  "basic", "toneCurve", "hsl", "lens", "lensProfile", "transform", "crop", "upright", "detail", "effects",
+] as const;
+
+const compactPoint = {
+  type: "object",
+  additionalProperties: false,
+  properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 } },
+  required: ["x", "y"],
+};
+
+const MAX_UPRIGHT_BATCH_ITEMS = 50;
+
+const uprightGuidesSchema = {
+  type: "array",
+  minItems: 2,
+  maxItems: 4,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: { start: compactPoint, end: compactPoint },
+    required: ["start", "end"],
+  },
 };
 
 const normalizedPoint = (description: string) => ({
@@ -423,6 +456,10 @@ const pointCurveDevelopSettingValueSchema = {
     "Flat input/output pairs for a Lightroom point curve, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Values are integers from 0 to 255 and the array holds 2 to 32 pairs, so its length is always even. Inputs must be strictly increasing and the curve must start at input 0 and end at input 255.",
 };
 
+// Published without the 31 even-length alternatives: the description states
+// the even length, and validation keeps the full schema.
+const { anyOf: _evenLengths, ...publishedPointCurveSettingValueSchema } = pointCurveDevelopSettingValueSchema;
+
 const pointCurveSettingKeySet = new Set<string>(POINT_CURVE_SETTING_KEYS);
 
 const developSettingsProperties = Object.fromEntries(
@@ -477,8 +514,8 @@ const searchFilterProperties = {
   end_date: dateStringSchema("End date (YYYY-MM-DD)"),
   camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
   lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
-  iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
-  focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
+  iso: { type: "number", exclusiveMinimum: 0, description: "Exact ISO speed rating" },
+  focal_length: { type: "number", exclusiveMinimum: 0, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
   flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
   color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
   edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
@@ -500,7 +537,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal." },
+        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal; pickStatus (1 pick, -1 reject) and colorLabel only when set." },
         ...searchFilterProperties,
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
@@ -518,7 +555,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal." },
+        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal; pickStatus (1 pick, -1 reject) and colorLabel only when set." },
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
@@ -549,7 +586,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; read-only upright (guides, guidedCorrection) and crop use the unrotated frame; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -563,6 +600,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "array",
           items: { type: "string", enum: ["developSettings", "masks"] },
           description: "Optional sections per photo; omitted or empty adds none. developSettings.lensProfile is read only. \"masks\" reads saved masks without opening Develop: count, state, masks [{id, name, state, components}]. Component: id (list_masks tool id), type, mode add/subtract (inverted subtract = intersect), inverted, nested brush strokes (mode erase); AI adds kind, part, subtype, state computed/pending/failed/unknown. Photo state: worst, or none. pending persists when nothing was found, so bound polling. Duplicates are accepted.",
+        },
+        develop_groups: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string", enum: [...DEVELOP_GROUPS] },
+          description: "Only these developSettings groups (implies that section); basic = white balance and Basic sliders",
         },
       },
     },
@@ -582,7 +625,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       properties: {
         photo_id: photoIdSchema("Photo ID or file path"),
         size: {
-          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller. cull is for culling (about 650 tokens), detail for inspecting details (about 2.5k tokens): earlier Claude estimates, varying by image/model and repeated each turn in history.",
+          description: "Minimum longest edge: cull requests 512 (about 900px on the tested raw), detail requests 1024 (about 1800px); numeric 64-2048, default 512. Lightroom returns its smallest cached preview meeting the edge, often larger. Over 3.5 MB or 2000px retries smaller; fails if even 64 is over 3.5 MB or 8000px. cull is for culling (about 650 tokens), detail for inspecting details (about 2.5k tokens): earlier Claude estimates, varying by image/model and repeated each turn in history.",
           oneOf: [
             { type: "number", minimum: 64, maximum: 2048 },
             { type: "string", enum: Object.keys(PREVIEW_SIZES) },
@@ -600,6 +643,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           },
           required: ["x", "y", "width", "height"],
         },
+        render: {
+          type: "string",
+          enum: ["export"],
+          description: "export: render the current settings through an export (about 2 s; rendered_by export) instead of Lightroom's cached preview, which can fail or lag after a Develop change. Lightroom lists the export in the photo's History; refused for photos with AI masks",
+        },
+        save_to: previewSaveTo("returns the saved path instead of the image"),
       },
       required: ["photo_id"],
     },
@@ -621,6 +670,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Between 1 and 20 IDs or paths, in image order",
         },
         size: { type: "number", minimum: 64, maximum: 2048, description: "Minimum longest edge (64–2048, default 256)" },
+        save_to: previewSaveTo("returns saved paths instead of images"),
       },
       required: ["photo_ids"],
     },
@@ -921,7 +971,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal." },
+        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal; pickStatus (1 pick, -1 reject) and colorLabel only when set." },
         collection_name: {
           type: "string",
           description:
@@ -1508,7 +1558,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "object",
           propertyNames: { enum: [...DEVELOP_SETTING_KEYS] },
           additionalProperties: {
-            oneOf: [...scalarDevelopSettingValueSchema.oneOf, pointCurveDevelopSettingValueSchema],
+            oneOf: [...scalarDevelopSettingValueSchema.oneOf, publishedPointCurveSettingValueSchema],
           },
           minProperties: 1,
           description:
@@ -1592,6 +1642,61 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         restore_selection: { type: "boolean", description: "Restore module, view source and selection (default true)" },
       },
       required: ["photo_ids", "version", "confirm"],
+    },
+  },
+  {
+    name: "set_crop",
+    toolset: "develop",
+    title: "Set crop",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.setCrop",
+    description:
+      "Straight crop from edges as displayed, at least 0.01 apart: 0-1 of the full frame after Transform, or of the current crop (as get_photo_preview shows it) with relative_to current. Handles rotated photos; sets CropAngle 0; restores the old crop on mismatch. Returns pixels.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        left: { type: "number", minimum: 0, maximum: 1 },
+        top: { type: "number", minimum: 0, maximum: 1 },
+        right: { type: "number", minimum: 0, maximum: 1 },
+        bottom: { type: "number", minimum: 0, maximum: 1 },
+        relative_to: {
+          type: "string",
+          enum: ["full", "current"],
+          description: "Frame the edges refer to (default full)",
+        },
+      },
+      required: ["photo_id", "left", "top", "right", "bottom"],
+    },
+  },
+  {
+    name: "set_upright_guides",
+    toolset: "develop",
+    title: "Set Upright guides",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerUpright.setGuides",
+    description:
+      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points 0-1, origin top-left, as displayed with no Transform (Upright off, sliders 0), crop or lens corrections: guides measured with a lens profile on show further from the centre (0.8% on a tested 35 mm lens). Replaces guides and, like Lightroom's Upright buttons, sets Vertical, Horizontal and Rotate to 0; opens Develop; restores the prior Upright and sliders on failure. items: many photos in one Develop session, continuing past failures; per-photo results, remaining_ids. Works with Lightroom behind other apps (window visible).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        guides: { ...uprightGuidesSchema, description: "Guides as line segments; at least 0.02 of the frame long" },
+        items: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_UPRIGHT_BATCH_ITEMS,
+          description: "Instead of photo_id/guides: one entry per photo",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: { photo_id: photoIdSchema("Photo ID or file path"), guides: uprightGuidesSchema },
+            required: ["photo_id", "guides"],
+          },
+        },
+      },
     },
   },
   {
@@ -1820,7 +1925,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.createGradientMask",
     description:
-      "Place a linear or radial gradient (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
+      "Place a linear or radial gradient (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply; positions are before lens corrections: up to 2% further out on a corrected preview). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1880,7 +1985,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.createBrushMask",
     description:
-      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
+      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply; positions are before lens corrections: up to 2% further out on a corrected preview). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

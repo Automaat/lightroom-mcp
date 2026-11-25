@@ -106,8 +106,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 72 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(72);
+  it('contains exactly 74 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(74);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -241,6 +241,31 @@ describe('listToolsHandler', () => {
       expect(description!.length).toBeLessThanOrEqual(4096);
     },
   );
+});
+
+describe('published schema trims', () => {
+  const published = JSON.stringify(TOOL_DEFINITIONS);
+
+  it('publishes no Number.MAX_VALUE bound', () => {
+    expect(published).not.toContain(String(Number.MAX_VALUE));
+  });
+
+  it('publishes point curves without the even-length alternatives that validation keeps', () => {
+    const tool = TOOL_DEFINITIONS.find(t => t.name === 'set_develop_settings')!;
+    const settings = (tool.inputSchema.properties as Record<string, { additionalProperties: { oneOf: object[] } }>).settings;
+    const curve = settings.additionalProperties.oneOf.find(s => (s as { type?: string }).type === 'array') as Record<string, unknown>;
+    expect(curve.anyOf).toBeUndefined();
+    expect(curve.description).toContain('always even');
+    expect(validateToolArgs('set_develop_settings', { photo_id: 1, settings: { ToneCurvePV2012: [0, 0, 128, 140, 255] } }))
+      .not.toBeNull();
+  });
+
+  it('describes a mask slider only where the name and bounds do not', () => {
+    const tool = TOOL_DEFINITIONS.find(t => t.name === 'create_gradient_mask')!;
+    const adjustments = (tool.inputSchema.properties as Record<string, { properties: Record<string, Record<string, unknown>> }>).adjustments;
+    expect(adjustments.properties.contrast).toEqual({ type: 'number', minimum: -100, maximum: 100 });
+    expect(adjustments.properties.exposure).toEqual({ type: 'number', minimum: -4, maximum: 4, description: 'Exposure in stops' });
+  });
 });
 
 describe('photo list schemas', () => {

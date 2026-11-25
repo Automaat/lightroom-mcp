@@ -1,6 +1,6 @@
 import { Server } from "@modelcontextprotocol/server";
 import type { ToolCaller } from "./broker.js";
-import { createCallToolHandler, type ToolHandlerDeps } from "./tool-handler.js";
+import { createCallToolHandler, SAVE_TO_TOOLS, type ToolHandlerDeps } from "./tool-handler.js";
 import { TOOL_CONTRACTS } from "./tool-contracts.js";
 import { parseToolsets, type Toolset } from "./toolsets.js";
 import { listToolsHandler } from "./list-tools-handler.js";
@@ -35,6 +35,12 @@ export function createMcpServer(deps: ServerDeps, options: { toolsets?: readonly
     const { name, arguments: args } = request.params;
     if (readOnly && !allowedTools.has(name)) {
       return { isError: true, content: [{ type: "text", text: `Tool "${name}" is unavailable with LIGHTROOM_MCP_READ_ONLY enabled and the selected LIGHTROOM_MCP_TOOLSETS. Only listed read tools can be called. Change the settings and restart the server to enable other tools.` }] };
+    }
+    if (readOnly && SAVE_TO_TOOLS.has(name) && typeof args === "object" && args !== null && "save_to" in args) {
+      return { isError: true, content: [{ type: "text", text: "save_to writes files, which LIGHTROOM_MCP_READ_ONLY does not allow; call without save_to to get the image." }] };
+    }
+    if (readOnly && name === "get_photo_preview" && typeof args === "object" && args !== null && "render" in args) {
+      return { isError: true, content: [{ type: "text", text: "render \"export\" adds an export to the photo's History, which LIGHTROOM_MCP_READ_ONLY does not allow." }] };
     }
     if (!knownTools.has(name)) {
       return { isError: true, content: [{ type: "text", text: `Unknown tool "${name}".` }] };
