@@ -25,7 +25,8 @@ local FORMATTED_KEYS = {
     'creator', 'copyright', 'copyrightState', 'rightsUsageTerms', 'copyrightInfoUrl', 'creatorUrl',
 }
 -- Lightroom before 13.2 throws on these keys, so they get their own guarded
--- batch: one failure leaves accessibility out and keeps everything else.
+-- batch. When it fails, readPhotoMetadata reads each photo and key under its
+-- own guard instead, so one failing read loses only its own field.
 local ACCESSIBILITY_KEYS = { 'altTextAccessibility', 'extDescrAccessibility' }
 
 local function accessibilityTexts(catalog, photos)
@@ -33,7 +34,16 @@ local function accessibilityTexts(catalog, photos)
         return catalog:batchGetRawMetadata(photos, ACCESSIBILITY_KEYS)
     end)
     if ok and values then return values end
-    return {}
+    return nil
+end
+
+local function guardedAccessibility(photo)
+    local values = {}
+    for _, key in ipairs(ACCESSIBILITY_KEYS) do
+        local ok, value = LrTasks.pcall(function() return photo:getRawMetadata(key) end)
+        if ok then values[key] = value end
+    end
+    return values
 end
 
 local function nonEmptyText(value)
@@ -335,7 +345,7 @@ function MetadataHandler.getPhotoMetadata(args)
     for _, entry in ipairs(resolved) do
         if entry.photo then found[#found + 1] = entry.photo end
     end
-    local raw, formatted, accessibility = {}, {}, {}
+    local raw, formatted, accessibility = {}, {}, nil
     if #found > 0 then
         raw = catalog:batchGetRawMetadata(found, RAW_KEYS) or {}
         formatted = catalog:batchGetFormattedMetadata(found, FORMATTED_KEYS) or {}
@@ -349,7 +359,8 @@ function MetadataHandler.getPhotoMetadata(args)
             local photo = entry.photo
             if photo then
                 photos[#photos + 1] = readPhotoMetadata(photo, sections, raw[photo] or {},
-                    formatted[photo] or {}, accessibility[photo] or {}, pathOfKeyword)
+                    formatted[photo] or {},
+                    accessibility and (accessibility[photo] or {}) or guardedAccessibility(photo), pathOfKeyword)
             else
                 missing[#missing + 1] = tostring(entry.id)
             end

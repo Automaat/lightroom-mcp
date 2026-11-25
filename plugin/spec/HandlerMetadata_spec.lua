@@ -205,6 +205,20 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(r.accessibility)
     end)
 
+    it("keeps the readable accessibility fields when one photo's read throws", function()
+        local a = helper.fakePhoto({ id = "1", altTextAccessibility = "Alt A", extDescrAccessibility = "Ext A" })
+        local b = helper.fakePhoto({ id = "2", altTextAccessibility = "Alt B", extDescrAccessibility = "Ext B" })
+        local getRawMetadata = a.getRawMetadata
+        a.getRawMetadata = function(self, key)
+            if key == "extDescrAccessibility" then error("unreadable") end
+            return getRawMetadata(self, key)
+        end
+        local _, Handler = setup({ a, b })
+        local r = Handler.getPhotoMetadata({ photo_ids = { "1", "2" } })
+        assert.are.same({ alt_text = "Alt A" }, r.photos[1].accessibility)
+        assert.are.same({ alt_text = "Alt B", extended_description = "Ext B" }, r.photos[2].accessibility)
+    end)
+
     it("identifies a virtual copy and its master's catalog id", function()
         local master = helper.fakePhoto({ id = 7 })
         local copy = helper.fakePhoto({ id = 8, isVirtualCopy = true, masterPhoto = master })
