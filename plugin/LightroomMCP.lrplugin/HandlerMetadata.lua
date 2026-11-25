@@ -8,9 +8,46 @@ local Log = require 'Log'
 
 local MetadataHandler = {}
 
-local function accessibilityText(photo, key)
-    local ok, value = LrTasks.pcall(function() return photo:getRawMetadata(key) end)
-    if ok and value ~= "" then return value end
+-- Fields read for every photo in two batched calls instead of one SDK getter
+-- each (about 46 per photo). Virtual copy and stack details stay per photo:
+-- they are read only for the photos that have them.
+local RAW_KEYS = {
+    'keywords', 'gps', 'gpsAltitude', 'isVirtualCopy', 'isInStackInFolder',
+    'path', 'rating', 'colorNameForLabel', 'pickStatus', 'fileFormat',
+}
+local FORMATTED_KEYS = {
+    'fileName', 'title', 'caption', 'headline',
+    'dateTimeOriginal', 'dateTimeDigitized', 'cameraMake', 'cameraModel', 'cameraSerialNumber',
+    'lens', 'isoSpeedRating', 'focalLength', 'focalLength35mm', 'aperture', 'shutterSpeed',
+    'exposureBias', 'exposureProgram', 'meteringMode', 'flash', 'dimensions', 'fileSize',
+    'artist', 'software',
+    'location', 'city', 'stateProvince', 'country', 'isoCountryCode',
+    'creator', 'copyright', 'copyrightState', 'rightsUsageTerms', 'copyrightInfoUrl', 'creatorUrl',
+}
+-- Lightroom before 13.2 throws on these keys, so they get their own guarded
+-- batch. When it fails, readPhotoMetadata reads each photo and key under its
+-- own guard instead, so one failing read loses only its own field.
+local ACCESSIBILITY_KEYS = { 'altTextAccessibility', 'extDescrAccessibility' }
+
+local function accessibilityTexts(catalog, photos)
+    local ok, values = LrTasks.pcall(function()
+        return catalog:batchGetRawMetadata(photos, ACCESSIBILITY_KEYS)
+    end)
+    if ok and values then return values end
+    return nil
+end
+
+local function guardedAccessibility(photo)
+    local values = {}
+    for _, key in ipairs(ACCESSIBILITY_KEYS) do
+        local ok, value = LrTasks.pcall(function() return photo:getRawMetadata(key) end)
+        if ok then values[key] = value end
+    end
+    return values
+end
+
+local function nonEmptyText(value)
+    if value ~= "" then return value end
     return nil
 end
 
@@ -143,8 +180,8 @@ local function virtualCopyMetadata(photo, isVirtualCopy)
     return nonEmptyGroup({ copyIds = photoIds(photo:getRawMetadata('virtualCopies')) })
 end
 
-local function stackMetadata(photo)
-    if not photo:getRawMetadata('isInStackInFolder') then return nil end
+local function stackMetadata(photo, isInStack)
+    if not isInStack then return nil end
     local top = photo:getRawMetadata('topOfStackInFolderContainingPhoto')
     return nonEmptyGroup({
         position = photo:getRawMetadata('stackPositionInFolder'),
@@ -154,19 +191,21 @@ local function stackMetadata(photo)
     })
 end
 
-local function readPhotoMetadata(photo, sections)
-    -- Get keywords
+local function readPhotoMetadata(photo, sections, r, f, a, pathOfKeyword)
     -- `keywords` stays leaf names; `keywordPaths` is the same list as
     -- full parent-first paths, which is what tells two keywords of the
     -- same name apart ("Orientation|portrait" vs "Type|portrait").
+    -- A keyword's path is built once per call, however many photos share it.
     local keywords = {}
     local keywordPaths = {}
-    local photoKeywords = photo:getRawMetadata('keywords')
-    if photoKeywords then
-        for _, kw in ipairs(photoKeywords) do
-            table.insert(keywords, kw:getName())
-            table.insert(keywordPaths, KeywordTree.pathOf(kw))
+    for _, kw in ipairs(r.keywords or {}) do
+        local path = pathOfKeyword[kw]
+        if not path then
+            path = KeywordTree.pathOf(kw)
+            pathOfKeyword[kw] = path
         end
+        table.insert(keywords, kw:getName())
+        table.insert(keywordPaths, path)
     end
 
     -- Get develop settings once, for whichever sections need them.
@@ -175,74 +214,74 @@ local function readPhotoMetadata(photo, sections)
 
     -- GPS is a raw {latitude, longitude} table; omit the group when absent
     -- or when present but carrying no coordinates.
-    local gps = photo:getRawMetadata('gps')
+    local gps = r.gps
     local gpsData = nil
     if gps then
         gpsData = nonEmptyGroup({
             latitude = gps.latitude,
             longitude = gps.longitude,
-            altitude = photo:getRawMetadata('gpsAltitude'),
+            altitude = r.gpsAltitude,
         })
     end
 
-    local isVirtualCopy = photo:getRawMetadata('isVirtualCopy') == true
+    local isVirtualCopy = r.isVirtualCopy == true
     return {
         id = photo.localIdentifier,
         isVirtualCopy = isVirtualCopy,
         virtualCopy = virtualCopyMetadata(photo, isVirtualCopy),
-        stack = stackMetadata(photo),
-        path = photo:getRawMetadata('path'),
-        filename = photo:getFormattedMetadata('fileName'),
-        rating = photo:getRawMetadata('rating'),
-        colorLabel = photo:getRawMetadata('colorNameForLabel'),
-        pickStatus = photo:getRawMetadata('pickStatus'),
+        stack = stackMetadata(photo, r.isInStackInFolder),
+        path = r.path,
+        filename = f.fileName,
+        rating = r.rating,
+        colorLabel = r.colorNameForLabel,
+        pickStatus = r.pickStatus,
         keywords = keywords,
         keywordPaths = keywordPaths,
         -- Title / caption / headline (IPTC content description).
-        title = photo:getFormattedMetadata('title'),
-        caption = photo:getFormattedMetadata('caption'),
-        headline = photo:getFormattedMetadata('headline'),
+        title = f.title,
+        caption = f.caption,
+        headline = f.headline,
         accessibility = nonEmptyGroup({
-            alt_text = accessibilityText(photo, 'altTextAccessibility'),
-            extended_description = accessibilityText(photo, 'extDescrAccessibility'),
+            alt_text = nonEmptyText(a.altTextAccessibility),
+            extended_description = nonEmptyText(a.extDescrAccessibility),
         }),
         -- EXIF capture data.
-        dateTimeOriginal = photo:getFormattedMetadata('dateTimeOriginal'),
-        dateTimeDigitized = photo:getFormattedMetadata('dateTimeDigitized'),
-        cameraMake = photo:getFormattedMetadata('cameraMake'),
-        cameraModel = photo:getFormattedMetadata('cameraModel'),
-        cameraSerialNumber = photo:getFormattedMetadata('cameraSerialNumber'),
-        lens = photo:getFormattedMetadata('lens'),
-        isoSpeedRating = photo:getFormattedMetadata('isoSpeedRating'),
-        focalLength = photo:getFormattedMetadata('focalLength'),
-        focalLength35mm = photo:getFormattedMetadata('focalLength35mm'),
-        aperture = photo:getFormattedMetadata('aperture'),
-        shutterSpeed = photo:getFormattedMetadata('shutterSpeed'),
-        exposureBias = photo:getFormattedMetadata('exposureBias'),
-        exposureProgram = photo:getFormattedMetadata('exposureProgram'),
-        meteringMode = photo:getFormattedMetadata('meteringMode'),
-        flash = photo:getFormattedMetadata('flash'),
-        dimensions = photo:getFormattedMetadata('dimensions'),
-        fileSize = photo:getFormattedMetadata('fileSize'),
-        fileFormat = photo:getRawMetadata('fileFormat'),
-        artist = photo:getFormattedMetadata('artist'),
-        software = photo:getFormattedMetadata('software'),
+        dateTimeOriginal = f.dateTimeOriginal,
+        dateTimeDigitized = f.dateTimeDigitized,
+        cameraMake = f.cameraMake,
+        cameraModel = f.cameraModel,
+        cameraSerialNumber = f.cameraSerialNumber,
+        lens = f.lens,
+        isoSpeedRating = f.isoSpeedRating,
+        focalLength = f.focalLength,
+        focalLength35mm = f.focalLength35mm,
+        aperture = f.aperture,
+        shutterSpeed = f.shutterSpeed,
+        exposureBias = f.exposureBias,
+        exposureProgram = f.exposureProgram,
+        meteringMode = f.meteringMode,
+        flash = f.flash,
+        dimensions = f.dimensions,
+        fileSize = f.fileSize,
+        fileFormat = r.fileFormat,
+        artist = f.artist,
+        software = f.software,
         gps = gpsData,
         -- IPTC location ("Sublocation" is the SDK `location` field).
         location = nonEmptyGroup({
-            sublocation = photo:getFormattedMetadata('location'),
-            city = photo:getFormattedMetadata('city'),
-            stateProvince = photo:getFormattedMetadata('stateProvince'),
-            country = photo:getFormattedMetadata('country'),
-            isoCountryCode = photo:getFormattedMetadata('isoCountryCode'),
+            sublocation = f.location,
+            city = f.city,
+            stateProvince = f.stateProvince,
+            country = f.country,
+            isoCountryCode = f.isoCountryCode,
         }),
         copyright = nonEmptyGroup({
-            creator = photo:getFormattedMetadata('creator'),
-            notice = photo:getFormattedMetadata('copyright'),
-            status = photo:getFormattedMetadata('copyrightState'),
-            rightsUsageTerms = photo:getFormattedMetadata('rightsUsageTerms'),
-            infoUrl = photo:getFormattedMetadata('copyrightInfoUrl'),
-            creatorUrl = photo:getFormattedMetadata('creatorUrl'),
+            creator = f.creator,
+            notice = f.copyright,
+            status = f.copyrightState,
+            rightsUsageTerms = f.rightsUsageTerms,
+            infoUrl = f.copyrightInfoUrl,
+            creatorUrl = f.creatorUrl,
         }),
         developSettings = developSettings and addSdkDevelopGroups({
             whiteBalance = developSettings.WhiteBalance,
@@ -301,11 +340,27 @@ function MetadataHandler.getPhotoMetadata(args)
         error("Photo not found: " .. tostring(args.photo_id))
     end
 
+    -- Batched reads run outside the read gate, as in PhotoSummary.
+    local found = {}
+    for _, entry in ipairs(resolved) do
+        if entry.photo then found[#found + 1] = entry.photo end
+    end
+    local raw, formatted, accessibility = {}, {}, nil
+    if #found > 0 then
+        raw = catalog:batchGetRawMetadata(found, RAW_KEYS) or {}
+        formatted = catalog:batchGetFormattedMetadata(found, FORMATTED_KEYS) or {}
+        accessibility = accessibilityTexts(catalog, found)
+    end
+
     local photos, missing = {}, {}
     catalog:withReadAccessDo(function()
+        local pathOfKeyword = {}
         for _, entry in ipairs(resolved) do
-            if entry.photo then
-                photos[#photos + 1] = readPhotoMetadata(entry.photo, sections)
+            local photo = entry.photo
+            if photo then
+                photos[#photos + 1] = readPhotoMetadata(photo, sections, raw[photo] or {},
+                    formatted[photo] or {},
+                    accessibility and (accessibility[photo] or {}) or guardedAccessibility(photo), pathOfKeyword)
             else
                 missing[#missing + 1] = tostring(entry.id)
             end

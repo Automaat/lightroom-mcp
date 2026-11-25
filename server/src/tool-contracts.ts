@@ -68,28 +68,30 @@ const LANDSCAPE_MASK_CATEGORIES = [
   "snow",
 ] as const;
 
-const maskAdjustmentSlider = (description: string, minimum = -100, maximum = 100) => ({
+// The name and the published minimum and maximum already describe a slider;
+// a description is kept only where it adds meaning.
+const maskAdjustmentSlider = (minimum = -100, maximum = 100, description?: string) => ({
   type: "number",
   minimum,
   maximum,
-  description: `${description} (${minimum} to ${maximum})`,
+  ...(description ? { description } : {}),
 });
 
 const MASK_ADJUSTMENT_PROPERTIES = {
-  exposure: maskAdjustmentSlider("Exposure in stops", -4, 4),
-  contrast: maskAdjustmentSlider("Contrast"),
-  highlights: maskAdjustmentSlider("Highlights"),
-  shadows: maskAdjustmentSlider("Shadows"),
-  whites: maskAdjustmentSlider("Whites"),
-  blacks: maskAdjustmentSlider("Blacks"),
-  texture: maskAdjustmentSlider("Texture"),
-  clarity: maskAdjustmentSlider("Clarity"),
-  dehaze: maskAdjustmentSlider("Dehaze"),
-  temperature: maskAdjustmentSlider("Temperature"),
-  tint: maskAdjustmentSlider("Tint"),
-  saturation: maskAdjustmentSlider("Saturation"),
-  sharpness: maskAdjustmentSlider("Sharpness"),
-  noise: maskAdjustmentSlider("Noise reduction"),
+  exposure: maskAdjustmentSlider(-4, 4, "Exposure in stops"),
+  contrast: maskAdjustmentSlider(),
+  highlights: maskAdjustmentSlider(),
+  shadows: maskAdjustmentSlider(),
+  whites: maskAdjustmentSlider(),
+  blacks: maskAdjustmentSlider(),
+  texture: maskAdjustmentSlider(),
+  clarity: maskAdjustmentSlider(),
+  dehaze: maskAdjustmentSlider(),
+  temperature: maskAdjustmentSlider(),
+  tint: maskAdjustmentSlider(),
+  saturation: maskAdjustmentSlider(),
+  sharpness: maskAdjustmentSlider(),
+  noise: maskAdjustmentSlider(-100, 100, "Noise reduction"),
 };
 
 const normalizedPoint = (description: string) => ({
@@ -423,6 +425,10 @@ const pointCurveDevelopSettingValueSchema = {
     "Flat input/output pairs for a Lightroom point curve, e.g. [0, 0, 64, 48, 192, 210, 255, 255]. Values are integers from 0 to 255 and the array holds 2 to 32 pairs, so its length is always even. Inputs must be strictly increasing and the curve must start at input 0 and end at input 255.",
 };
 
+// Published without the 31 even-length alternatives: the description states
+// the even length, and validation keeps the full schema.
+const { anyOf: _evenLengths, ...publishedPointCurveSettingValueSchema } = pointCurveDevelopSettingValueSchema;
+
 const pointCurveSettingKeySet = new Set<string>(POINT_CURVE_SETTING_KEYS);
 
 const developSettingsProperties = Object.fromEntries(
@@ -477,8 +483,8 @@ const searchFilterProperties = {
   end_date: dateStringSchema("End date (YYYY-MM-DD)"),
   camera: { type: "string", minLength: 1, pattern: "\\S", description: "Exact camera name indexed by Lightroom" },
   lens: { type: "string", minLength: 1, pattern: "\\S", description: "Exact lens name indexed by Lightroom" },
-  iso: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact ISO speed rating" },
-  focal_length: { type: "number", exclusiveMinimum: 0, maximum: Number.MAX_VALUE, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
+  iso: { type: "number", exclusiveMinimum: 0, description: "Exact ISO speed rating" },
+  focal_length: { type: "number", exclusiveMinimum: 0, description: "Exact focal length in millimeters (not the 35mm equivalent)" },
   flag: { type: "string", enum: ["pick", "reject", "none"], description: "Filter by pick flag" },
   color_label: { type: "string", enum: ["red", "yellow", "green", "blue", "purple", "none"], description: "Filter by Library color label" },
   edited: { type: "boolean", description: "Whether the photo has develop adjustments" },
@@ -500,7 +506,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal." },
+        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal; pickStatus (1 pick, -1 reject) and colorLabel only when set." },
         ...searchFilterProperties,
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
@@ -518,7 +524,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal." },
+        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal; pickStatus (1 pick, -1 reject) and colorLabel only when set." },
         limit: { type: "number", description: "Max photos to return (default 100)", minimum: 0 },
         offset: { type: "number", description: "Number of photos to skip (default 0)", minimum: 0 },
       },
@@ -921,7 +927,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
       type: "object",
       additionalProperties: false,
       properties: {
-        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal." },
+        include_path: { type: "boolean", description: "Include each photo file path (default false). Rows always include id, filename, rating and dateTimeOriginal; pickStatus (1 pick, -1 reject) and colorLabel only when set." },
         collection_name: {
           type: "string",
           description:
@@ -1508,7 +1514,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "object",
           propertyNames: { enum: [...DEVELOP_SETTING_KEYS] },
           additionalProperties: {
-            oneOf: [...scalarDevelopSettingValueSchema.oneOf, pointCurveDevelopSettingValueSchema],
+            oneOf: [...scalarDevelopSettingValueSchema.oneOf, publishedPointCurveSettingValueSchema],
           },
           minProperties: 1,
           description:
