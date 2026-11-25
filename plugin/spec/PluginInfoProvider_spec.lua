@@ -22,6 +22,8 @@ local HANDLER_MODULES = {
 --   onSleep        -- called with the shared state on each LrTasks.sleep, so a
 --                      test can flip flags between monitor-loop ticks
 --   sends          -- array; every line written to a bound socket lands here
+--   onBind         -- called with each LrSocket.bind opts table before bind
+--                      returns, so a test can fire a callback synchronously
 local function installStubs(prefs, asyncTasks, opts)
     opts = opts or {}
     helper.installImport({
@@ -61,6 +63,7 @@ local function installStubs(prefs, asyncTasks, opts)
         LrSocket = {
             bind = function(bindOpts)
                 if opts.capturedBinds then table.insert(opts.capturedBinds, bindOpts) end
+                if opts.onBind then opts.onBind(bindOpts) end
                 return {
                     close = function()
                         if opts.socketOps then table.insert(opts.socketOps, "close") end
@@ -421,6 +424,7 @@ describe("PluginInfoProvider server task", function()
         installStubs(nil, nil, {
             runTask = true, cleanups = cleanups, capturedBinds = binds, socketOps = ops,
             reconnectError = opts.reconnectError,
+            onBind = opts.onBind,
             onSleep = function(state)
                 ticks = ticks + 1
                 onTick(ticks, binds, cleanups, state)
@@ -457,6 +461,32 @@ describe("PluginInfoProvider server task", function()
 
         requests[1].onClosed()
         assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+    end)
+
+    -- While a closing Lightroom still holds the port, LrSocket.bind calls
+    -- onClosed before it returns (live on LrC 16.0.1 after a catalog relaunch).
+    local function closedDuringBind(mode, times)
+        local failures = 0
+        return function(bindOpts)
+            if bindOpts.mode == mode and failures < times then
+                failures = failures + 1
+                bindOpts.onClosed()
+            end
+        end
+    end
+
+    it("keeps rebinding the request listener while Lightroom closes it during the bind", function()
+        local binds = runTicks({ onBind = closedDuringBind("receive", 2) }, function() end, 12)
+
+        assert.are.equal(3, #bindsInMode(binds, "receive"))
+        assert.is_false(_G.LightroomMCP_State.requestNeedsRebind)
+    end)
+
+    it("keeps rebinding the response listener while Lightroom closes it during the bind", function()
+        local binds = runTicks({ onBind = closedDuringBind("send", 2) }, function() end, 12)
+
+        assert.are.equal(3, #bindsInMode(binds, "send"))
+        assert.is_false(_G.LightroomMCP_State.responseNeedsRebind)
     end)
 
     it("rebinds the request listener when reconnecting it fails", function()
