@@ -69,6 +69,23 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.are.same({ alt_text = "Alt 2" }, result.photos[2].accessibility)
     end)
 
+    it("returns only the named develop groups and implies the developSettings section", function()
+        local photo = helper.fakePhoto({ id = "1", developSettings = {
+            Exposure2012 = 0.5, WhiteBalance = "As Shot", ToneCurvePV2012 = { 0, 0, 255, 255 },
+            PerspectiveUpright = 5, CropLeft = 0.1, CropRight = 0.9, CropTop = 0, CropBottom = 1, CropAngle = 0,
+            UprightFourSegmentsCount = 2, UprightFourSegments_0 = "0.1,0.1,0.1,0.9", UprightFourSegments_1 = "0.9,0.1,0.9,0.9",
+        } })
+        local _, Handler = setup({ photo })
+        local full = Handler.getPhotoMetadata({ photo_id = "1", sections = { "developSettings" } }).developSettings
+        local some = Handler.getPhotoMetadata({ photo_id = "1", develop_groups = { "crop", "upright", "basic" } })
+            .developSettings
+        assert.are.same({ crop = full.crop, upright = full.upright, exposure = 0.5, whiteBalance = "As Shot" }, some)
+        assert.are.same({ toneCurve = { 0, 0, 255, 255 } },
+            Handler.getPhotoMetadata({ photo_id = "1", develop_groups = { "toneCurve" } }).developSettings)
+        assert.has_error(function() Handler.getPhotoMetadata({ photo_id = "1", develop_groups = { "nope" } }) end,
+            "Unknown develop_groups entry: nope")
+    end)
+
     it("returns empty photos for an all-missing batch and empty missing for found photos", function()
         local _, Handler = setup({ helper.fakePhoto({ id = 1 }) })
         assert.are.same({ photos = {}, missing = { "missing" } },

@@ -1005,7 +1005,7 @@ describe('validation error summary', () => {
   });
 });
 
-describe('batch arguments', () => {
+describe('batch and filter arguments', () => {
   const guides = [{ start: { x: 0.1, y: 0.1 }, end: { x: 0.1, y: 0.9 } }, { start: { x: 0.9, y: 0.1 }, end: { x: 0.9, y: 0.9 } }];
 
   it('takes set_upright_guides as photo_id and guides, or as items, never both', () => {
@@ -1019,5 +1019,11 @@ describe('batch arguments', () => {
     expect(validateToolArgs('set_upright_guides', { items: [{ photo_id: 1, guides: [guides[0]] }] })).toContain('items.0.guides');
     expect(validateToolArgs('set_upright_guides', { items: Array.from({ length: 51 }, () => ({ photo_id: 1, guides })) }))
       .toContain('items');
+  });
+
+  it('accepts named develop groups only', () => {
+    expect(validateToolArgs('get_photo_metadata', { photo_ids: [1, 2], develop_groups: ['transform', 'crop', 'upright'] })).toBeNull();
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 1, develop_groups: ['curves'] })).toContain('develop_groups');
+    expect(validateToolArgs('get_photo_metadata', { photo_id: 1, develop_groups: [] })).toContain('develop_groups');
   });
 });

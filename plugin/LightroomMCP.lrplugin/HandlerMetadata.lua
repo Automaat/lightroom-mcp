@@ -211,6 +211,31 @@ local function stackMetadata(photo, isInStack)
     })
 end
 
+-- develop_groups names the SDK groups by field, plus basic (white balance and
+-- Basic sliders) and toneCurve (point and parametric curves).
+local TOP_LEVEL_GROUP = {
+    whiteBalance = "basic", temperature = "basic", tint = "basic", exposure = "basic", contrast = "basic",
+    highlights = "basic", shadows = "basic", whites = "basic", blacks = "basic", texture = "basic",
+    clarity = "basic", dehaze = "basic", vibrance = "basic", saturation = "basic", convertToGrayscale = "basic",
+    toneCurveName = "toneCurve", toneCurve = "toneCurve", toneCurveRed = "toneCurve",
+    toneCurveGreen = "toneCurve", toneCurveBlue = "toneCurve", parametricShadows = "toneCurve",
+    parametricDarks = "toneCurve", parametricLights = "toneCurve", parametricHighlights = "toneCurve",
+    parametricSplits = "toneCurve",
+}
+local DEVELOP_GROUP_NAMES = {
+    basic = true, toneCurve = true, hsl = true, lens = true, lensProfile = true, transform = true,
+    crop = true, upright = true, detail = true, effects = true,
+}
+
+local function keepDevelopGroups(developSettings, groups)
+    if not groups then return developSettings end
+    local kept = {}
+    for key, value in pairs(developSettings) do
+        if groups[TOP_LEVEL_GROUP[key] or key] then kept[key] = value end
+    end
+    return kept
+end
+
 local function readPhotoMetadata(photo, sections, r, f, a, pathOfKeyword)
     -- `keywords` stays leaf names; `keywordPaths` is the same list as
     -- full parent-first paths, which is what tells two keywords of the
@@ -303,7 +328,7 @@ local function readPhotoMetadata(photo, sections, r, f, a, pathOfKeyword)
             infoUrl = f.copyrightInfoUrl,
             creatorUrl = f.creatorUrl,
         }),
-        developSettings = developSettings and addSdkDevelopGroups({
+        developSettings = developSettings and keepDevelopGroups(addSdkDevelopGroups({
             whiteBalance = developSettings.WhiteBalance,
             temperature = developSettings.Temperature,
             tint = developSettings.Tint,
@@ -329,7 +354,7 @@ local function readPhotoMetadata(photo, sections, r, f, a, pathOfKeyword)
             parametricDarks = developSettings.ParametricDarks,
             parametricLights = developSettings.ParametricLights,
             parametricHighlights = developSettings.ParametricHighlights,
-        }, developSettings),
+        }, developSettings), sections.developGroups),
         masks = sections.masks and MaskState.summarize(settings) or nil,
     }
 end
@@ -351,6 +376,17 @@ function MetadataHandler.getPhotoMetadata(args)
             error("Unknown sections entry: " .. tostring(section))
         end
         sections[section] = true
+    end
+    if args.develop_groups ~= nil then
+        if type(args.develop_groups) ~= "table" or #args.develop_groups == 0 then
+            error("develop_groups must name at least one group")
+        end
+        sections.developGroups = {}
+        for _, group in ipairs(args.develop_groups) do
+            if not DEVELOP_GROUP_NAMES[group] then error("Unknown develop_groups entry: " .. tostring(group)) end
+            sections.developGroups[group] = true
+        end
+        sections.developSettings = true
     end
 
     local catalog = LrApplication.activeCatalog()

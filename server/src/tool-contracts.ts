@@ -94,6 +94,10 @@ const MASK_ADJUSTMENT_PROPERTIES = {
   noise: maskAdjustmentSlider(-100, 100, "Noise reduction"),
 };
 
+const DEVELOP_GROUPS = [
+  "basic", "toneCurve", "hsl", "lens", "lensProfile", "transform", "crop", "upright", "detail", "effects",
+] as const;
+
 const compactPoint = {
   type: "object",
   additionalProperties: false,
@@ -590,6 +594,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           type: "array",
           items: { type: "string", enum: ["developSettings", "masks"] },
           description: "Optional sections per photo; omitted or empty adds none. developSettings.lensProfile is read only. \"masks\" reads saved masks without opening Develop: count, state, masks [{id, name, state, components}]. Component: id (list_masks tool id), type, mode add/subtract (inverted subtract = intersect), inverted, nested brush strokes (mode erase); AI adds kind, part, subtype, state computed/pending/failed/unknown. Photo state: worst, or none. pending persists when nothing was found, so bound polling. Duplicates are accepted.",
+        },
+        develop_groups: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string", enum: [...DEVELOP_GROUPS] },
+          description: "Only these developSettings groups (implies that section); basic = white balance and Basic sliders",
         },
       },
     },
