@@ -113,6 +113,18 @@ local READ_ONLY_DEVELOP_GROUPS = {
     },
 }
 
+-- Upright state Lightroom saves (guides, computed transforms, digests): every
+-- key starting with "Upright", read only.
+local function uprightGroup(developSettings)
+    local values = {}
+    for key, value in pairs(developSettings) do
+        if type(key) == "string" and key:sub(1, 7) == "Upright" then
+            values[key] = value
+        end
+    end
+    return nonEmptyGroup(values)
+end
+
 local function addSdkDevelopGroups(target, developSettings)
     for _, groups in ipairs({ SDK_DEVELOP_GROUPS, READ_ONLY_DEVELOP_GROUPS }) do
         for _, group in ipairs(groups) do
@@ -123,6 +135,7 @@ local function addSdkDevelopGroups(target, developSettings)
             target[group.field] = nonEmptyGroup(values)
         end
     end
+    target.upright = uprightGroup(developSettings)
     return target
 end
 

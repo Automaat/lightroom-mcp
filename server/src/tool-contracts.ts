@@ -549,7 +549,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; read-only upright has Upright* keys; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1592,6 +1592,38 @@ export const TOOL_CONTRACTS: ToolContract[] = [
         restore_selection: { type: "boolean", description: "Restore module, view source and selection (default true)" },
       },
       required: ["photo_ids", "version", "confirm"],
+    },
+  },
+  {
+    name: "set_upright_guides",
+    toolset: "develop",
+    title: "Set Upright guides",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerUpright.setGuides",
+    description:
+      "Guided Upright from 2-4 guides along lines that should be vertical or horizontal; guide both edges of a direction to fix its convergence. Points are 0-1 on the photo as displayed with Upright off and no crop. Replaces guides; sliders stay. Briefly opens Develop. Restores prior Upright on mismatch. Returns guide_count, transform_computed.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        guides: {
+          type: "array",
+          minItems: 2,
+          maxItems: 4,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              start: normalizedPoint("One end of the guide"),
+              end: normalizedPoint("Other end of the guide"),
+            },
+            required: ["start", "end"],
+          },
+          description: "Guides as line segments; at least 0.02 of the frame long",
+        },
+      },
+      required: ["photo_id", "guides"],
     },
   },
   {

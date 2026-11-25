@@ -218,6 +218,10 @@
       "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
     },
     {
+      "name": "set_upright_guides",
+      "description": "Turn on Guided Upright with 2-4 guides along edges that should be vertical or horizontal."
+    },
+    {
       "name": "apply_auto_adjustments",
       "description": "Apply Lightroom Auto Tone, Auto White Balance, or both to photos."
     },

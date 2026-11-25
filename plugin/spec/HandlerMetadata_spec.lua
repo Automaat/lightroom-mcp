@@ -442,6 +442,36 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(d.detail)
         assert.is_nil(d.effects)
         assert.is_nil(d.parametricSplits)
+        assert.is_nil(d.upright)
+    end)
+
+    it("puts every Upright key Lightroom saves in the read-only upright group", function()
+        local photo = helper.fakePhoto({
+            id = "48",
+            path = "/p/upright.arw",
+            fileName = "upright.arw",
+            developSettings = {
+                PerspectiveUpright = 5,
+                UprightFourSegmentsCount = 2,
+                UprightFourSegments_0 = "0.7065,0.1323,0.2547,0.1266",
+                UprightFourSegments_1 = "0.7065,0.934,0.2547,0.9474",
+                UprightTransform_5 = "1,0,0,0,1,0,0,0,1",
+                UprightPreview = false,
+                Exposure2012 = 0.25,
+            },
+        })
+        local _, Handler = setup({ photo })
+
+        local d = Handler.getPhotoMetadata({ photo_id = "48", sections = { "developSettings" } }).developSettings
+
+        assert.are.same({
+            UprightFourSegmentsCount = 2,
+            UprightFourSegments_0 = "0.7065,0.1323,0.2547,0.1266",
+            UprightFourSegments_1 = "0.7065,0.934,0.2547,0.9474",
+            UprightTransform_5 = "1,0,0,0,1,0,0,0,1",
+            UprightPreview = false,
+        }, d.upright)
+        assert.are.same({ PerspectiveUpright = 5 }, d.transform)
     end)
 
     it("exposes IPTC location, GPS, and copyright metadata", function()
