@@ -191,6 +191,9 @@ local function isSuperseded(myToken, fileToken)
 end
 
 local SUPERSEDED_CHECK_TICKS = 5
+-- Pause before binding again when a bind closed before it returned (the port
+-- is still held), so the monitor loop does not retry every tick.
+local BIND_RETRY_SECONDS = 1
 
 local DISPATCH = {
     -- Heartbeat no-op. The MCP server pings on this action every
@@ -714,10 +717,17 @@ local function startServer()
                 pluginState.receiveConnected = false
                 LrTasks.sleep(0.1)
                 if shutdownRequested() then break end
-                pluginState.requestSocket = bindRequest(newGen)
+                -- Clear the flags before binding: while the port is still held
+                -- (a relaunch into another catalog, with the closing Lightroom
+                -- holding it), LrSocket.bind calls onClosed before it returns,
+                -- and the rebind that sets must stay pending. Clearing after the
+                -- bind left nothing listening and nothing logged (LrC 16.0.1).
                 pluginState.requestNeedsRebind = false
                 pluginState.requestNeedsReconnect = false
+                pluginState.requestSocket = bindRequest(newGen)
                 addLog("REQUEST rebound on " .. requestPort .. " gen=" .. newGen)
+                -- A bind that closed at once is retried after a pause, not every tick.
+                if pluginState.requestNeedsRebind then LrTasks.sleep(BIND_RETRY_SECONDS) end
             elseif pluginState.requestNeedsReconnect and pluginState.requestSocket then
                 pluginState.requestNeedsReconnect = false
                 local reconnected, reconnectErr = LrTasks.pcall(function() pluginState.requestSocket:reconnect() end)
@@ -748,10 +758,12 @@ local function startServer()
                 -- 100ms here doesn't meaningfully delay recovery.
                 LrTasks.sleep(0.1)
                 if shutdownRequested() then break end
-                pluginState.responseSocket = bindResponse(newGen)
+                -- Cleared before binding, as for the request listener above.
                 pluginState.responseNeedsRebind = false
                 pluginState.responseNeedsReconnect = false
+                pluginState.responseSocket = bindResponse(newGen)
                 addLog("RESPONSE rebound on " .. responsePort .. " gen=" .. newGen)
+                if pluginState.responseNeedsRebind then LrTasks.sleep(BIND_RETRY_SECONDS) end
             elseif pluginState.responseNeedsReconnect and pluginState.responseSocket then
                 pluginState.responseNeedsReconnect = false
                 local reconnected, reconnectErr = LrTasks.pcall(function() pluginState.responseSocket:reconnect() end)
