@@ -151,6 +151,21 @@ describe('read-only mode', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
+  it('refuses preview save_to, which writes files, before dispatch', async () => {
+    const call = jest.fn<CallFn>();
+    pair = await connect({ readOnly: true, call });
+    for (const [name, args] of [['get_photo_preview', { photo_id: 1, save_to: '/tmp/x' }],
+      ['get_photo_previews', { photo_ids: [1], save_to: '/tmp/x' }]] as const) {
+      const result = asToolResult(await pair.client.callTool({ name, arguments: args }));
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('save_to writes files');
+    }
+    const render = asToolResult(await pair.client.callTool({ name: 'get_photo_preview', arguments: { photo_id: 1, render: 'export' } }));
+    expect(render.isError).toBe(true);
+    expect(render.content[0].text).toContain("photo's History");
+    expect(call).not.toHaveBeenCalled();
+  });
+
   it('enforces before the broker follower call and fixes the list at startup', async () => {
     const callTool = jest.fn<ToolCaller>().mockResolvedValue({ content: [{ type: 'text', text: 'forwarded' }] });
     const options = { readOnly: true, toolsets: parseToolsets('all') };

@@ -355,6 +355,62 @@ function ExportHandler.exportPhotos(args, context)
     return result
 end
 
+-- Renders one photo through an export session into a private temporary folder
+-- and returns the JPEG bytes, longest edge `edge` pixels (never enlarged).
+-- get_photo_preview falls back to it when Lightroom has no usable cached
+-- preview: right after a Develop change requestJpegThumbnail can answer "error
+-- loading thumb" for over 10 minutes or offer only a full-size preview, while
+-- an export renders the current settings at once (live on LrC 16.0.1). Shares
+-- export_photos' lock, since parallel export sessions write nothing.
+function ExportHandler.renderJpeg(photo, edge)
+    local now = LrDate.currentTime()
+    if currentRun and now - currentRun.lastPhotoAt < STALE_PHOTO_SECONDS then
+        error("export_photos is running, so the photo cannot be rendered now", 0)
+    end
+    local run = { lastPhotoAt = now }
+    currentRun = run
+    local folder = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"),
+        string.format("LightroomMCP-render-%d-%d", math.floor(now * 1000), math.random(1000000)))
+    local written
+    local ok, result = LrTasks.pcall(function()
+        LrFileUtils.createAllDirectories(folder)
+        local session = LrExportSession {
+            photosToExport = { photo },
+            exportSettings = {
+                LR_format = 'JPEG',
+                LR_jpeg_quality = 0.85,
+                LR_export_colorSpace = 'sRGB',
+                LR_size_doConstrain = true,
+                LR_size_resizeType = 'wh',
+                LR_size_units = 'pixels',
+                LR_size_maxWidth = edge,
+                LR_size_maxHeight = edge,
+                LR_size_doNotEnlarge = true,
+                LR_export_destinationType = 'specificFolder',
+                LR_export_destinationPathPrefix = folder,
+                LR_export_useSubfolder = false,
+                LR_collisionHandling = 'overwrite',
+                LR_export_postProcessing = 'doNothing',
+            },
+        }
+        session:doExportOnCurrentTask()
+        for _, rendition in session:renditions() do
+            local rendered, pathOrMessage = rendition:waitForRender()
+            if not rendered then error("Lightroom could not render the photo: " .. tostring(pathOrMessage), 0) end
+            written = pathOrMessage
+            local data = LrFileUtils.readFile(pathOrMessage)
+            if type(data) ~= "string" or #data == 0 then error("Lightroom rendered an empty file", 0) end
+            return data
+        end
+        error("Lightroom rendered no file", 0)
+    end)
+    if currentRun == run then currentRun = nil end
+    if written then LrTasks.pcall(LrFileUtils.delete, written) end
+    LrTasks.pcall(LrFileUtils.delete, folder)
+    if not ok then error(result, 0) end
+    return result
+end
+
 -- Lists the export presets saved on disk, including ones that cannot run over
 -- the bridge (other export services) with the reason, so a failed lookup in
 -- export_photos can be explained.

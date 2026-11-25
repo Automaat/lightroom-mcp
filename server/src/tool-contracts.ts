@@ -94,6 +94,12 @@ const MASK_ADJUSTMENT_PROPERTIES = {
   noise: maskAdjustmentSlider(-100, 100, "Noise reduction"),
 };
 
+const previewSaveTo = (what: string) => ({
+  type: "string",
+  minLength: 1,
+  description: `Absolute or ~/ folder, created if missing: ${what}; never overwrites`,
+});
+
 const DEVELOP_GROUPS = [
   "basic", "toneCurve", "hsl", "lens", "lensProfile", "transform", "crop", "upright", "detail", "effects",
 ] as const;
@@ -637,6 +643,12 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           },
           required: ["x", "y", "width", "height"],
         },
+        render: {
+          type: "string",
+          enum: ["export"],
+          description: "export: render the current settings through an export (about 2 s; rendered_by export) instead of Lightroom's cached preview, which can fail or lag after a Develop change. Lightroom lists the export in the photo's History; refused for photos with AI masks",
+        },
+        save_to: previewSaveTo("returns the saved path instead of the image"),
       },
       required: ["photo_id"],
     },
@@ -658,6 +670,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
           description: "Between 1 and 20 IDs or paths, in image order",
         },
         size: { type: "number", minimum: 64, maximum: 2048, description: "Minimum longest edge (64–2048, default 256)" },
+        save_to: previewSaveTo("returns saved paths instead of images"),
       },
       required: ["photo_ids"],
     },

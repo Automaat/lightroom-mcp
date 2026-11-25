@@ -195,7 +195,8 @@ describe("HandlerPreview.getPhotoPreview", function()
         local _, Handler = setup({ photo })
 
         assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1", size = 300 }) end,
-            "Preview is 3670017 bytes, over the 3670016 byte limit even at size 64")
+            "Preview is 3670017 bytes, over the 3670016 byte limit even at size 64; call again with render"
+                .. ' "export" for a fresh render through an export (about 2 s; Lightroom lists it in the photo\'s History)')
         assert.are.same({ 300, 150, 75, 64 }, edges)
     end)
 
@@ -254,6 +255,61 @@ describe("HandlerPreview.getPhotoPreview", function()
     end)
 end)
 
+
+describe("HandlerPreview export render", function()
+    local renders
+
+    before_each(function()
+        renders = {}
+        package.loaded.HandlerExport = {
+            renderJpeg = function(photo, edge)
+                renders[#renders + 1] = { id = photo.localIdentifier, edge = edge }
+                return fakeJpeg(edge, math.floor(edge * 2 / 3))
+            end,
+        }
+    end)
+
+    after_each(function() package.loaded.HandlerExport = nil end)
+
+    it("never exports on its own: a failed cached preview names the opt-in instead", function()
+        local photo = previewPhoto({ id = "1" }, function(_, _, _, cb) cb(nil, "error loading thumb") end)
+        local _, Handler = setup({ photo })
+        local ok, err = pcall(Handler.getPhotoPreview, { photo_id = "1", size = 1024 })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("error loading thumb", 1, true))
+        assert.truthy(tostring(err):find('render "export"', 1, true))
+        assert.are.equal(0, #renders)
+    end)
+
+    it("keeps a cached preview smaller than asked", function()
+        local photo = previewPhoto({ id = "1", croppedDimensions = { width = 9504, height = 6336 } },
+            function(_, _, _, cb) cb(fakeJpeg(1728, 1152)) end)
+        local _, Handler = setup({ photo })
+        local result = Handler.getPhotoPreview({ photo_id = "1", size = 2048 })
+        assert.is_nil(result.rendered_by)
+        assert.are.same({ 1728, 1152 }, { result.width, result.height })
+        assert.are.equal(0, #renders)
+    end)
+
+    it("renders through export when asked, capped at the 2000px edge", function()
+        local photo = previewPhoto({ id = "1" }, function() error("the cache must not be asked") end)
+        local _, Handler = setup({ photo })
+        local result = Handler.getPhotoPreview({ photo_id = "1", size = 2048, render = "export" })
+        assert.are.equal("export", result.rendered_by)
+        assert.are.same({ { id = "1", edge = 2000 } }, renders)
+    end)
+
+    it("refuses an export render for a photo with AI masks, whose export can open a blocking dialog", function()
+        local photo = previewPhoto({ id = "1", developSettings = { MaskGroupBasedCorrections = {
+            { CorrectionID = "m1", CorrectionMasks = { { What = "Mask/Image", MaskSubType = 1, MaskDigest = "d" } } },
+        } } }, function(_, _, _, cb) cb(fakeJpeg()) end)
+        local _, Handler = setup({ photo })
+        assert.has_error(function() Handler.getPhotoPreview({ photo_id = "1", render = "export" }) end,
+            'render "export" is refused for photos with AI masks: exporting one with outdated AI settings opens'
+                .. " Lightroom's AI Updates dialog, which blocks until dismissed")
+        assert.are.equal(0, #renders)
+    end)
+end)
 
 describe("HandlerPreview batch preview", function()
     it("renders in order and isolates missing photos", function()

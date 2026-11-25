@@ -3,6 +3,7 @@ local LrDate = import 'LrDate'
 local LrStringUtils = import 'LrStringUtils'
 local LrTasks = import 'LrTasks'
 
+local MaskState = require 'MaskState'
 local PhotoLookup = require 'PhotoLookup'
 local Log = require 'Log'
 
@@ -23,6 +24,22 @@ local POLL_SECONDS = 0.05
 local MAX_BYTES = 3.5 * 1024 * 1024
 -- Claude rejects images over 2000px once a request holds more than 20 images.
 local MAX_EDGE = 2000
+-- requestJpegThumbnail answers with a cached preview. Right after a Develop
+-- change it can fail with "error loading thumb" for over 10 minutes, offer
+-- only a full-size preview or a smaller interim one (live on LrC 16.0.1).
+-- render = "export" renders the current settings through an export session
+-- instead (about 2 s on a 61 MP raw). Lightroom records every export in the
+-- photo's History, so this runs only when asked, never as a silent fallback.
+local EXPORT_RENDER_HINT = '; call again with render "export" for a fresh render through an export'
+    .. " (about 2 s; Lightroom lists it in the photo's History)"
+
+-- Exporting a photo with outdated AI masks opens Lightroom's "AI Updates
+-- Recommended" dialog, which blocks until dismissed.
+local function hasAiMasks(catalog, photo)
+    local settings
+    catalog:withReadAccessDo(function() settings = photo:getDevelopSettings() end)
+    return MaskState.summarize(settings).state ~= "none"
+end
 
 -- Width and height from the first start-of-frame marker, or nil if the data
 -- is not a JPEG this can read. Lightroom does not report the size it chose.
@@ -59,6 +76,9 @@ local function renderPreview(args, batchDeadline, byteLimit, strictDimensions)
         error(string.format("size must be a number between %d and %d", MIN_SIZE, MAX_SIZE))
     end
     size = math.floor(size)
+    if args.render ~= nil and args.render ~= "export" then
+        error('render must be "export"')
+    end
 
     local catalog = LrApplication.activeCatalog()
     local photo = PhotoLookup.resolveOne(catalog, args.photo_id)
@@ -100,16 +120,36 @@ local function renderPreview(args, batchDeadline, byteLimit, strictDimensions)
         return w ~= nil and math.max(w, h) > MAX_EDGE
     end
 
-    -- A smaller request makes Lightroom fall back to a smaller cached preview.
     local edge = size
-    local jpeg = render(edge)
-    while tooBig(jpeg) and edge > MIN_SIZE do
-        edge = math.max(MIN_SIZE, math.floor(edge / 2))
-        jpeg = render(edge)
+    local jpeg, renderedBy
+    if args.render == "export" then
+        local checked, aiMasks = LrTasks.pcall(hasAiMasks, catalog, photo)
+        if not checked then error("Could not read the photo's masks: " .. tostring(aiMasks), 0) end
+        if aiMasks then
+            error('render "export" is refused for photos with AI masks: exporting one with outdated AI'
+                .. " settings opens Lightroom's AI Updates dialog, which blocks until dismissed", 0)
+        end
+        jpeg = require('HandlerExport').renderJpeg(photo, math.min(size, MAX_EDGE))
+        renderedBy = "export"
+    else
+        local rendered, data = LrTasks.pcall(render, edge)
+        if not rendered then
+            -- Only where an export is known to help; an offline original cannot be exported.
+            local message = tostring(data)
+            if message:find("error loading thumb", 1, true) then message = message .. EXPORT_RENDER_HINT end
+            error(message, 0)
+        end
+        jpeg = data
+        -- A smaller request makes Lightroom fall back to a smaller cached preview,
+        -- though not at every step: one cached size can answer several requests.
+        while tooBig(jpeg) and edge > MIN_SIZE do
+            edge = math.max(MIN_SIZE, math.floor(edge / 2))
+            jpeg = render(edge)
+        end
     end
     if #jpeg > byteLimit then
         error(string.format("Preview is %d bytes, over the %d byte limit even at size %d",
-            #jpeg, byteLimit, MIN_SIZE))
+            #jpeg, byteLimit, MIN_SIZE) .. (renderedBy and "" or EXPORT_RENDER_HINT), 0)
     end
 
     local width, height = jpegDimensions(jpeg)
@@ -121,6 +161,7 @@ local function renderPreview(args, batchDeadline, byteLimit, strictDimensions)
 
     return {
         photo_id = photo.localIdentifier,
+        rendered_by = renderedBy,
         requested_size = size,
         width = width,
         height = height,
