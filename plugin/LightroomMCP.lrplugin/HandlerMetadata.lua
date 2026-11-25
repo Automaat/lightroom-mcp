@@ -113,6 +113,25 @@ local READ_ONLY_DEVELOP_GROUPS = {
     },
 }
 
+-- Saved Guided Upright guides, read only: how many are in use, each as
+-- "x1,y1,x2,y2" in the unrotated stored frame (not as displayed), and whether
+-- Lightroom saved the Guided correction for them. Omitted without guides.
+-- Bracket access keeps these out of the settable-key list a Jest test scans.
+local function uprightGroup(developSettings)
+    local count = developSettings["UprightFourSegmentsCount"]
+    if type(count) ~= "number" or count < 1 then return nil end
+    local guides = {}
+    for i = 0, math.min(count, 4) - 1 do
+        local segment = developSettings["UprightFourSegments_" .. i]
+        if type(segment) == "string" then guides[#guides + 1] = segment end
+    end
+    return {
+        guideCount = count,
+        guides = guides,
+        guidedCorrection = type(developSettings["UprightTransform_5"]) == "string",
+    }
+end
+
 local function addSdkDevelopGroups(target, developSettings)
     for _, groups in ipairs({ SDK_DEVELOP_GROUPS, READ_ONLY_DEVELOP_GROUPS }) do
         for _, group in ipairs(groups) do
@@ -123,6 +142,7 @@ local function addSdkDevelopGroups(target, developSettings)
             target[group.field] = nonEmptyGroup(values)
         end
     end
+    target.upright = uprightGroup(developSettings)
     return target
 end
 

@@ -54,6 +54,8 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   get_lens_blur: 'read-only',
   set_lens_blur: 'destructive',
   set_process_version: 'destructive',
+  set_upright_guides: 'destructive',
+  set_crop: 'destructive',
   list_develop_snapshots: 'read-only',
   create_develop_snapshot: 'destructive',
   create_virtual_copies: 'additive',
@@ -235,7 +237,7 @@ describe('createMcpServer', () => {
       expect(tool).toBeDefined();
       expect(tool?.description.length).toBeLessThanOrEqual(Math.floor(oldLength / 2));
     }
-    expect(TOOL_CONTRACTS.reduce((sum, tool) => sum + tool.description.length, 0)).toBeLessThanOrEqual(25000);
+    expect(TOOL_CONTRACTS.reduce((sum, tool) => sum + tool.description.length, 0)).toBeLessThanOrEqual(26000);
   });
 
   it('keeps load-bearing tool guidance reachable alongside instructions', async () => {
@@ -287,10 +289,10 @@ describe('createMcpServer', () => {
     });
 
     it.each([
-      ['develop', 57, ['core', 'develop']],
+      ['develop', 59, ['core', 'develop']],
       ['masks', 48, ['core', 'masks']],
-      ['develop,masks', 72, ['core', 'develop', 'masks']],
-      ['all', 72, ['core', 'develop', 'masks']],
+      ['develop,masks', 74, ['core', 'develop', 'masks']],
+      ['all', 74, ['core', 'develop', 'masks']],
     ] as const)('toolset %s preserves contract order and definitions', async (toolsets, count, groups) => {
       const privateContracts = structuredClone(TOOL_CONTRACTS);
       pair = await connect({ toolsets });
@@ -463,10 +465,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 72 tools', async () => {
+    it('returns all 74 tools', async () => {
       pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(72);
+      expect(tools).toHaveLength(74);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

@@ -2090,3 +2090,145 @@ describe("HandlerDevelop batch dry runs", function()
         assert.are.same({ type = "table", entries = 4 }, r.details[1].changes[2].after)
     end)
 end)
+
+describe("HandlerDevelop.setCrop", function()
+    local photo, settings, writes
+
+    local function cropSetup(opts)
+        opts = opts or {}
+        settings = opts.settings or { CropLeft = 0, CropTop = 0, CropRight = 1, CropBottom = 1, CropAngle = 0 }
+        writes = {}
+        photo = helper.fakePhoto({ id = "7008", path = "/175.arw", orientation = opts.orientation or "DA",
+            dimensions = { width = 6336, height = 9504 } })
+        photo.getDevelopSettings = function()
+            if opts.failReadsAfterWrite and #writes == 1 then error("catalog busy") end
+            local copy = {}
+            for k, v in pairs(settings) do copy[k] = v end
+            return copy
+        end
+        photo.applyDevelopSettings = function(_, written, historyName)
+            writes[#writes + 1] = { settings = written, history = historyName }
+            if opts.onWrite then opts.onWrite() end
+            if opts.ignoreFirst and #writes == 1 then return end
+            for k, v in pairs(written) do settings[k] = v end
+        end
+        return select(2, setup({ photos = { photo } }))
+    end
+
+    local function near(a, b) return math.abs(a - b) < 1e-9 end
+
+    it("converts displayed full-frame edges to the stored frame of a rotated photo", function()
+        local Handler = cropSetup()
+
+        local r = Handler.setCrop({ photo_id = 7008, left = 0.12120, top = 0.13899, right = 0.95486, bottom = 0.91530 })
+
+        assert.are.same({ success = true, photo_id = "7008", pixels = { width = 5282, height = 7378 } }, r)
+        assert.are.equal("Set Crop", writes[1].history)
+        local w = writes[1].settings
+        assert.is_true(near(w.CropLeft, 0.08470) and near(w.CropTop, 0.12120))
+        assert.is_true(near(w.CropRight, 0.86101) and near(w.CropBottom, 0.95486))
+        assert.are.equal(0, w.CropAngle)
+    end)
+
+    it("writes edges unchanged on a photo shown as stored", function()
+        local Handler = cropSetup({ orientation = "AB" })
+        Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.2, right = 0.8, bottom = 0.9 })
+        local w = writes[1].settings
+        assert.is_true(near(w.CropLeft, 0.1) and near(w.CropTop, 0.2) and near(w.CropRight, 0.8) and near(w.CropBottom, 0.9))
+    end)
+
+    it("measures relative_to current within the crop as displayed", function()
+        local Handler = cropSetup({ settings = { CropLeft = 0.0793, CropTop = 0.1111, CropRight = 0.8709,
+            CropBottom = 0.9696, CropAngle = 0 } })
+
+        Handler.setCrop({ photo_id = "7008", left = 0.25, top = 0.25, right = 0.75, bottom = 0.75, relative_to = "current" })
+
+        local w = writes[1].settings
+        assert.is_true(near(w.CropLeft, 0.2772) and near(w.CropTop, 0.325725))
+        assert.is_true(near(w.CropRight, 0.6730) and near(w.CropBottom, 0.754975))
+    end)
+
+    it("keeps the current crop for relative edges spanning it", function()
+        local Handler = cropSetup({ settings = { CropLeft = 0.0793, CropTop = 0.1111, CropRight = 0.8709,
+            CropBottom = 0.9696, CropAngle = 0 } })
+        Handler.setCrop({ photo_id = "7008", left = 0, top = 0, right = 1, bottom = 1, relative_to = "current" })
+        local w = writes[1].settings
+        assert.is_true(near(w.CropLeft, 0.0793) and near(w.CropTop, 0.1111))
+        assert.is_true(near(w.CropRight, 0.8709) and near(w.CropBottom, 0.9696))
+    end)
+
+    it("refuses relative_to current on a turned crop", function()
+        local Handler = cropSetup({ settings = { CropLeft = 0.1, CropTop = 0.1, CropRight = 0.9, CropBottom = 0.9, CropAngle = 2.5 } })
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0, top = 0, right = 1, bottom = 1, relative_to = "current" })
+        end, "relative_to current needs a straight crop, but this crop is turned 2.5 degrees; give full-frame edges instead")
+        assert.are.equal(0, #writes)
+    end)
+
+    it("refuses edges out of range, out of order or too close", function()
+        local Handler = cropSetup()
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = -0.1, top = 0, right = 1, bottom = 1 })
+        end, "left must be a number from 0 to 1")
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0.6, top = 0, right = 0.4, bottom = 1 })
+        end, "left must be at least 0.01 below right, and top at least 0.01 below bottom")
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0, top = 0.5, right = 1, bottom = 0.505 })
+        end, "left must be at least 0.01 below right, and top at least 0.01 below bottom")
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0, top = 0, right = 1, bottom = 1, relative_to = "photo" })
+        end, "relative_to must be full or current")
+        assert.are.equal(0, #writes)
+    end)
+
+    it("accepts a crop exactly the minimum size", function()
+        local Handler = cropSetup({ orientation = "AB" })
+        assert.is_true(Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.2, right = 0.11, bottom = 0.21 }).success)
+    end)
+
+    it("refuses relative edges that leave less than the minimum of the full frame", function()
+        local Handler = cropSetup({ orientation = "AB", settings = { CropLeft = 0.5, CropTop = 0.5, CropRight = 0.55,
+            CropBottom = 0.55, CropAngle = 0 } })
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.1, right = 0.2, bottom = 0.2, relative_to = "current" })
+        end, "Inside the current crop these edges make a crop smaller than 0.01 of the full frame")
+        assert.are.equal(0, #writes)
+    end)
+
+    it("restores the previous crop when reading it back throws", function()
+        local Handler = cropSetup({ failReadsAfterWrite = true })
+        local ok, err = pcall(Handler.setCrop, { photo_id = "7008", left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 })
+        assert.is_false(ok)
+        assert.truthy(tostring(err):find("reading the crop back failed", 1, true), tostring(err))
+        assert.truthy(tostring(err):find("the previous crop was restored", 1, true), tostring(err))
+        assert.are.equal("Set Crop (restore)", writes[2].history)
+        assert.are.equal(0, settings.CropLeft)
+    end)
+
+    it("refuses a second set_crop on the same photo while one is in flight", function()
+        local Handler
+        local nested
+        Handler = cropSetup({ onWrite = function()
+            if nested == nil then
+                nested = { pcall(Handler.setCrop, { photo_id = "7008", left = 0, top = 0, right = 0.5, bottom = 0.5 }) }
+            end
+        end })
+        assert.is_true(Handler.setCrop({ photo_id = "7008", left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 }).success)
+        assert.is_false(nested[1])
+        assert.are.equal("Another set_crop is still changing this photo; call again when it finishes", nested[2])
+        -- the guard is released afterwards
+        assert.is_true(Handler.setCrop({ photo_id = "7008", left = 0.1, top = 0.1, right = 0.9, bottom = 0.9 }).success)
+    end)
+
+    it("restores the previous crop when Lightroom does not keep the new one", function()
+        local before = { CropLeft = 0.0793, CropTop = 0.1111, CropRight = 0.8709, CropBottom = 0.9696, CropAngle = 0 }
+        local Handler = cropSetup({ settings = before, ignoreFirst = true })
+        assert.has_error(function()
+            Handler.setCrop({ photo_id = "7008", left = 0.2, top = 0.2, right = 0.8, bottom = 0.8 })
+        end, "Lightroom did not keep the crop (read back as displayed left 0.11110, top 0.12910, right 0.96960,"
+            .. " bottom 0.92070, angle 0); the previous crop was restored")
+        assert.are.equal(2, #writes)
+        assert.are.equal("Set Crop (restore)", writes[2].history)
+    end)
+end)

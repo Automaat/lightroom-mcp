@@ -113,7 +113,7 @@ and restore the original bundle while Lightroom is closed before reopening
 the real catalog. Finish with `node tests/e2e/live/smoke.mjs` on the throwaway
 catalog.
 
-Positions are always in the displayed frame of the uncropped photo; Lightroom stores masks in the unrotated frame (`ImageFrame.lua`).
+Positions are always in the displayed frame of the uncropped photo; Lightroom stores masks in the unrotated frame (`ImageFrame.lua`) and before lens corrections, so with a lens profile on a mask footprint moves with the content (0.74-0.88% radially on the FE 35mm F1.4 GM).
 
 | Tool | Fixtures | Key checks |
 |---|---|---|

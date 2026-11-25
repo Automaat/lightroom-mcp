@@ -115,3 +115,30 @@ describe("ImageFrame.forPhoto", function()
         assert.are.equal("BC", frame.orientation)
     end)
 end)
+
+describe("ImageFrame rectangles", function()
+    local ORIENTATIONS = { "AB", "BA", "CD", "DC", "CB", "BC", "AD", "DA" }
+
+    for _, orientation in ipairs(ORIENTATIONS) do
+        it("round-trips an ordered rectangle through the stored frame for " .. orientation, function()
+            local frame = ImageFrame.fromOrientation(orientation)
+
+            local sl, st, sr, sb = frame.rectToStored(0.1, 0.2, 0.7, 0.9)
+            assert.is_true(sl < sr and st < sb)
+            local l, t, r, b = frame.rectToDisplayed(sl, st, sr, sb)
+
+            for _, pair in ipairs({ { l, 0.1 }, { t, 0.2 }, { r, 0.7 }, { b, 0.9 } }) do
+                assert.is_true(math.abs(pair[1] - pair[2]) < 1e-12)
+            end
+        end)
+    end
+
+    it("maps the crop verified on a DA portrait in Lightroom Classic 16.0.1", function()
+        local sl, st, sr, sb = ImageFrame.fromOrientation("DA").rectToStored(0.12120, 0.13899, 0.95486, 0.91530)
+
+        assert.is_true(math.abs(sl - 0.08470) < 1e-9)
+        assert.is_true(math.abs(st - 0.12120) < 1e-9)
+        assert.is_true(math.abs(sr - 0.86101) < 1e-9)
+        assert.is_true(math.abs(sb - 0.95486) < 1e-9)
+    end)
+end)

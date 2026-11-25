@@ -92,6 +92,27 @@ const MASK_ADJUSTMENT_PROPERTIES = {
   noise: maskAdjustmentSlider("Noise reduction"),
 };
 
+const compactPoint = {
+  type: "object",
+  additionalProperties: false,
+  properties: { x: { type: "number", minimum: 0, maximum: 1 }, y: { type: "number", minimum: 0, maximum: 1 } },
+  required: ["x", "y"],
+};
+
+const MAX_UPRIGHT_BATCH_ITEMS = 50;
+
+const uprightGuidesSchema = {
+  type: "array",
+  minItems: 2,
+  maxItems: 4,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: { start: compactPoint, end: compactPoint },
+    required: ["start", "end"],
+  },
+};
+
 const normalizedPoint = (description: string) => ({
   type: "object",
   additionalProperties: false,
@@ -549,7 +570,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: true, openWorldHint: false },
     luaHandler: "HandlerMetadata.getPhotoMetadata",
     description:
-      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; empty groups are omitted.",
+      "Read 1-100 photos: keywords/nested keywordPaths, EXIF, title/caption/headline, GPS latitude/longitude/altitude, IPTC sublocation/city/stateProvince/country/isoCountryCode, copyright, accessibility alt_text/extended_description (LrC 13.2+, omitted empty/unsupported), and optional developSettings or masks. IDs are catalog local. isVirtualCopy marks copies; optional virtualCopy contains masterPhotoId or master copyIds. Optional folder stack contains position (top=1), isCollapsed, topPhotoId and ordered memberIds. developSettings is absent by default; request sections: [\"developSettings\"] to read it. Empty sections omits it. developSettings covers every set_develop_settings key: basic/tone/parametric curves use camelCase; hsl/lens/transform/crop/detail/effects/parametricSplits use SDK names; read-only upright (guides, guidedCorrection) and crop use the unrotated frame; empty groups are omitted.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1595,6 +1616,61 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_crop",
+    toolset: "develop",
+    title: "Set crop",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.setCrop",
+    description:
+      "Straight crop from edges as displayed, at least 0.01 apart: 0-1 of the full frame after Transform, or of the current crop (as get_photo_preview shows it) with relative_to current. Handles rotated photos; sets CropAngle 0; restores the old crop on mismatch. Returns pixels.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        left: { type: "number", minimum: 0, maximum: 1 },
+        top: { type: "number", minimum: 0, maximum: 1 },
+        right: { type: "number", minimum: 0, maximum: 1 },
+        bottom: { type: "number", minimum: 0, maximum: 1 },
+        relative_to: {
+          type: "string",
+          enum: ["full", "current"],
+          description: "Frame the edges refer to (default full)",
+        },
+      },
+      required: ["photo_id", "left", "top", "right", "bottom"],
+    },
+  },
+  {
+    name: "set_upright_guides",
+    toolset: "develop",
+    title: "Set Upright guides",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerUpright.setGuides",
+    description:
+      "Guided Upright from 2-4 guides on lines that should be vertical or horizontal (guide both edges of a direction to fix its convergence). Points 0-1, origin top-left, as displayed with no Transform (Upright off, sliders 0), crop or lens corrections: guides measured with a lens profile on show further from the centre (0.8% on a tested 35 mm lens). Replaces guides and, like Lightroom's Upright buttons, sets Vertical, Horizontal and Rotate to 0; opens Develop; restores the prior Upright and sliders on failure. items: many photos in one Develop session, continuing past failures; per-photo results, remaining_ids. Works with Lightroom behind other apps (window visible).",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        guides: { ...uprightGuidesSchema, description: "Guides as line segments; at least 0.02 of the frame long" },
+        items: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_UPRIGHT_BATCH_ITEMS,
+          description: "Instead of photo_id/guides: one entry per photo",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: { photo_id: photoIdSchema("Photo ID or file path"), guides: uprightGuidesSchema },
+            required: ["photo_id", "guides"],
+          },
+        },
+      },
+    },
+  },
+  {
     name: "create_virtual_copies",
     toolset: "develop",
     title: "Create virtual copies",
@@ -1820,7 +1896,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     luaHandler: "HandlerGradientMasks.createGradientMask",
     description:
-      "Place a linear or radial gradient (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
+      "Place a linear or radial gradient (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply; positions are before lens corrections: up to 2% further out on a corrected preview). Linear: full strength at start, fading to zero at end. Radial: center, width, height, clockwise rotation, feather 0 hard to 100 soft, area inside or outside. Omit mask_id for a new optionally named mask; supply it to add a component with mode add (default) or subtract. Intersect is unsupported. New masks start neutral. Returns mask_id, tool_id for update_gradient_mask, shape and stored geometry.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1880,7 +1956,7 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
     luaHandler: "HandlerBrushMasks.createBrushMask",
     description:
-      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
+      "Paint strokes into a new optionally named brush mask, or supply mask_id to add a brush component (Lightroom Classic 15.6/16.0 only; shared guarded-write and coordinate rules apply; positions are before lens corrections: up to 2% further out on a corrected preview). Each nonempty stroke has points; dabs fill consecutive points at most half a radius apart. radius defaults to 0.14; its soft edge fades near 60% (0.05 on a 1000 px photo gives about 60 px width). Lightroom's Size slider depends on Develop zoom; use radius. Per-stroke flow/density default to 1, feather to 100, erase to false; erase removes only earlier paint of that brush. Empty strokes are rejected. New masks start neutral. Use add_brush_strokes for an existing brush. Read-back checks every dab position and flow. Returns mask_id, tool_id, strokes_added and stroke_count.",
     inputSchema: {
       type: "object",
       additionalProperties: false,

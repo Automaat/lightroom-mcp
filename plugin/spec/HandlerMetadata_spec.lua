@@ -442,6 +442,45 @@ describe("HandlerMetadata.getPhotoMetadata", function()
         assert.is_nil(d.detail)
         assert.is_nil(d.effects)
         assert.is_nil(d.parametricSplits)
+        assert.is_nil(d.upright)
+    end)
+
+    it("summarizes the saved Upright guides in the read-only upright group", function()
+        local photo = helper.fakePhoto({
+            id = "48",
+            path = "/p/upright.arw",
+            fileName = "upright.arw",
+            developSettings = {
+                PerspectiveUpright = 5,
+                UprightFourSegmentsCount = 2,
+                UprightFourSegments_0 = "0.7065,0.1323,0.2547,0.1266",
+                UprightFourSegments_1 = "0.7065,0.934,0.2547,0.9474",
+                UprightFourSegments_2 = "0.1,0.1,0.1,0.9",
+                UprightTransform_5 = "1,0,0,0,1,0,0,0,1",
+                UprightVersion = 151388160,
+                UprightPreview = false,
+            },
+        })
+        local _, Handler = setup({ photo })
+
+        local d = Handler.getPhotoMetadata({ photo_id = "48", sections = { "developSettings" } }).developSettings
+
+        assert.are.same({
+            guideCount = 2,
+            guides = { "0.7065,0.1323,0.2547,0.1266", "0.7065,0.934,0.2547,0.9474" },
+            guidedCorrection = true,
+        }, d.upright)
+        assert.are.same({ PerspectiveUpright = 5 }, d.transform)
+    end)
+
+    it("omits the upright group for a photo without guides", function()
+        local photo = helper.fakePhoto({
+            id = "49", path = "/p/plain.arw", fileName = "plain.arw",
+            developSettings = { UprightFourSegmentsCount = 0, UprightVersion = 151388160, UprightTransformCount = 6 },
+        })
+        local _, Handler = setup({ photo })
+        local d = Handler.getPhotoMetadata({ photo_id = "49", sections = { "developSettings" } }).developSettings
+        assert.is_nil(d.upright)
     end)
 
     it("exposes IPTC location, GPS, and copyright metadata", function()

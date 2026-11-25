@@ -91,6 +91,15 @@ export function validateToolArgs(name: string, args: unknown): string | null {
       && (params.photo_id === undefined || params.settings === undefined)) {
       return `Invalid arguments for ${name}: photo_id and settings are both required without items`;
     }
+    if (name === "set_upright_guides") {
+      const single = params.photo_id !== undefined || params.guides !== undefined;
+      if (single === (params.items !== undefined)) {
+        return `Invalid arguments for ${name}: provide photo_id and guides, or items, not both`;
+      }
+      if (single && (params.photo_id === undefined || params.guides === undefined)) {
+        return `Invalid arguments for ${name}: photo_id and guides are both required without items`;
+      }
+    }
     if (name === "get_photo_metadata"
       && (params.photo_id !== undefined) === (params.photo_ids !== undefined)) {
       return `Invalid arguments for ${name}: provide exactly one of photo_id or photo_ids`;
