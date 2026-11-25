@@ -250,6 +250,7 @@ local DISPATCH = {
     copy_develop_settings = HandlerDevelop.copyDevelopSettings,
     match_photo_style = HandlerDevelop.matchPhotoStyle,
     set_develop_settings = HandlerDevelop.setDevelopSettings,
+    set_crop = HandlerDevelop.setCrop,
     set_process_version = HandlerDevelop.setProcessVersion,
     set_upright_guides = HandlerUpright.setGuides,
     list_develop_snapshots = HandlerSnapshots.list,

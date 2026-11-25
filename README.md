@@ -224,6 +224,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `get_lens_blur` | Read Lens Blur state, controls, focal range and bokeh (LrC 13.3+, Process Version 3+); restores the Develop view. |
 | `set_lens_blur` | Set Lens Blur controls after enabling depth computation; validates runtime ranges and saved readback, then restores the view. |
 | `set_process_version` | Set photos to Version 1–6 with confirmation; refuses masked-photo downgrades and reports previous/actual versions. |
+| `set_crop` | Set a straight crop from left/top/right/bottom edges as the photo is displayed (0–1 of the full frame after Transform, or of the current crop with `relative_to: "current"`). Converts to Lightroom's stored frame for rotated photos, sets the crop angle to 0, restores the previous crop if Lightroom does not keep it, and returns the crop size in pixels. |
 | `set_upright_guides` | Turn on Guided Upright from 2–4 guides drawn along edges that should be vertical or horizontal (points as displayed, before Transform and crop). Replaces existing guides, briefly opens Develop so Lightroom computes the correction, restores the previous Upright settings if the guides do not read back. `get_photo_metadata` shows the saved guides in a read-only `upright` group. |
 | `list_develop_snapshots` | List a photo’s saved develop snapshots. |
 | `create_develop_snapshot` | Save current develop settings; set `replace` to update an existing name. |

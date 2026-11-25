@@ -106,8 +106,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 73 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(73);
+  it('contains exactly 74 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(74);
   });
 
   it('replaces the separate rating and flag tools', () => {

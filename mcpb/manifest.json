@@ -218,6 +218,10 @@
       "description": "Set photos to Lightroom Version 1 through Version 6 with confirmation"
     },
     {
+      "name": "set_crop",
+      "description": "Set a straight crop from edges as the photo is displayed, converted for rotated photos."
+    },
+    {
       "name": "set_upright_guides",
       "description": "Turn on Guided Upright with 2-4 guides along edges that should be vertical or horizontal."
     },

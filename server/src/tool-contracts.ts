@@ -1595,6 +1595,32 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_crop",
+    toolset: "develop",
+    title: "Set crop",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerDevelop.setCrop",
+    description:
+      "Straight crop from edges as displayed: 0-1 fractions of the full frame after Transform, or of the current crop (what get_photo_preview shows) with relative_to current. Converts for rotated photos; sets CropAngle 0. Restores the previous crop on mismatch. Returns the crop in pixels.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        photo_id: photoIdSchema("Photo ID or file path"),
+        left: { type: "number", minimum: 0, maximum: 1, description: "Left edge, 0 = left of the frame" },
+        top: { type: "number", minimum: 0, maximum: 1, description: "Top edge, 0 = top of the frame" },
+        right: { type: "number", minimum: 0, maximum: 1, description: "Right edge, 1 = right of the frame" },
+        bottom: { type: "number", minimum: 0, maximum: 1, description: "Bottom edge, 1 = bottom of the frame" },
+        relative_to: {
+          type: "string",
+          enum: ["full", "current"],
+          description: "Frame the edges refer to (default full)",
+        },
+      },
+      required: ["photo_id", "left", "top", "right", "bottom"],
+    },
+  },
+  {
     name: "set_upright_guides",
     toolset: "develop",
     title: "Set Upright guides",
