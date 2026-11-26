@@ -892,3 +892,111 @@ describe("HandlerCollections.getCollectionPhotos", function()
             "collection_name is required")
     end)
 end)
+
+describe("HandlerCollections.deleteCollectionSet", function()
+    it("deletes an empty collection set found ignoring case and reports its stored path", function()
+        local outer = helper.fakeCollectionSet("Culling")
+        local empty = helper.fakeCollectionSet("Done", { parent = outer })
+        local keep = helper.fakeCollectionSet("Keep", { parent = outer })
+        local catalog, Handler = setup({ collectionSets = { outer } })
+
+        local r = Handler.deleteCollectionSet({ collection_set = "culling / done" })
+
+        assert.is_true(r.success)
+        assert.are.equal("Culling / Done", r.path)
+        assert.are.same({}, r.deleted_collections)
+        assert.are.equal(0, r.deleted_sets)
+        assert.are.equal("Photos stay in the catalog.", r.message)
+        assert.is_true(empty.isDeleted())
+        assert.is_false(keep.isDeleted())
+        assert.is_false(outer.isDeleted())
+        assert.are.same({ keep }, outer:getChildCollectionSets())
+        assert.are.same({ outer }, catalog:getChildCollectionSets())
+    end)
+
+    it("refuses a set with contents unless delete_contents is true, deleting nothing", function()
+        local photo = helper.fakePhoto({ id = "1", path = "/a.jpg" })
+        local batch = helper.fakeCollection("Batch 1", { photo })
+        local outer = helper.fakeCollectionSet("Culling", { collections = { batch } })
+        local inner = helper.fakeCollectionSet("Old", { parent = outer })
+        local catalog, Handler = setup({ photos = { photo }, collectionSets = { outer } })
+        local writes = catalog:getWriteAccessCount()
+
+        assert.has_error(function() Handler.deleteCollectionSet({ collection_set = "Culling" }) end,
+            "Collection set 'Culling' contains 1 collections and 1 collection sets; "
+                .. "pass delete_contents: true to delete them too (photos stay in the catalog)")
+        assert.are.equal(writes, catalog:getWriteAccessCount())
+        assert.is_false(batch.isDeleted())
+        assert.is_false(inner.isDeleted())
+        assert.is_false(outer.isDeleted())
+    end)
+
+    it("with delete_contents deletes every collection and set inside it, then the set", function()
+        local order = {}
+        local function tracked(item, label)
+            local delete = item.delete
+            item.delete = function(...)
+                order[#order + 1] = label
+                return delete(...)
+            end
+            return item
+        end
+        local top = tracked(helper.fakeCollection("Top", {}), "Top")
+        local deep = tracked(helper.fakeCollection("Deep", {}), "Deep")
+        local outer = tracked(helper.fakeCollectionSet("Outer", { collections = { top } }), "Outer")
+        local inner = tracked(helper.fakeCollectionSet("Inner", { parent = outer, collections = { deep } }), "Inner")
+        local leaf = tracked(helper.fakeCollectionSet("Leaf", { parent = inner }), "Leaf")
+        local other = helper.fakeCollection("Other", {})
+        local catalog, Handler = setup({ collections = { other }, collectionSets = { outer } })
+
+        local r = Handler.deleteCollectionSet({ collection_set = "Outer", delete_contents = true })
+
+        assert.are.same({ "Outer / Top", "Outer / Inner / Deep" }, r.deleted_collections)
+        assert.are.equal(2, r.deleted_sets)
+        assert.are.same({ "Top", "Deep", "Leaf", "Inner", "Outer" }, order)
+        for _, item in ipairs({ top, deep, outer, inner, leaf }) do
+            assert.is_true(item.isDeleted())
+        end
+        assert.is_false(other.isDeleted())
+        assert.are.same({}, catalog:getChildCollectionSets())
+    end)
+
+    it("fails when Lightroom keeps the set", function()
+        local outer = helper.fakeCollectionSet("Outer")
+        outer.delete = function() end
+        local _, Handler = setup({ collectionSets = { outer } })
+
+        assert.has_error(function() Handler.deleteCollectionSet({ collection_set = "Outer" }) end,
+            "Lightroom did not delete collection set 'Outer'")
+    end)
+
+    it("refuses when the set changed between the check and the delete", function()
+        local outer = helper.fakeCollectionSet("Outer")
+        local catalog, Handler = setup({ collectionSets = { outer } })
+        local withWrite = catalog.withWriteAccessDo
+        catalog.withWriteAccessDo = function(...)
+            helper.fakeCollectionSet("Sneaked in", { parent = outer })
+            return withWrite(...)
+        end
+
+        assert.has_error(function() Handler.deleteCollectionSet({ collection_set = "Outer" }) end,
+            "Collection set 'Outer' changed while deleting; nothing was deleted")
+        assert.is_false(outer.isDeleted())
+    end)
+
+    it("reports a missing set, a collection given as a set, and bad arguments", function()
+        local outer = helper.fakeCollectionSet("Outer", { collections = { helper.fakeCollection("Coll", {}) } })
+        local _, Handler = setup({ collectionSets = { outer } })
+
+        assert.has_error(function() Handler.deleteCollectionSet({ collection_set = "Nope" }) end,
+            "Collection set not found: Nope")
+        assert.has_error(function() Handler.deleteCollectionSet({ collection_set = "Outer / Coll" }) end,
+            "Collection set not found: Outer / Coll")
+        assert.has_error(function() Handler.deleteCollectionSet({}) end, "collection_set is required")
+        assert.has_error(function()
+            Handler.deleteCollectionSet({ collection_set = "Outer", delete_contents = "yes" })
+        end, "delete_contents must be a boolean")
+        assert.has_error(function() Handler.deleteCollectionSet({ collection_set = "Outer /" }) end,
+            "collection_set has a malformed collection set name 'Outer /'; separate sets with ' / ': Outer /")
+    end)
+end)
