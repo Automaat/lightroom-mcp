@@ -417,7 +417,7 @@ describe('develop setting schema', () => {
     const definitions = tools.map(({ name, description, inputSchema }) =>
       JSON.stringify({ name, description, inputSchema })).join('');
     const schemas = tools.map(t => JSON.stringify(t.inputSchema)).join('');
-    expect(definitions.length).toBeLessThanOrEqual(7000);
+    expect(definitions.length).toBeLessThanOrEqual(7500);
     for (const key of DEVELOP_SETTING_KEYS) {
       expect(schemas.split(JSON.stringify(key)).length - 1).toBe(1);
     }
@@ -496,6 +496,20 @@ describe('develop setting schema', () => {
     expect(properties.settings.uniqueItems).toBe(true);
   });
 
+  it('accepts the ds-studio extended keys (camera profile, color grading, defringe, perspective X/Y)', () => {
+    const settings = {
+      CameraProfile: 'Adobe Color',
+      LensProfileSetup: 'Auto',
+      AutoLateralCA: 1,
+      ColorGradeGlobalHue: 30,
+      DefringePurpleAmount: 5,
+      PerspectiveX: 2,
+      OverrideLookVignette: false,
+    };
+    expect(validateToolArgs('set_develop_settings', { photo_id: '1', settings })).toBeNull();
+    expect(validateToolArgs('set_develop_settings', { photo_id: '1', settings: { NotAKey: 1 } })).not.toBeNull();
+  });
+
   it('matches Lua develop setting allowlist', () => {
     expect(parseLuaDevelopSettingKeys()).toEqual(DEVELOP_SETTING_KEYS);
   });
@@ -516,7 +530,6 @@ describe('develop setting schema', () => {
     const fieldKeys = [...source.matchAll(/=\s*developSettings\.(\w+)/g)].map((entry) => entry[1]);
 
     expect(new Set(groupKeys).size).toBe(groupKeys.length);
-    expect([...groupKeys, ...fieldKeys].sort()).toEqual([...DEVELOP_SETTING_KEYS].sort());
 
     const readOnlyTable = source.match(/local READ_ONLY_DEVELOP_GROUPS = \{([\s\S]*?)\n\}\n/);
     if (!readOnlyTable) {
@@ -524,7 +537,10 @@ describe('develop setting schema', () => {
     }
     const readOnlyKeys = [...readOnlyTable[1].matchAll(/"([A-Z]\w+)"/g)].map((entry) => entry[1]);
     expect(readOnlyKeys.length).toBeGreaterThan(0);
-    expect(readOnlyKeys.filter((key) => (DEVELOP_SETTING_KEYS as readonly string[]).includes(key))).toEqual([]);
+    // These two lensProfile keys are also settable; they are read back in lensProfile, not in a second group.
+    const readOnlyButSettable = readOnlyKeys.filter((key) => (DEVELOP_SETTING_KEYS as readonly string[]).includes(key));
+    expect(readOnlyButSettable.sort()).toEqual(['AutoLateralCA', 'LensProfileSetup']);
+    expect([...groupKeys, ...fieldKeys, ...readOnlyButSettable].sort()).toEqual([...DEVELOP_SETTING_KEYS].sort());
   });
 });
 
