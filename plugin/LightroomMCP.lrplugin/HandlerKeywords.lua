@@ -94,6 +94,40 @@ function KeywordsHandler.listKeywords(args)
     }
 end
 
+-- Returns a function(catalog) that resolves `ref` to exactly one keyword: a
+-- "Parent|Child" path addresses it directly, a plain name must match exactly
+-- one keyword. Call it inside a gate; it errors when nothing or several match.
+local function keywordFinder(ref)
+    local parts = nil
+    local name = nil
+    if KeywordTree.isPath(ref) then
+        parts = KeywordTree.split(ref)
+    else
+        name = KeywordTree.trim(ref)
+    end
+    return function(catalog)
+        if parts then
+            local resolved = KeywordTree.resolve(catalog, parts)
+            if not resolved then
+                error("Keyword not found: " .. KeywordTree.join(parts))
+            end
+            return resolved
+        end
+        local matches = KeywordTree.findByName(catalog, name)
+        if #matches == 0 then
+            error("Keyword not found: " .. name)
+        elseif #matches > 1 then
+            local found = {}
+            for _, match in ipairs(matches) do
+                table.insert(found, match.path)
+            end
+            error("Keyword is ambiguous, give its path: " .. name
+                .. " (" .. table.concat(found, ", ") .. ")")
+        end
+        return matches[1].keyword
+    end
+end
+
 -- Renames one keyword in place: every photo tagged with it shows the new name,
 -- and its parent, children and synonyms are unchanged. A plain name must match
 -- exactly one keyword; a "Parent|Child" path addresses it directly.
@@ -111,44 +145,15 @@ function KeywordsHandler.renameKeyword(args)
         error("new_name must be a single keyword name, not a path: " .. newName)
     end
 
-    local parts = nil
-    local oldName = nil
-    if KeywordTree.isPath(args.keyword) then
-        parts = KeywordTree.split(args.keyword)
-    else
-        oldName = KeywordTree.trim(args.keyword)
-    end
-
+    local findKeyword = keywordFinder(args.keyword)
     local catalog = LrApplication.activeCatalog()
     local keyword, oldPath, newPath, photoCount, tempName
 
-    local function findKeyword()
-        if parts then
-            local resolved = KeywordTree.resolve(catalog, parts)
-            if not resolved then
-                error("Keyword not found: " .. KeywordTree.join(parts))
-            end
-            return resolved
-        end
-        local matches = KeywordTree.findByName(catalog, oldName)
-        if #matches == 0 then
-            error("Keyword not found: " .. oldName)
-        elseif #matches > 1 then
-            local found = {}
-            for _, match in ipairs(matches) do
-                table.insert(found, match.path)
-            end
-            error("Keyword is ambiguous, give its path: " .. oldName
-                .. " (" .. table.concat(found, ", ") .. ")")
-        end
-        return matches[1].keyword
-    end
-
-    catalog:withReadAccessDo(function() keyword = findKeyword() end)
+    catalog:withReadAccessDo(function() keyword = findKeyword(catalog) end)
     photoCount = #(keyword:getPhotos() or {})
 
     catalog:withWriteAccessDo("Rename Keyword", function()
-        keyword = findKeyword()
+        keyword = findKeyword(catalog)
 
         local currentName = keyword:getName()
         if currentName == newName then
@@ -211,6 +216,157 @@ function KeywordsHandler.renameKeyword(args)
         old_path = oldPath,
         new_path = newPath,
         photo_count = photoCount,
+    }
+end
+
+local MAX_SYNONYMS = 100
+
+-- Validates one synonym list argument: an array of strings, each trimmed,
+-- non-empty and free of commas (Lightroom's Keyword List edits synonyms as one
+-- comma-separated field, so a comma inside a synonym would split it there).
+-- Case variants collapse to the first, as Lightroom matches keywords ignoring
+-- case. Returns nil when the argument is absent.
+local function synonymList(value, field)
+    if value == nil then return nil end
+    if type(value) ~= "table" then error(field .. " must be an array of strings") end
+    local count = 0
+    for _ in pairs(value) do count = count + 1 end
+    if count ~= #value then error(field .. " must be an array of strings") end
+    if #value > MAX_SYNONYMS then
+        error(field .. " must contain at most " .. MAX_SYNONYMS .. " synonyms")
+    end
+    local list, seen = {}, {}
+    for _, synonym in ipairs(value) do
+        if type(synonym) ~= "string" then error(field .. " must be an array of strings") end
+        local trimmed = KeywordTree.trim(synonym)
+        if trimmed == "" then error(field .. " contains an empty synonym") end
+        if trimmed:find(",", 1, true) then
+            error("Synonym '" .. trimmed .. "' contains a comma; give each synonym as its own item")
+        end
+        local key = KeywordTree.fold(trimmed)
+        if not seen[key] then
+            seen[key] = true
+            list[#list + 1] = trimmed
+        end
+    end
+    return list
+end
+
+local function foldedSet(list)
+    local set = {}
+    for _, item in ipairs(list) do set[KeywordTree.fold(item)] = true end
+    return set
+end
+
+-- Same strings, in any order: Lightroom may store synonyms in its own order.
+local function sameSynonyms(left, right)
+    if #left ~= #right then return false end
+    local counts = {}
+    for _, item in ipairs(left) do counts[item] = (counts[item] or 0) + 1 end
+    for _, item in ipairs(right) do
+        if not counts[item] or counts[item] == 0 then return false end
+        counts[item] = counts[item] - 1
+    end
+    return true
+end
+
+local function copyList(list)
+    local result = {}
+    for i, item in ipairs(list or {}) do result[i] = item end
+    return result
+end
+
+-- Replaces a keyword's synonyms (`synonyms`), or edits them (`add_synonyms`,
+-- `remove_synonyms`, matched ignoring case). Its name, parent, children and
+-- photos are unchanged. The stored list is read back after the write commits.
+function KeywordsHandler.setKeywordSynonyms(args)
+    args = args or {}
+    if type(args.keyword) ~= "string" or args.keyword:match("^%s*$") then
+        error("keyword is required")
+    end
+    local replace = synonymList(args.synonyms, "synonyms")
+    local add = synonymList(args.add_synonyms, "add_synonyms")
+    local remove = synonymList(args.remove_synonyms, "remove_synonyms")
+    if replace and (add or remove) then
+        error("Use synonyms, or add_synonyms/remove_synonyms, not both")
+    end
+    if not replace and not add and not remove then
+        error("synonyms, add_synonyms or remove_synonyms is required")
+    end
+    if add and remove then
+        local removing = foldedSet(remove)
+        for _, synonym in ipairs(add) do
+            if removing[KeywordTree.fold(synonym)] then
+                error("Synonym '" .. synonym .. "' is in both add_synonyms and remove_synonyms")
+            end
+        end
+    end
+
+    local function target(current)
+        if replace then return replace end
+        local removing = foldedSet(remove or {})
+        local result, present = {}, {}
+        for _, synonym in ipairs(current) do
+            local key = KeywordTree.fold(synonym)
+            if not removing[key] then
+                result[#result + 1] = synonym
+                present[key] = true
+            end
+        end
+        for _, synonym in ipairs(add or {}) do
+            local key = KeywordTree.fold(synonym)
+            if not present[key] then
+                result[#result + 1] = synonym
+                present[key] = true
+            end
+        end
+        return result
+    end
+
+    local findKeyword = keywordFinder(args.keyword)
+    local catalog = LrApplication.activeCatalog()
+    local keyword, path, previous, wanted
+
+    -- An unchanged list writes nothing, so it adds no undo step.
+    catalog:withReadAccessDo(function()
+        keyword = findKeyword(catalog)
+        path = KeywordTree.pathOf(keyword)
+        previous = copyList(keyword:getSynonyms())
+    end)
+    wanted = target(previous)
+    if sameSynonyms(wanted, previous) then
+        return { success = true, path = path, changed = false,
+            synonyms = previous, previous_synonyms = previous }
+    end
+
+    catalog:withWriteAccessDo("Set Keyword Synonyms", function()
+        keyword = findKeyword(catalog)
+        path = KeywordTree.pathOf(keyword)
+        -- Recomputed from the list as it is now, in case it changed since.
+        previous = copyList(keyword:getSynonyms())
+        wanted = target(previous)
+        if not keyword:setAttributes({ synonyms = wanted }) then
+            error("Lightroom refused to set the synonyms of keyword '" .. path .. "'")
+        end
+    end)
+
+    local stored
+    catalog:withReadAccessDo(function()
+        stored = copyList(keyword:getSynonyms())
+    end)
+    if not sameSynonyms(stored, wanted) then
+        error(string.format("Keyword '%s' stored synonyms [%s] instead of [%s]",
+            path, table.concat(stored, ", "), table.concat(wanted, ", ")))
+    end
+
+    Log.info(string.format("Set synonyms of keyword %s: %d -> %d", path, #previous, #stored))
+
+    return {
+        success = true,
+        path = path,
+        changed = true,
+        synonyms = stored,
+        previous_synonyms = previous,
     }
 end
 

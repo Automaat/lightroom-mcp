@@ -228,6 +228,7 @@ local DISPATCH = {
     remove_keyword_subtree = HandlerOrganization.removeKeywordSubtree,
     list_keywords = HandlerKeywords.listKeywords,
     rename_keyword = HandlerKeywords.renameKeyword,
+    set_keyword_synonyms = HandlerKeywords.setKeywordSynonyms,
     set_rating_and_flag = HandlerOrganization.setRatingAndFlag,
     undo_last_step = HandlerUndo.undoLastStep,
     remove_photos_from_catalog = HandlerRemoveFromCatalog.removePhotos,
