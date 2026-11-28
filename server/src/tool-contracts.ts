@@ -977,6 +977,28 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "delete_collection_set",
+    toolset: "core",
+    title: "Delete collection set",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerCollections.deleteCollectionSet",
+    description:
+      "Delete a collection set; photos stay. Fails if it holds collections or sets unless delete_contents is true. Returns path, deleted_collections, deleted_sets.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        collection_set: {
+          type: "string",
+          minLength: 1,
+          description: "Set path, parents first, separated by ' / ' as in list_collections ('Trips / 2026')",
+        },
+        delete_contents: { type: "boolean", description: "Also delete everything inside it (default false)" },
+      },
+      required: ["collection_set"],
+    },
+  },
+  {
     name: "set_keywords",
     toolset: "core",
     title: "Set keywords",

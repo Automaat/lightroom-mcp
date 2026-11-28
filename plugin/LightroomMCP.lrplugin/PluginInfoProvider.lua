@@ -211,6 +211,7 @@ local DISPATCH = {
     get_collection_photos = HandlerCollections.getCollectionPhotos,
     remove_from_collection = HandlerCollections.removeFromCollection,
     delete_collection = HandlerCollections.deleteCollection,
+    delete_collection_set = HandlerCollections.deleteCollectionSet,
     get_lens_blur = HandlerLensBlur.get,
     set_lens_blur = HandlerLensBlur.set,
     get_photo_metadata = HandlerMetadata.getPhotoMetadata,

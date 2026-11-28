@@ -35,6 +35,7 @@ const EXPECTED_TOOL_NAMES = [
   'get_collection_photos',
   'remove_from_collection',
   'delete_collection',
+  'delete_collection_set',
   'set_keywords',
   'remove_keyword_subtree',
   'list_keywords',
@@ -106,8 +107,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 72 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(72);
+  it('contains exactly 73 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(73);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -276,6 +277,7 @@ describe('tool required fields', () => {
     ['get_collection_photos', ['collection_name']],
     ['remove_from_collection', ['collection_name', 'photo_ids']],
     ['delete_collection', ['collection_name']],
+    ['delete_collection_set', ['collection_set']],
     ['set_keywords', ['photo_ids']],
     ['set_rating_and_flag', ['photo_ids']],
     ['undo_last_step', ['confirm']],

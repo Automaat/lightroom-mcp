@@ -200,6 +200,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `get_collection_photos` | Photos in a collection, regular or smart (paginated). |
 | `remove_from_collection` | Remove photos from a collection (they stay in the catalog). |
 | `delete_collection` | Delete a collection (its photos stay in the catalog). |
+| `delete_collection_set` | Delete a collection set; one with contents needs `delete_contents: true` (photos stay in the catalog). |
 | `set_keywords` | Add or remove keywords on photos, by name or by hierarchy path (`Places\|Europe\|Paris`). |
 | `remove_keyword_subtree` | Detach a parent keyword and its descendants from selected photos, or explicitly from the whole catalog. Keyword nodes stay in the catalog. |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
@@ -340,6 +341,7 @@ This server works with the catalog open in Lightroom Classic on your computer th
 ### Safeguards when changing photos
 
 - Deleting a collection with `delete_collection` keeps its photos in the catalog ([collection handler](plugin/LightroomMCP.lrplugin/HandlerCollections.lua)).
+- `delete_collection_set` refuses a set with collections or sets inside unless `delete_contents` is true; then it deletes each of them explicitly before the set, and photos stay in the catalog.
 - Mask tools that write Lightroom's undocumented mask format check the Lightroom version, the photo's process version and the format of existing masks before writing. They read the result back and attempt to restore the previous masks if it differs; an unconfirmed restoration is reported as an error. These checks live in [GuardedMaskWrite.lua](plugin/LightroomMCP.lrplugin/GuardedMaskWrite.lua). They apply to those mask writes, not to every edit.
 - Connections require the local token described in [Security](#security), checked by [PluginInfoProvider.lua](plugin/LightroomMCP.lrplugin/PluginInfoProvider.lua).
 

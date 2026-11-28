@@ -866,6 +866,14 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('delete_collection', { collection_name: 'Temp', photo_ids: [914] })).toContain('photo_ids');
   });
 
+  it('requires a collection set path to delete one, with an optional boolean delete_contents', () => {
+    expect(validateToolArgs('delete_collection_set', { collection_set: 'Culling' })).toBeNull();
+    expect(validateToolArgs('delete_collection_set', { collection_set: 'A / B', delete_contents: true })).toBeNull();
+    expect(validateToolArgs('delete_collection_set', {})).toContain("required property 'collection_set'");
+    expect(validateToolArgs('delete_collection_set', { collection_set: 'A', delete_contents: 'yes' })).toContain('delete_contents');
+    expect(validateToolArgs('delete_collection_set', { collection_name: 'A' })).not.toBeNull();
+  });
+
   it('requires a collection name to list its photos and pages with limit/offset', () => {
     expect(validateToolArgs('get_collection_photos', { collection_name: 'Trip', limit: 10, offset: 20 })).toBeNull();
     expect(validateToolArgs('get_collection_photos', {})).toContain("required property 'collection_name'");

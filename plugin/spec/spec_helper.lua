@@ -238,6 +238,16 @@ function M.fakeCollection(name, photos, opts)
     }
 end
 
+-- The items of `list` not deleted: a deleted collection or set disappears
+-- from its parent's children, as in Lightroom.
+function M.live(list)
+    local result = {}
+    for _, item in ipairs(list) do
+        if not (item.isDeleted and item.isDeleted()) then result[#result + 1] = item end
+    end
+    return result
+end
+
 -- Build a fake collection set. opts: parent (fake set), collections, sets.
 -- Registers itself with its parent so getChildCollectionSets() sees it, as a
 -- set that already exists in the catalog would be, unless detached.
@@ -255,8 +265,11 @@ function M.fakeCollectionSet(name, opts)
     set.getName = function() return read(name) end
     set.type = function() return "LrCollectionSet" end
     set.getParent = function() return read(opts.parent) end
-    set.getChildCollections = function() return read(collections) end
-    set.getChildCollectionSets = function() return read(sets) end
+    set.getChildCollections = function() return read(M.live(collections)) end
+    set.getChildCollectionSets = function() return read(M.live(sets)) end
+    local deleted = false
+    set.delete = function() deleted = true end
+    set.isDeleted = function() return deleted end
     -- Unguarded, for the fake catalog's own bookkeeping.
     set.__name = function() return name end
     set.__childCollections = function() return collections end
@@ -420,8 +433,8 @@ function M.fakeCatalog(opts)
             return out
         end,
         getFolders = function() return opts.folders or {} end,
-        getChildCollections = function() return collections end,
-        getChildCollectionSets = function() return collectionSets end,
+        getChildCollections = function() return M.live(collections) end,
+        getChildCollectionSets = function() return M.live(collectionSets) end,
         withReadAccessDo = function(_, fn)
             readAccessCount = readAccessCount + 1
             insideReadAccess = true

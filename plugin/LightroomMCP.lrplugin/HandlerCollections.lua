@@ -65,21 +65,23 @@ function CollectionsHandler.listCollections(args)
 end
 
 -- Splits a collection set path on the " / " separator listCollections uses.
-local function splitSetPath(path)
+-- `field` names the argument in errors (default "parent").
+local function splitSetPath(path, field)
+    field = field or "parent"
     local names = {}
     local rest = path
     while true do
         local first, last = rest:find(" / ", 1, true)
         local name = first and rest:sub(1, first - 1) or rest
         if name:match("^%s*$") then
-            error("parent contains an empty collection set name: " .. path)
+            error(field .. " contains an empty collection set name: " .. path)
         end
         -- Edge spaces or slashes come from a malformed separator ("A /",
         -- "A / /B"); the set would exist but its path could not be read back.
         if name:match("^[%s/]") or name:match("[%s/]$") then
             error(string.format(
-                "parent has a malformed collection set name '%s'; separate sets with ' / ': %s",
-                name, path))
+                "%s has a malformed collection set name '%s'; separate sets with ' / ': %s",
+                field, name, path))
         end
         table.insert(names, name)
         if not first then
@@ -480,6 +482,108 @@ function CollectionsHandler.deleteCollection(args)
     return {
         success = true,
         photo_count = photoCount,
+        message = "Photos stay in the catalog.",
+    }
+end
+
+-- Finds the collection set at `names` (top level first), matching names
+-- ignoring case as Lightroom does. Returns the set and its path as stored, or
+-- nil when any level is missing.
+local function lookupSet(catalog, names)
+    local sets = catalog:getChildCollectionSets()
+    local found = nil
+    local stored = {}
+    for i, name in ipairs(names) do
+        found = findNamed(sets, name)
+        if not found then return nil end
+        stored[i] = found:getName()
+        sets = found:getChildCollectionSets()
+    end
+    return found, table.concat(stored, " / ")
+end
+
+-- Everything inside `set`: collection paths, and the collections and child
+-- sets in delete order (collections first, then sets deepest first).
+local function contentsOf(set, prefix)
+    local collections, sets, paths = {}, {}, {}
+    local function walk(current, currentPrefix)
+        for _, collection in ipairs(current:getChildCollections()) do
+            collections[#collections + 1] = collection
+            paths[#paths + 1] = currentPrefix .. collection:getName()
+        end
+        for _, child in ipairs(current:getChildCollectionSets()) do
+            walk(child, currentPrefix .. child:getName() .. " / ")
+            sets[#sets + 1] = child
+        end
+    end
+    walk(set, prefix .. " / ")
+    return collections, sets, paths
+end
+
+-- Deletes a collection set. A set that holds collections or other sets is
+-- refused unless delete_contents is true; then every collection and set inside
+-- it is deleted first, explicitly, rather than relying on what Lightroom does
+-- with the children of a deleted set. Photos stay in the catalog.
+function CollectionsHandler.deleteCollectionSet(args)
+    args = args or {}
+    if type(args.collection_set) ~= "string" or args.collection_set:match("^%s*$") then
+        error("collection_set is required")
+    end
+    if args.delete_contents ~= nil and type(args.delete_contents) ~= "boolean" then
+        error("delete_contents must be a boolean")
+    end
+    local deleteContents = args.delete_contents == true
+    local names = splitSetPath(args.collection_set, "collection_set")
+
+    local catalog = LrApplication.activeCatalog()
+    local path, planned, plannedSets, collectionPaths
+
+    catalog:withReadAccessDo(function()
+        local set
+        set, path = lookupSet(catalog, names)
+        if not set then error("Collection set not found: " .. args.collection_set) end
+        local collections, sets
+        collections, sets, collectionPaths = contentsOf(set, path)
+        planned, plannedSets = #collections, #sets
+    end)
+
+    if (planned > 0 or plannedSets > 0) and not deleteContents then
+        error(string.format(
+            "Collection set '%s' contains %d collections and %d collection sets; "
+                .. "pass delete_contents: true to delete them too (photos stay in the catalog)",
+            path, planned, plannedSets))
+    end
+
+    catalog:withWriteAccessDo("Delete Collection Set", function()
+        local set = lookupSet(catalog, names)
+        if not set then error("Collection set not found: " .. args.collection_set) end
+        local collections, sets = contentsOf(set, path)
+        -- Checked inside the gate that deletes: what was refused or listed
+        -- above must still be what goes.
+        if #collections ~= planned or #sets ~= plannedSets then
+            error("Collection set '" .. path .. "' changed while deleting; nothing was deleted")
+        end
+        for _, collection in ipairs(collections) do collection:delete() end
+        for _, child in ipairs(sets) do child:delete() end
+        set:delete()
+    end)
+
+    local remaining
+    catalog:withReadAccessDo(function()
+        remaining = lookupSet(catalog, names)
+    end)
+    if remaining then
+        error("Lightroom did not delete collection set '" .. path .. "'")
+    end
+
+    Log.info(string.format("Deleted collection set: %s (%d collections, %d sets inside)",
+        path, planned, plannedSets))
+
+    return {
+        success = true,
+        path = path,
+        deleted_collections = collectionPaths,
+        deleted_sets = plannedSets,
         message = "Photos stay in the catalog.",
     }
 end

@@ -122,6 +122,10 @@
       "description": "Delete a collection; its photos stay in the catalog."
     },
     {
+      "name": "delete_collection_set",
+      "description": "Delete a collection set, and with delete_contents everything inside it; photos stay in the catalog."
+    },
+    {
       "name": "set_keywords",
       "description": "Add or remove keywords on photos, by name or hierarchy path."
     },
