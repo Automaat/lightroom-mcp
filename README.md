@@ -204,6 +204,7 @@ The Develop toolset includes presets, settings, snapshots, virtual copies, style
 | `remove_keyword_subtree` | Detach a parent keyword and its descendants from selected photos, or explicitly from the whole catalog. Keyword nodes stay in the catalog. |
 | `list_keywords` | The keyword hierarchy as full paths, with synonyms. |
 | `rename_keyword` | Rename a keyword everywhere it is used. |
+| `set_keyword_synonyms` | Replace, add or remove a keyword's synonyms; reads the stored list back. |
 | `undo_last_step` | Undo one step in Lightroom’s shared history with `confirm: true`; this includes user and other plug-in actions. |
 | `set_rating_and_flag` | Set a 0-5 star rating, a pick flag (`pick`, `reject`, `none`), or both in one write. |
 | `remove_photos_from_catalog` | Remove up to 100 specified photos from the catalog with `confirm: true` (Lightroom Classic 14.3+). Files stay on disk; catalog edits and metadata are lost. Selects in the photos' folders (All Photographs if one is not found), retrying for up to 30 s on large catalogs. Restores module, sources and surviving selection; Library remains in grid view. Include all virtual copies when removing a master. |

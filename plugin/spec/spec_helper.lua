@@ -144,13 +144,18 @@ function M.fakeKeyword(name, opts)
         getChildren = function() return children end,
         getSynonyms = function() return opts.synonyms or {} end,
         getPhotos = function() return opts.photos or {} end,
-        -- Only keywordName is modelled. Like Lightroom, a rename that changes
-        -- only the case is ignored. Applied at once: the fake has no
-        -- transactions to defer it to.
+        -- keywordName and synonyms are modelled. Like Lightroom, a rename
+        -- that changes only the case is ignored. Applied at once: the fake has
+        -- no transactions to defer it to.
         setAttributes = function(_, attributes)
             local newName = attributes.keywordName
             if newName and newName:lower() ~= name:lower() then
                 name = newName
+            end
+            if attributes.synonyms ~= nil then
+                local stored = {}
+                for i, synonym in ipairs(attributes.synonyms) do stored[i] = synonym end
+                opts.synonyms = stored
             end
             return true
         end,

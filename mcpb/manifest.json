@@ -138,6 +138,10 @@
       "description": "Rename a keyword everywhere it is used."
     },
     {
+      "name": "set_keyword_synonyms",
+      "description": "Replace, add or remove a keyword's synonyms."
+    },
+    {
       "name": "undo_last_step",
       "description": "Undo one shared Lightroom history step, including user actions, with confirm: true."
     },

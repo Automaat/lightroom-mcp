@@ -866,6 +866,20 @@ describe('validateToolArgs', () => {
     expect(validateToolArgs('delete_collection', { collection_name: 'Temp', photo_ids: [914] })).toContain('photo_ids');
   });
 
+  it('takes either a full synonym list or synonyms to add and remove', () => {
+    const keyword = 'Animals|Birds|白头鹀';
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, synonyms: ['Emberiza leucocephalos', 'Pine Bunting'] })).toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, synonyms: [] })).toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, add_synonyms: ['Pine Bunting'] })).toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, add_synonyms: ['a'], remove_synonyms: ['b'] })).toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword })).not.toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, synonyms: ['a'], add_synonyms: ['b'] })).not.toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, add_synonyms: [] })).not.toBeNull();
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, synonyms: ['Pine, Bunting'] })).toContain('synonyms');
+    expect(validateToolArgs('set_keyword_synonyms', { keyword, synonyms: [''] })).toContain('synonyms');
+    expect(validateToolArgs('set_keyword_synonyms', { synonyms: ['a'] })).toContain("required property 'keyword'");
+  });
+
   it('requires a collection name to list its photos and pages with limit/offset', () => {
     expect(validateToolArgs('get_collection_photos', { collection_name: 'Trip', limit: 10, offset: 20 })).toBeNull();
     expect(validateToolArgs('get_collection_photos', {})).toContain("required property 'collection_name'");

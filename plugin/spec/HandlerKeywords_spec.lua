@@ -409,3 +409,166 @@ describe("HandlerKeywords.renameKeyword", function()
             "new_name must be a single keyword name, not a path: Animals|zebra")
     end)
 end)
+
+describe("HandlerKeywords.setKeywordSynonyms", function()
+    local function bird(synonyms)
+        local life = helper.fakeKeyword("Animals")
+        local birds = helper.fakeKeyword("Birds", { parent = life })
+        local bunting = helper.fakeKeyword("白头鹀", { parent = birds, synonyms = synonyms })
+        return life, bunting
+    end
+
+    it("replaces the synonyms of a keyword found by path and reads them back", function()
+        local life, bunting = bird({ "old" })
+        local catalog, Handler = setup({ life })
+        local writes = catalog:getWriteAccessCount()
+
+        local r = Handler.setKeywordSynonyms({
+            keyword = "Animals|Birds|白头鹀",
+            synonyms = { " Emberiza leucocephalos ", "Pine Bunting" },
+        })
+
+        assert.is_true(r.success)
+        assert.is_true(r.changed)
+        assert.are.equal("Animals|Birds|白头鹀", r.path)
+        assert.are.same({ "Emberiza leucocephalos", "Pine Bunting" }, r.synonyms)
+        assert.are.same({ "old" }, r.previous_synonyms)
+        assert.are.same({ "Emberiza leucocephalos", "Pine Bunting" }, bunting:getSynonyms())
+        assert.are.equal("白头鹀", bunting:getName())
+        assert.are.equal(writes + 1, catalog:getWriteAccessCount())
+    end)
+
+    it("clears every synonym with an empty list", function()
+        local life, bunting = bird({ "a", "b" })
+        local _, Handler = setup({ life })
+
+        local r = Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = {} })
+
+        assert.are.same({}, r.synonyms)
+        assert.are.same({}, bunting:getSynonyms())
+    end)
+
+    it("adds and removes synonyms, matching existing ones ignoring case", function()
+        local life, bunting = bird({ "Pine Bunting", "obsolete name" })
+        local _, Handler = setup({ life })
+
+        local r = Handler.setKeywordSynonyms({
+            keyword = "白头鹀",
+            add_synonyms = { "pine bunting", "Emberiza leucocephalos" },
+            remove_synonyms = { "OBSOLETE NAME", "never there" },
+        })
+
+        assert.are.same({ "Pine Bunting", "Emberiza leucocephalos" }, r.synonyms)
+        assert.are.same({ "Pine Bunting", "obsolete name" }, r.previous_synonyms)
+        assert.are.same({ "Pine Bunting", "Emberiza leucocephalos" }, bunting:getSynonyms())
+    end)
+
+    it("writes nothing when the synonyms would not change", function()
+        local life, bunting = bird({ "Pine Bunting" })
+        local catalog, Handler = setup({ life })
+        local writes = catalog:getWriteAccessCount()
+
+        local r = Handler.setKeywordSynonyms({ keyword = "白头鹀", add_synonyms = { "PINE BUNTING" } })
+
+        assert.is_false(r.changed)
+        assert.are.same({ "Pine Bunting" }, r.synonyms)
+        assert.are.equal(writes, catalog:getWriteAccessCount())
+        assert.are.same({ "Pine Bunting" }, bunting:getSynonyms())
+    end)
+
+    it("writes a change of case only", function()
+        local life, bunting = bird({ "pine bunting" })
+        local _, Handler = setup({ life })
+
+        local r = Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = { "Pine Bunting" } })
+
+        assert.is_true(r.changed)
+        assert.are.same({ "Pine Bunting" }, bunting:getSynonyms())
+    end)
+
+    it("collapses case variants within one list to the first", function()
+        local life, bunting = bird({})
+        local _, Handler = setup({ life })
+
+        Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = { "Pine Bunting", "pine bunting" } })
+
+        assert.are.same({ "Pine Bunting" }, bunting:getSynonyms())
+    end)
+
+    it("fails when Lightroom stores something else, naming both lists", function()
+        local life, bunting = bird({})
+        local _, Handler = setup({ life })
+        bunting.setAttributes = function() return true end
+
+        assert.has_error(function()
+            Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = { "Pine Bunting" } })
+        end, "Keyword 'Animals|Birds|白头鹀' stored synonyms [] instead of [Pine Bunting]")
+    end)
+
+    it("fails when Lightroom refuses the write", function()
+        local life, bunting = bird({})
+        local _, Handler = setup({ life })
+        bunting.setAttributes = function() return false end
+
+        assert.has_error(function()
+            Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = { "x" } })
+        end, "Lightroom refused to set the synonyms of keyword 'Animals|Birds|白头鹀'")
+    end)
+
+    it("reports a missing or ambiguous keyword before writing", function()
+        local life = bird({})
+        local other = helper.fakeKeyword("白头鹀")
+        local catalog, Handler = setup({ life, other })
+        local writes = catalog:getWriteAccessCount()
+
+        assert.has_error(function()
+            Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = { "x" } })
+        end, "Keyword is ambiguous, give its path: 白头鹀 (Animals|Birds|白头鹀, 白头鹀)")
+        assert.has_error(function()
+            Handler.setKeywordSynonyms({ keyword = "Animals|Birds|黄鹀", synonyms = { "x" } })
+        end, "Keyword not found: Animals|Birds|黄鹀")
+        assert.are.equal(writes, catalog:getWriteAccessCount())
+    end)
+
+    it("rejects bad arguments before touching the catalog", function()
+        local life = bird({})
+        local catalog, Handler = setup({ life })
+        local reads = catalog:getReadAccessCount()
+
+        local cases = {
+            { { synonyms = { "x" } }, "keyword is required" },
+            { { keyword = "白头鹀" }, "synonyms, add_synonyms or remove_synonyms is required" },
+            { { keyword = "白头鹀", synonyms = { "x" }, add_synonyms = { "y" } },
+                "Use synonyms, or add_synonyms/remove_synonyms, not both" },
+            { { keyword = "白头鹀", synonyms = "x" }, "synonyms must be an array of strings" },
+            { { keyword = "白头鹀", synonyms = { 1 } }, "synonyms must be an array of strings" },
+            { { keyword = "白头鹀", add_synonyms = { "  " } }, "add_synonyms contains an empty synonym" },
+            { { keyword = "白头鹀", synonyms = { "Pine, Bunting" } },
+                "Synonym 'Pine, Bunting' contains a comma; give each synonym as its own item" },
+            { { keyword = "白头鹀", add_synonyms = { "x" }, remove_synonyms = { "X" } },
+                "Synonym 'x' is in both add_synonyms and remove_synonyms" },
+        }
+        for _, case in ipairs(cases) do
+            assert.has_error(function() Handler.setKeywordSynonyms(case[1]) end, case[2])
+        end
+        local many = {}
+        for i = 1, 101 do many[i] = "s" .. i end
+        assert.has_error(function() Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = many }) end,
+            "synonyms must contain at most 100 synonyms")
+        assert.are.equal(reads, catalog:getReadAccessCount())
+    end)
+
+    it("leaves the name, parent and photos alone", function()
+        local life, bunting = bird({})
+        local photos = { {}, {} }
+        bunting.getPhotos = function() return photos end
+        local parent = bunting:getParent()
+        local _, Handler = setup({ life })
+
+        Handler.setKeywordSynonyms({ keyword = "白头鹀", synonyms = { "Pine Bunting" } })
+
+        assert.are.equal("白头鹀", bunting:getName())
+        assert.are.equal(parent, bunting:getParent())
+        assert.are.equal(photos, bunting:getPhotos())
+    end)
+end)

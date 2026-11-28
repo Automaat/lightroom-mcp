@@ -34,6 +34,7 @@ const TOOL_CLASSES: Record<string, 'read-only' | 'additive' | 'destructive'> = {
   remove_keyword_subtree: 'destructive',
   list_keywords: 'read-only',
   rename_keyword: 'destructive',
+  set_keyword_synonyms: 'destructive',
   set_rating_and_flag: 'destructive',
   undo_last_step: 'destructive',
   remove_photos_from_catalog: 'destructive',
@@ -276,6 +277,7 @@ describe('createMcpServer', () => {
       'set_location', 'set_metadata', 'set_ai_metadata', 'get_ai_metadata', 'list_folders',
       'get_folder_photos', 'list_collections', 'create_collection', 'create_smart_collection',
       'add_to_collection', 'get_collection_photos', 'remove_from_collection', 'delete_collection',
+      'set_keyword_synonyms',
       'set_keywords', 'remove_keyword_subtree', 'list_keywords', 'rename_keyword', 'undo_last_step',
       'set_rating_and_flag', 'set_color_label', 'remove_photos_from_catalog', 'import_photos',
       'export_photos', 'export_photo_metadata', 'list_export_presets',
@@ -287,10 +289,10 @@ describe('createMcpServer', () => {
     });
 
     it.each([
-      ['develop', 57, ['core', 'develop']],
-      ['masks', 48, ['core', 'masks']],
-      ['develop,masks', 72, ['core', 'develop', 'masks']],
-      ['all', 72, ['core', 'develop', 'masks']],
+      ['develop', 58, ['core', 'develop']],
+      ['masks', 49, ['core', 'masks']],
+      ['develop,masks', 73, ['core', 'develop', 'masks']],
+      ['all', 73, ['core', 'develop', 'masks']],
     ] as const)('toolset %s preserves contract order and definitions', async (toolsets, count, groups) => {
       const privateContracts = structuredClone(TOOL_CONTRACTS);
       pair = await connect({ toolsets });
@@ -463,10 +465,10 @@ describe('createMcpServer', () => {
       }
     });
 
-    it('returns all 72 tools', async () => {
+    it('returns all 73 tools', async () => {
       pair = await connect({ toolsets: 'all' });
       const { tools } = await pair.client.listTools();
-      expect(tools).toHaveLength(72);
+      expect(tools).toHaveLength(73);
     });
 
     it('includes search_photos and set_develop_settings', async () => {

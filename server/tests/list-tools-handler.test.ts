@@ -39,6 +39,7 @@ const EXPECTED_TOOL_NAMES = [
   'remove_keyword_subtree',
   'list_keywords',
   'rename_keyword',
+  'set_keyword_synonyms',
   'set_rating_and_flag',
   'undo_last_step',
   'remove_photos_from_catalog',
@@ -106,8 +107,8 @@ describe('TOOL_DEFINITIONS', () => {
     }
   });
 
-  it('contains exactly 72 tools', () => {
-    expect(TOOL_DEFINITIONS).toHaveLength(72);
+  it('contains exactly 73 tools', () => {
+    expect(TOOL_DEFINITIONS).toHaveLength(73);
   });
 
   it('replaces the separate rating and flag tools', () => {
@@ -281,6 +282,7 @@ describe('tool required fields', () => {
     ['undo_last_step', ['confirm']],
     ['set_color_label', ['photo_ids', 'label']],
     ['rename_keyword', ['keyword', 'new_name']],
+    ['set_keyword_synonyms', ['keyword']],
     ['import_photos', ['source_path']],
     ['export_photos', ['photo_ids']],
     ['export_photo_metadata', ['destination']],

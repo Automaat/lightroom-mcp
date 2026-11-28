@@ -1090,6 +1090,34 @@ export const TOOL_CONTRACTS: ToolContract[] = [
     },
   },
   {
+    name: "set_keyword_synonyms",
+    toolset: "core",
+    title: "Set keyword synonyms",
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+    luaHandler: "HandlerKeywords.setKeywordSynonyms",
+    description:
+      "Set a keyword's synonyms: synonyms replaces the list ([] clears); add_synonyms/remove_synonyms edit it, ignoring case. Returns synonyms read back and previous_synonyms.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        keyword: {
+          type: "string",
+          minLength: 1,
+          description: "Keyword from list_keywords: a unique plain name or a 'Parent|Child' path",
+        },
+        synonyms: { type: "array", maxItems: 100, items: { type: "string", minLength: 1, pattern: "^[^,]*$" }, description: "New full list" },
+        add_synonyms: { type: "array", minItems: 1, maxItems: 100, items: { type: "string", minLength: 1, pattern: "^[^,]*$" } },
+        remove_synonyms: { type: "array", minItems: 1, maxItems: 100, items: { type: "string", minLength: 1, pattern: "^[^,]*$" } },
+      },
+      required: ["keyword"],
+      oneOf: [
+        { required: ["synonyms"], not: { anyOf: [{ required: ["add_synonyms"] }, { required: ["remove_synonyms"] }] } },
+        { not: { required: ["synonyms"] }, anyOf: [{ required: ["add_synonyms"] }, { required: ["remove_synonyms"] }] },
+      ],
+    },
+  },
+  {
     name: "undo_last_step",
     toolset: "core",
     title: "Undo last step",
